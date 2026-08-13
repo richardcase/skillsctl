@@ -81,3 +81,40 @@ func TestRootMissingSkillFile(t *testing.T) {
 		t.Fatalf("Root error = %v, want ErrNoSkill", err)
 	}
 }
+
+func TestFrontmatterToleratesTrailingSpaceOnFences(t *testing.T) {
+	body := []byte("---   \nname: spaced\n---\t\n\nBody.\n")
+
+	got, err := Frontmatter(body)
+	if err != nil {
+		t.Fatalf("Frontmatter: %v", err)
+	}
+	if got.Name != "spaced" {
+		t.Errorf("Name = %q, want spaced: a fence line with trailing whitespace must still be a fence", got.Name)
+	}
+}
+
+func TestFrontmatterStopsAtTheFirstFenceNotBodyRules(t *testing.T) {
+	body := []byte("---\nname: real\ndescription: still frontmatter\n---\n\nIntro.\n\n---\n\nMore.\n\n----\n")
+
+	got, err := Frontmatter(body)
+	if err != nil {
+		t.Fatalf("Frontmatter: %v", err)
+	}
+	if got.Name != "real" {
+		t.Errorf("Name = %q, want real", got.Name)
+	}
+	if got.Description != "still frontmatter" {
+		t.Errorf("Description = %q, want \"still frontmatter\": horizontal rules in the body must not affect the block", got.Description)
+	}
+}
+
+func TestFrontmatterEmptyBlock(t *testing.T) {
+	got, err := Frontmatter([]byte("---\n---\n\nBody.\n"))
+	if err != nil {
+		t.Fatalf("Frontmatter: %v", err)
+	}
+	if got.Name != "" || got.Description != "" {
+		t.Errorf("got %+v, want a zero Meta", got)
+	}
+}

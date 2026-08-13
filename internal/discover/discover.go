@@ -34,22 +34,43 @@ type Skill struct {
 func Frontmatter(data []byte) (Meta, error) {
 	body := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 
-	const fence = "---\n"
-	if !bytes.HasPrefix(body, []byte(fence)) {
+	head, rest, found := bytes.Cut(body, []byte("\n"))
+	if !found || !isFence(head) {
 		return Meta{}, nil
 	}
-	rest := body[len(fence):]
 
-	end := bytes.Index(rest, []byte("\n---"))
+	end := -1
+	for offset := 0; offset <= len(rest); {
+		line := rest[offset:]
+		nl := bytes.IndexByte(line, '\n')
+		if nl >= 0 {
+			line = line[:nl]
+		}
+		if isFence(line) {
+			end = offset
+			break
+		}
+		if nl < 0 {
+			break
+		}
+		offset += nl + 1
+	}
 	if end < 0 {
 		return Meta{}, fmt.Errorf("frontmatter block is not terminated by ---")
 	}
 
 	var m Meta
-	if err := yaml.Unmarshal(rest[:end+1], &m); err != nil {
+	if err := yaml.Unmarshal(rest[:end], &m); err != nil {
 		return Meta{}, fmt.Errorf("parse frontmatter: %w", err)
 	}
 	return m, nil
+}
+
+// isFence reports whether line is a frontmatter delimiter: exactly ---, allowing
+// trailing spaces or tabs. Opening and closing fences use the same rule, so a
+// fence is never recognised at one end and missed at the other.
+func isFence(line []byte) bool {
+	return bytes.Equal(bytes.TrimRight(line, " \t"), []byte("---"))
 }
 
 // Root reads the SKILL.md directly inside dir.
