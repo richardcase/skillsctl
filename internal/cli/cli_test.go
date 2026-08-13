@@ -190,8 +190,12 @@ func TestInstallAsOverridesName(t *testing.T) {
 func TestInstallRejectsUnsupportedChannel(t *testing.T) {
 	h := newHarness(t)
 
-	if _, err := h.run(t, "install", "superpowers@claude-plugins-official"); err == nil {
+	_, err := h.run(t, "install", "superpowers@claude-plugins-official")
+	if err == nil {
 		t.Fatal("plugin install succeeded; the plugin channel arrives in phase 3")
+	}
+	if !strings.Contains(err.Error(), "not supported yet") {
+		t.Errorf("error = %v, want it to name the unsupported channel", err)
 	}
 }
 

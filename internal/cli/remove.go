@@ -86,7 +86,7 @@ func newRemoveCmd() *cobra.Command {
 				return err
 			}
 			if err := h.Commit(); err != nil {
-				return err
+				return fmt.Errorf("%w\nthe links were removed but the receipt was not updated; re-run this command to repair", err)
 			}
 
 			cmd.Printf("removed %s\n", name)
