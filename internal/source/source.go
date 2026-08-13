@@ -116,7 +116,14 @@ func parseURL(raw string) (Source, error) {
 	s.host = u.Host
 	s.owner, s.repo = parts[0], parts[1]
 	s.Subpath = strings.Join(parts[2:], "/")
-	s.RepoURL = fmt.Sprintf("%s://%s/%s/%s.git", u.Scheme, u.Host, s.owner, s.repo)
+
+	repoURL := url.URL{
+		Scheme: u.Scheme,
+		User:   u.User,
+		Host:   u.Host,
+		Path:   fmt.Sprintf("/%s/%s.git", s.owner, s.repo),
+	}
+	s.RepoURL = repoURL.String()
 	return s, nil
 }
 

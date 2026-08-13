@@ -47,6 +47,11 @@ func TestParse(t *testing.T) {
 			want: Source{Channel: ChannelGit, RepoURL: "git@github.com:foo/bar.git"},
 		},
 		{
+			name: "ssh url preserves userinfo",
+			raw:  "ssh://git@github.com/foo/bar.git",
+			want: Source{Channel: ChannelGit, RepoURL: "ssh://git@github.com/foo/bar.git"},
+		},
+		{
 			name: "file url for fixtures",
 			raw:  "file:///tmp/fixture/my-skill",
 			want: Source{Channel: ChannelGit, RepoURL: "file:///tmp/fixture/my-skill"},
@@ -110,6 +115,7 @@ func TestSlug(t *testing.T) {
 		{"vercel-labs/agent-skills/skills/web-research", "github.com/vercel-labs/agent-skills"},
 		{"https://gitlab.com/foo/bar", "gitlab.com/foo/bar"},
 		{"git@github.com:foo/bar.git", "github.com/foo/bar"},
+		{"ssh://git@github.com/foo/bar.git", "github.com/foo/bar"},
 		{"file:///tmp/fixture/my-skill", "file/tmp/fixture/my-skill"},
 	}
 	for _, tc := range tests {
