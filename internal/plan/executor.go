@@ -38,7 +38,9 @@ func (e *Executor) Apply(ctx context.Context, p Plan) error {
 		var err error
 		switch o := op.(type) {
 		case Link:
-			if err = target.Link(o.LinkPath, o.RevPath); err == nil {
+			var created bool
+			created, err = target.Link(o.LinkPath, o.RevPath)
+			if err == nil && created {
 				linked = append(linked, o.LinkPath)
 			}
 		case Unlink:

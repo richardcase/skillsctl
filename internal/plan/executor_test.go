@@ -123,3 +123,41 @@ func TestApplyExecUsesInjectedRunner(t *testing.T) {
 		t.Errorf("runner received %v, want the exec argv", got)
 	}
 }
+
+func TestApplyRollbackKeepsPreExistingLinks(t *testing.T) {
+	root := t.TempDir()
+	rev := filepath.Join(root, "rev")
+	if err := os.MkdirAll(rev, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Already exists and already points at rev: target.Link treats this as a
+	// successful no-op, so the executor must not record it as its own work.
+	existing := filepath.Join(root, "a", "skills", "foo")
+	if err := os.MkdirAll(filepath.Dir(existing), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(rev, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	// A real directory here makes the second Link op fail.
+	blocked := filepath.Join(root, "b", "skills", "foo")
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	e := newExecutor()
+	var p Plan
+	p.Add(
+		Link{Target: "claude", LinkPath: existing, RevPath: rev},
+		Link{Target: "codex", LinkPath: blocked, RevPath: rev},
+	)
+
+	if err := e.Apply(context.Background(), p); err == nil {
+		t.Fatal("Apply succeeded despite a failing Link op")
+	}
+	if _, err := os.Lstat(existing); err != nil {
+		t.Errorf("rollback removed a symlink that existed before this apply: %v", err)
+	}
+}

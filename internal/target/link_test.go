@@ -14,8 +14,12 @@ func TestLinkCreatesParentDirectories(t *testing.T) {
 	}
 	link := filepath.Join(root, "agent", "skills", "my-skill")
 
-	if err := Link(link, rev); err != nil {
+	created, err := Link(link, rev)
+	if err != nil {
 		t.Fatalf("Link: %v", err)
+	}
+	if !created {
+		t.Error("Link should report created == true on first call")
 	}
 	got, err := os.Readlink(link)
 	if err != nil {
@@ -34,11 +38,20 @@ func TestLinkIsIdempotent(t *testing.T) {
 	}
 	link := filepath.Join(root, "skills", "my-skill")
 
-	if err := Link(link, rev); err != nil {
+	created, err := Link(link, rev)
+	if err != nil {
 		t.Fatalf("first Link: %v", err)
 	}
-	if err := Link(link, rev); err != nil {
+	if !created {
+		t.Error("first Link should report created == true")
+	}
+
+	created, err = Link(link, rev)
+	if err != nil {
 		t.Fatalf("second Link should be a no-op, got: %v", err)
+	}
+	if created {
+		t.Error("second Link should report created == false on idempotent call")
 	}
 }
 
@@ -53,7 +66,8 @@ func TestLinkRefusesToClobber(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Link(link, rev); err == nil {
+	_, err := Link(link, rev)
+	if err == nil {
 		t.Fatal("Link overwrote an existing real directory; want an error")
 	}
 	if fi, err := os.Lstat(link); err != nil || !fi.IsDir() {
@@ -69,7 +83,7 @@ func TestUnlinkRemovesOnlySymlinks(t *testing.T) {
 	}
 
 	link := filepath.Join(root, "skills", "linked")
-	if err := Link(link, rev); err != nil {
+	if _, err := Link(link, rev); err != nil {
 		t.Fatal(err)
 	}
 	if err := Unlink(link); err != nil {
