@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,12 +102,21 @@ func (c *CLI) Extract(ctx context.Context, mirrorPath, sha, dest string) error {
 	}
 
 	untarErr := untar(stdout, dest)
-	// Drain so git never blocks on a full pipe, then reap.
-	if waitErr := cmd.Wait(); waitErr != nil {
-		return fmt.Errorf("git archive %s: %w: %s", sha, waitErr, strings.TrimSpace(stderr.String()))
+	if untarErr != nil {
+		// Stop git before draining: calling Wait with an undrained pipe
+		// deadlocks, because git blocks writing into a full pipe buffer
+		// while we block waiting for it to exit.
+		_ = cmd.Process.Kill()
 	}
+	// On the success path untar has already read to EOF, so this is a no-op.
+	_, _ = io.Copy(io.Discard, stdout)
+
+	waitErr := cmd.Wait()
 	if untarErr != nil {
 		return fmt.Errorf("extract %s: %w", sha, untarErr)
+	}
+	if waitErr != nil {
+		return fmt.Errorf("git archive %s: %w: %s", sha, waitErr, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
