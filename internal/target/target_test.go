@@ -11,8 +11,12 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(got.Targets) != len(Default().Targets) {
-		t.Fatalf("got %d targets, want the %d defaults", len(got.Targets), len(Default().Targets))
+	defaults, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	if len(got.Targets) != len(defaults.Targets) {
+		t.Fatalf("got %d targets, want the %d defaults", len(got.Targets), len(defaults.Targets))
 	}
 	if got.Targets[0].Name != "claude" {
 		t.Errorf("first default target = %q, want claude", got.Targets[0].Name)
@@ -78,5 +82,39 @@ func TestSelect(t *testing.T) {
 
 	if _, err := cfg.Select([]string{"emacs"}); err == nil {
 		t.Error("Select accepted an unknown agent name; want an error")
+	}
+}
+
+func TestLoadExpandsBareTilde(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	body := "[[target]]\nname = \"claude\"\ndir = \"~\"\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory in this environment")
+	}
+	if got.Targets[0].Dir != home {
+		t.Errorf("Dir = %q, want %q", got.Targets[0].Dir, home)
+	}
+}
+
+func TestLoadRejectsTildeUser(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	body := "[[target]]\nname = \"claude\"\ndir = \"~someone/skills\"\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(p); err == nil {
+		t.Fatal("Load accepted ~user syntax; want an error rather than a silently wrong path")
 	}
 }

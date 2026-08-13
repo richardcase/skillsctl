@@ -25,16 +25,16 @@ type Config struct {
 }
 
 // Default is the built-in agent table, used when no config file exists.
-func Default() Config {
+func Default() (Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		home = ""
+		return Config{}, fmt.Errorf("locate home directory: %w", err)
 	}
 	return Config{Targets: []Target{
 		{Name: "claude", Dir: filepath.Join(home, ".claude", "skills"), ProjectDir: ".claude/skills", Plugins: true},
 		{Name: "codex", Dir: filepath.Join(home, ".codex", "skills"), ProjectDir: ".codex/skills"},
 		{Name: "gemini", Dir: filepath.Join(home, ".gemini", "skills"), ProjectDir: ".gemini/skills"},
-	}}
+	}}, nil
 }
 
 // ConfigPath is where the agent table lives, honouring SKILLSCTL_CONFIG and
@@ -57,7 +57,7 @@ func ConfigPath() (string, error) {
 func Load(path string) (Config, error) {
 	blob, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return Default(), nil
+		return Default()
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("read %s: %w", path, err)
@@ -71,20 +71,31 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("%s defines no [[target]] entries", path)
 	}
 	for i := range cfg.Targets {
-		cfg.Targets[i].Dir = expand(cfg.Targets[i].Dir)
+		dir, err := expand(cfg.Targets[i].Dir)
+		if err != nil {
+			return Config{}, fmt.Errorf("%s: %w", path, err)
+		}
+		cfg.Targets[i].Dir = dir
 	}
 	return cfg, nil
 }
 
-func expand(p string) string {
-	if !strings.HasPrefix(p, "~/") {
-		return p
+func expand(p string) (string, error) {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		if strings.HasPrefix(p, "~") {
+			return "", fmt.Errorf("unsupported path %q: ~user syntax is not supported, use an absolute path", p)
+		}
+		return p, nil
 	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return p
+		return "", fmt.Errorf("expand %q: locate home directory: %w", p, err)
 	}
-	return filepath.Join(home, p[2:])
+	if p == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, p[2:]), nil
 }
 
 // Present returns the targets whose agent directory exists. The skills
