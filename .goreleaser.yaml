@@ -52,6 +52,12 @@ homebrew_casks:
     license: AGPL-3.0
     binaries:
       - skillsctl
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/skillsctl"]
+          end
 
 checksum:
   name_template: checksums.txt
