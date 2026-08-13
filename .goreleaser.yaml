@@ -1,0 +1,76 @@
+version: 2
+
+project_name: skillsctl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: skillsctl
+    main: ./cmd/skillsctl
+    binary: skillsctl
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/richardcase/skillsctl/internal/buildinfo.version={{ .Version }}
+      - -X github.com/richardcase/skillsctl/internal/buildinfo.commit={{ .Commit }}
+      - -X github.com/richardcase/skillsctl/internal/buildinfo.date={{ .Date }}
+
+universal_binaries:
+  - id: skillsctl
+    replace: true
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+nfpms:
+  - id: packages
+    package_name: skillsctl
+    formats: [deb, rpm]
+    maintainer: Richard Case <richmcase@gmail.com>
+    description: Install, update and remove agent skills.
+    homepage: https://github.com/richardcase/skillsctl
+    license: AGPL-3.0
+    bindir: /usr/bin
+
+homebrew_casks:
+  - repository:
+      owner: richardcase
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/richardcase/skillsctl
+    description: Install, update and remove agent skills.
+    license: AGPL-3.0
+    binaries:
+      - skillsctl
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Fixes
+      regexp: '^fix'
+      order: 1
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
