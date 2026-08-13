@@ -4,6 +4,7 @@ goreleaser = "2"
 golangci-lint = "2"
 
 [env]
-# Keep module and build caches inside the repo-independent default locations,
-# so CI can cache them by path.
+# Pin the toolchain to the mise-installed Go: without this, a newer `go`
+# directive in go.mod silently downloads a different toolchain and the pin
+# above stops meaning anything.
 GOTOOLCHAIN = "local"

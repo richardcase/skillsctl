@@ -1,3 +1,4 @@
+// Command skillsctl installs, updates and removes agent skills.
 package main
 
 import (
