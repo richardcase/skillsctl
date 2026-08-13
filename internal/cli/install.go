@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/richardcase/skillsctl/internal/discover"
@@ -11,6 +12,7 @@ import (
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
+	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
 
@@ -76,6 +78,9 @@ func runInstall(cmd *cobra.Command, raw string, agents []string, ref, as string,
 		return err
 	}
 	revPath := filepath.Join(revRoot, filepath.FromSlash(src.Subpath))
+	if rel, rerr := filepath.Rel(revRoot, revPath); rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to install: subpath %q resolves outside the revision directory", src.Subpath)
+	}
 
 	skill, err := discover.Root(revPath)
 	if err != nil {
@@ -83,14 +88,15 @@ func runInstall(cmd *cobra.Command, raw string, agents []string, ref, as string,
 	}
 
 	name := as
+	origin := "--as"
 	if name == "" {
-		name = skill.Name
+		name, origin = skill.Name, "the SKILL.md in "+src.RepoURL
 	}
 	if name == "" {
-		name = src.DefaultName()
+		name, origin = src.DefaultName(), "the source "+raw
 	}
-	if name == "" {
-		return fmt.Errorf("could not determine a name for this skill: pass --as")
+	if err := target.ValidateSkillName(name); err != nil {
+		return fmt.Errorf("refusing to install: %w (from %s); pass --as <name> to choose one", err, origin)
 	}
 
 	hash, err := store.HashDir(revPath)
@@ -129,6 +135,9 @@ func runInstall(cmd *cobra.Command, raw string, agents []string, ref, as string,
 	var p plan.Plan
 	for _, t := range targets {
 		linkPath := filepath.Join(t.Dir, name)
+		if filepath.Dir(linkPath) != filepath.Clean(t.Dir) {
+			return fmt.Errorf("refusing to install %q: it would resolve outside %s", name, t.Dir)
+		}
 		p.Add(plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: revPath})
 		receipt.Links = append(receipt.Links, state.Link{Target: t.Name, Path: linkPath})
 	}

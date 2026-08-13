@@ -58,6 +58,15 @@ func Parse(raw string) (Source, error) {
 	if s.Slug() == "" {
 		return Source{Raw: raw}, fmt.Errorf("source %q has no usable repository identity", raw)
 	}
+	// A subpath is joined onto a revision directory at install time, so a
+	// . or .. segment would let it escape that directory. There is no
+	// legitimate use for one, so this rejects rather than silently stripping
+	// it, which would install a different subpath than the one requested.
+	for _, seg := range strings.Split(s.Subpath, "/") {
+		if seg == "." || seg == ".." {
+			return Source{Raw: raw}, fmt.Errorf("source %q has a path segment %q: a subpath may not contain . or .. segments", raw, seg)
+		}
+	}
 	return s, nil
 }
 
@@ -121,15 +130,29 @@ func parseURL(raw string) (Source, error) {
 		return s, nil
 	}
 
-	trimmed := strings.Trim(strings.TrimSuffix(u.Path, ".git"), "/")
+	// A .git suffix states the repository boundary explicitly, so the whole
+	// path is the repo and there is no subpath — this is what makes a GitLab
+	// subgroup (group/subgroup/repo.git) installable at all. Without the
+	// suffix the split stays ambiguous: parts[0]/parts[1] are owner/repo and
+	// anything after is a subpath, which is today's GitHub-shorthand-style
+	// behaviour and is left as is.
+	trimmedPath := strings.Trim(u.Path, "/")
+	explicit := strings.HasSuffix(trimmedPath, ".git")
+	trimmed := strings.TrimSuffix(trimmedPath, ".git")
+
 	parts := strings.Split(trimmed, "/")
 	if len(parts) < 2 {
 		return s, fmt.Errorf("git URL %q has no owner/repo path", raw)
 	}
 
 	s.host = u.Host
-	s.owner, s.repo = parts[0], parts[1]
-	s.Subpath = strings.Join(parts[2:], "/")
+	if explicit {
+		s.owner = strings.Join(parts[:len(parts)-1], "/")
+		s.repo = parts[len(parts)-1]
+	} else {
+		s.owner, s.repo = parts[0], parts[1]
+		s.Subpath = strings.Join(parts[2:], "/")
+	}
 
 	repoURL := url.URL{
 		Scheme: u.Scheme,
@@ -146,7 +169,7 @@ func splitOwnerRepo(p string) (owner, repo string) {
 	if len(parts) == 1 {
 		return "", parts[0]
 	}
-	return parts[0], parts[len(parts)-1]
+	return strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1]
 }
 
 // Slug is a stable, filesystem-safe identifier for the repository, used to lay

@@ -167,6 +167,49 @@ func TestParseRejectsSourcesWithNoIdentity(t *testing.T) {
 	}
 }
 
+func TestParseRejectsTraversingSubpath(t *testing.T) {
+	raws := []string{
+		"owner/repo/../../../../../../etc",
+		"owner/repo/a/../../..",
+		"https://github.com/owner/repo/../escape",
+	}
+	for _, raw := range raws {
+		if got, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) = %+v with subpath %q, want an error", raw, got, got.Subpath)
+		}
+	}
+}
+
+func TestParseGitLabSubgroup(t *testing.T) {
+	s, err := Parse("https://gitlab.com/group/subgroup/repo.git")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if s.RepoURL != "https://gitlab.com/group/subgroup/repo.git" {
+		t.Errorf("RepoURL = %q, want the full subgroup path", s.RepoURL)
+	}
+	if s.Subpath != "" {
+		t.Errorf("Subpath = %q, want empty: a .git suffix states the repo boundary", s.Subpath)
+	}
+	if got, want := s.Slug(), "gitlab.com/group/subgroup/repo"; got != want {
+		t.Errorf("Slug() = %q, want %q", got, want)
+	}
+}
+
+func TestParseScpFormKeepsNamespace(t *testing.T) {
+	deep, err := Parse("git@gitlab.com:group/subgroup/repo.git")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	shallow, err := Parse("git@gitlab.com:group/repo.git")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if deep.Slug() == shallow.Slug() {
+		t.Errorf("distinct repositories share the slug %q", deep.Slug())
+	}
+}
+
 func TestDefaultName(t *testing.T) {
 	tests := []struct{ raw, want string }{
 		{"conorbronsdon/avoid-ai-writing", "avoid-ai-writing"},

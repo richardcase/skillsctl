@@ -110,3 +110,28 @@ func TestUnlinkMissingPathSucceeds(t *testing.T) {
 		t.Errorf("Unlink of a missing path should be a no-op, got: %v", err)
 	}
 }
+
+func TestValidateSkillName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"good-name", false},
+		{"name.with.dots", false},
+		{"", true},
+		{".", true},
+		{"..", true},
+		{"../x", true},
+		{"a/b", true},
+		{`a\b`, true},
+	}
+	for _, tc := range tests {
+		err := ValidateSkillName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("ValidateSkillName(%q) = nil, want an error", tc.name)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("ValidateSkillName(%q) = %v, want nil", tc.name, err)
+		}
+	}
+}

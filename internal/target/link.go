@@ -4,7 +4,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// ValidateSkillName rejects a name that is not a single path element. A skill's
+// name can come from a repository's SKILL.md, which is third-party data, and it
+// is joined onto an agent's skills directory to build a symlink path — so a name
+// containing a separator or a dot segment would let a published repository decide
+// where skillsctl creates directories and symlinks.
+func ValidateSkillName(name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("skill name is empty")
+	case name == "." || name == "..":
+		return fmt.Errorf("skill name %q is a directory reference, not a name", name)
+	case strings.ContainsAny(name, `/\`):
+		return fmt.Errorf("skill name %q contains a path separator", name)
+	case strings.ContainsRune(name, 0):
+		return fmt.Errorf("skill name %q contains a NUL byte", name)
+	}
+	return nil
+}
 
 // Link points linkPath at revPath, creating parent directories as needed.
 // It reports whether it created the symlink: an existing symlink that already

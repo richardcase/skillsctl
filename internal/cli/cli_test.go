@@ -264,6 +264,32 @@ func TestListJSON(t *testing.T) {
 	}
 }
 
+func TestInstallRejectsEscapingNameFromFrontmatter(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"SKILL.md": "---\nname: ../../../escaped\n---\n",
+	})
+
+	out, err := h.run(t, "install", url)
+	if err == nil {
+		t.Fatalf("install accepted a traversing name from SKILL.md\n%s", out)
+	}
+
+	escaped := filepath.Join(filepath.Dir(h.agents), "escaped")
+	if _, serr := os.Lstat(escaped); !os.IsNotExist(serr) {
+		t.Errorf("a link was created outside the agent directories at %s", escaped)
+	}
+}
+
+func TestInstallRejectsEscapingAsFlag(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if _, err := h.run(t, "install", url, "--as", "../escaped"); err == nil {
+		t.Fatal("install accepted a traversing --as value")
+	}
+}
+
 func TestListEmpty(t *testing.T) {
 	h := newHarness(t)
 	out, err := h.run(t, "list")
