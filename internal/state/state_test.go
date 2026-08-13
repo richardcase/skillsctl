@@ -111,6 +111,26 @@ func TestOpenRejectsNewerSchema(t *testing.T) {
 	}
 }
 
+func TestOpenAcceptsVersionlessFile(t *testing.T) {
+	p := statePath(t)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(`{"receipts":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open rejected a file with no version field: %v", err)
+	}
+	defer func() { _ = h.Close() }()
+
+	if h.DB.Version != SchemaVersion {
+		t.Errorf("Version = %d, want %d", h.DB.Version, SchemaVersion)
+	}
+}
+
 func TestListIsSortedByName(t *testing.T) {
 	db := &DB{Version: SchemaVersion, Receipts: map[string]*Receipt{
 		"zulu":  {Name: "zulu"},

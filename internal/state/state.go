@@ -93,14 +93,20 @@ func Open(path string) (*Handle, error) {
 		_ = lock.Unlock()
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if db.Version > SchemaVersion {
+	switch {
+	case db.Version == 0:
+		// No version field: a hand-written file, or one from a pre-versioned build.
+		db.Version = SchemaVersion
+	case db.Version > SchemaVersion:
 		_ = lock.Unlock()
 		return nil, fmt.Errorf("%s was written by a newer skillsctl (schema %d, this build understands %d): upgrade skillsctl", path, db.Version, SchemaVersion)
+	case db.Version < SchemaVersion:
+		_ = lock.Unlock()
+		return nil, fmt.Errorf("%s uses schema %d and this build understands %d, but no migration exists", path, db.Version, SchemaVersion)
 	}
 	if db.Receipts == nil {
 		db.Receipts = map[string]*Receipt{}
 	}
-	db.Version = SchemaVersion
 
 	h.DB = &db
 	return h, nil
