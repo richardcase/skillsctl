@@ -1,0 +1,91 @@
+// Package plan models a command's user-visible mutations as inspectable data,
+// so that --dry-run is exact and tests can assert over op sequences.
+package plan
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/richardcase/skillsctl/internal/state"
+)
+
+// Op is a single user-visible mutation.
+type Op interface {
+	Describe() string
+}
+
+// Link creates a symlink in an agent's skills directory.
+type Link struct {
+	Target   string
+	LinkPath string
+	RevPath  string
+}
+
+// Describe renders a user-visible description of the Link op.
+func (o Link) Describe() string {
+	return fmt.Sprintf("link    %s -> %s [%s]", o.LinkPath, o.RevPath, o.Target)
+}
+
+// Unlink removes a symlink skillsctl created.
+type Unlink struct {
+	Target   string
+	LinkPath string
+}
+
+// Describe renders a user-visible description of the Unlink op.
+func (o Unlink) Describe() string {
+	return fmt.Sprintf("unlink  %s [%s]", o.LinkPath, o.Target)
+}
+
+// Record writes a receipt.
+type Record struct {
+	Receipt state.Receipt
+}
+
+// Describe renders a user-visible description of the Record op.
+func (o Record) Describe() string {
+	return fmt.Sprintf("record  %s @ %s", o.Receipt.Name, short(o.Receipt.Resolved))
+}
+
+// Forget deletes a receipt.
+type Forget struct {
+	Name string
+}
+
+// Describe renders a user-visible description of the Forget op.
+func (o Forget) Describe() string { return fmt.Sprintf("forget  %s", o.Name) }
+
+// Exec shells out, used by the plugin channel.
+type Exec struct {
+	Argv []string
+}
+
+// Describe renders a user-visible description of the Exec op.
+func (o Exec) Describe() string { return "exec    " + strings.Join(o.Argv, " ") }
+
+func short(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
+}
+
+// Plan is an ordered list of mutations.
+type Plan struct {
+	Ops []Op
+}
+
+// Add appends ops to the plan.
+func (p *Plan) Add(ops ...Op) { p.Ops = append(p.Ops, ops...) }
+
+// IsEmpty reports whether the plan would change nothing.
+func (p Plan) IsEmpty() bool { return len(p.Ops) == 0 }
+
+// Describe renders one line per op, for --dry-run.
+func (p Plan) Describe() []string {
+	out := make([]string, 0, len(p.Ops))
+	for _, op := range p.Ops {
+		out = append(out, op.Describe())
+	}
+	return out
+}
