@@ -13,7 +13,9 @@
 ## Global Constraints
 
 - Go module path: `github.com/richardcase/skillsctl`. Binary name: `skillsctl`.
-- `go.mod` floor: `go 1.25`. CI resolves its Go version from `go-version-file: go.mod`.
+- **All tooling comes from mise**, pinned in a checked-in `mise.toml` — locally and in CI, one source of truth. Never `brew install` a build tool (mise itself is the only exception, since it has to bootstrap from somewhere), and never use `actions/setup-go`.
+- Each Bash invocation is a fresh shell, so mise activation does not persist between commands. Every direct tool call in this plan is therefore written as `mise exec -- <tool> …`, and the `Makefile` puts mise's shims directory on `PATH` itself so `make test` / `make lint` / `make snapshot` work unprefixed. If you activate mise in your own shell, the `mise exec --` prefixes become redundant but stay harmless.
+- `go.mod` floor: `go 1.25`, matching the Go version pinned in `mise.toml`. Keep the two in step.
 - `CGO_ENABLED=0` everywhere. Target platforms: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`. Windows is out of scope — never add it.
 - Dependencies are limited to: `spf13/cobra`, `pelletier/go-toml/v2`, `gopkg.in/yaml.v3`, `gofrs/flock`. Adding any other module requires stopping and asking.
 - All git operations shell out to the `git` binary through the `gitx.Git` interface. Never add a Go git library.
@@ -34,7 +36,7 @@ These three refinements are applied to the spec in Task 1, Step 1, so the spec a
 ### Task 1: Toolchain, module scaffold, and version reporting
 
 **Files:**
-- Create: `go.mod`, `.gitignore`, `cmd/skillsctl/main.go`, `internal/buildinfo/buildinfo.go`
+- Create: `mise.toml`, `go.mod`, `.gitignore`, `cmd/skillsctl/main.go`, `internal/buildinfo/buildinfo.go`
 - Test: `internal/buildinfo/buildinfo_test.go`
 - Modify: `docs/superpowers/specs/2026-08-13-skillsctl-design.md`
 
@@ -80,22 +82,58 @@ internal/cli/             cobra commands + output rendering
 
 and delete the standalone `internal/cli/` line further down.
 
-- [ ] **Step 2: Install the toolchain**
+- [ ] **Step 2: Bootstrap mise**
 
-Go is not installed on this machine. Run:
+Neither mise nor Go is installed on this machine. mise is the one tool that has to come from elsewhere:
 
 ```bash
-brew install go goreleaser golangci-lint
-go version && goreleaser --version && golangci-lint --version
+brew install mise
+mise --version
 ```
 
-Expected: all three print versions. `go version` must report 1.25 or newer.
+Expected: a version string. If mise is already installed by other means, skip this and carry on.
 
-- [ ] **Step 3: Initialise the module**
+- [ ] **Step 3: Pin the toolchain in mise.toml**
+
+Create `mise.toml` at the repository root:
+
+```toml
+[tools]
+go = "1.25"
+goreleaser = "2"
+golangci-lint = "2"
+
+[env]
+# Keep module and build caches inside the repo-independent default locations,
+# so CI can cache them by path.
+GOTOOLCHAIN = "local"
+```
+
+`GOTOOLCHAIN=local` stops the Go toolchain silently downloading a different version than the one mise pinned — without it, a `go` directive newer than the installed toolchain triggers an invisible upgrade and mise's pin stops meaning anything.
+
+Then install and verify:
+
+```bash
+mise trust
+mise install
+mise exec -- go version
+mise exec -- goreleaser --version
+mise exec -- golangci-lint --version
+```
+
+Expected: `go version` reports 1.25.x, goreleaser reports 2.x, golangci-lint reports 2.x.
+
+If you want bare `go` to work in your interactive shell, add mise activation to your profile once — this is optional and the plan does not depend on it:
+
+```bash
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+```
+
+- [ ] **Step 4: Initialise the module**
 
 ```bash
 cd /Users/richard/orca/workspaces/skillsctl/firstversion
-go mod init github.com/richardcase/skillsctl
+mise exec -- go mod init github.com/richardcase/skillsctl
 ```
 
 Create `.gitignore`:
@@ -105,9 +143,13 @@ Create `.gitignore`:
 /skillsctl
 *.test
 .DS_Store
+
+# mise.toml is committed; per-machine overrides are not.
+mise.local.toml
+.mise.local.toml
 ```
 
-- [ ] **Step 4: Write the failing test**
+- [ ] **Step 5: Write the failing test**
 
 Create `internal/buildinfo/buildinfo_test.go`:
 
@@ -176,12 +218,12 @@ func TestStringIsSingleLine(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it fails**
+- [ ] **Step 6: Run the test to verify it fails**
 
-Run: `go test ./internal/buildinfo/ -v`
+Run: `mise exec -- go test ./internal/buildinfo/ -v`
 Expected: FAIL — `undefined: get`, `undefined: Info`.
 
-- [ ] **Step 6: Write the implementation**
+- [ ] **Step 7: Write the implementation**
 
 Create `internal/buildinfo/buildinfo.go`:
 
@@ -252,15 +294,15 @@ func get(version, commit, date string, read func() (*debug.BuildInfo, bool)) Inf
 }
 ```
 
-- [ ] **Step 7: Run the test to verify it passes**
+- [ ] **Step 8: Run the test to verify it passes**
 
-Run: `go test ./internal/buildinfo/ -v`
+Run: `mise exec -- go test ./internal/buildinfo/ -v`
 Expected: PASS — all five tests.
 
-- [ ] **Step 8: Add the cobra root and version commands**
+- [ ] **Step 9: Add the cobra root and version commands**
 
 ```bash
-go get github.com/spf13/cobra@latest
+mise exec -- go get github.com/spf13/cobra@latest
 ```
 
 Create `internal/cli/root.go`:
@@ -333,19 +375,19 @@ import (
 func main() { os.Exit(cli.Execute()) }
 ```
 
-- [ ] **Step 9: Verify the binary works**
+- [ ] **Step 10: Verify the binary works**
 
 ```bash
-go mod tidy
-go build ./... && go run ./cmd/skillsctl version
+mise exec -- go mod tidy
+mise exec -- go build ./... && mise exec -- go run ./cmd/skillsctl version
 ```
 
 Expected: prints `skillsctl devel (<sha>, <time>)` — a real sha, because the working tree is a git repo.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add go.mod go.sum .gitignore cmd internal docs
+git add mise.toml go.mod go.sum .gitignore cmd internal docs
 git commit -m "feat: scaffold module with version reporting"
 ```
 
@@ -392,13 +434,23 @@ issues:
 Create `Makefile`:
 
 ```makefile
-.PHONY: test lint build snapshot tidy-check
+# mise's shims put the pinned go, goreleaser and golangci-lint on PATH without
+# needing mise activation in the calling shell.
+export PATH := $(HOME)/.local/share/mise/shims:$(PATH)
+
+.PHONY: tools test lint fmt build snapshot tidy-check
+
+tools:
+	mise install
 
 test:
 	go test -race -cover ./...
 
 lint:
 	golangci-lint run
+
+fmt:
+	golangci-lint fmt
 
 build:
 	go build -o skillsctl ./cmd/skillsctl
@@ -410,6 +462,8 @@ tidy-check:
 	go mod tidy
 	git diff --exit-code -- go.mod go.sum
 ```
+
+If `make test` reports `go: command not found`, mise's shims are somewhere else on this machine — run `mise where go` and correct the `PATH` line.
 
 - [ ] **Step 3: Run lint locally and fix what it reports**
 
@@ -444,10 +498,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: jdx/mise-action@v2
+      - uses: actions/cache@v4
         with:
-          go-version-file: go.mod
-          cache: true
+          path: |
+            ~/.cache/go-build
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
       - name: Configure git for fixture repositories
         run: |
           git config --global user.email ci@example.com
@@ -459,11 +518,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: jdx/mise-action@v2
+      - uses: actions/cache@v4
         with:
-          go-version-file: go.mod
-          cache: true
-      - uses: golangci/golangci-lint-action@v7
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+      - run: golangci-lint run
       - name: go mod tidy is clean
         run: |
           go mod tidy
@@ -475,15 +538,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: build --snapshot --clean
+      - uses: jdx/mise-action@v2
+      - run: goreleaser build --snapshot --clean
 ```
+
+`jdx/mise-action` installs exactly what `mise.toml` pins, so CI and this machine run identical versions of Go, golangci-lint and GoReleaser — that is the whole reason for using mise here rather than `actions/setup-go` plus two tool-specific actions. It puts the tools on `PATH`, so the `run:` steps call them unprefixed. mise-action caches the tools themselves; the separate `actions/cache` step covers the Go module and build caches, which mise knows nothing about.
 
 The `git config --global` step matters: the integration tests in later tasks create fixture repositories with `git commit`, which fails on a runner with no configured identity.
 
@@ -515,7 +574,7 @@ Expected: all three succeed.
 
 ```bash
 git add .golangci.yml Makefile .github/workflows/ci.yml .github/dependabot.yml
-git commit -m "ci: add lint config and test/lint/build workflow"
+git commit -m "ci: add lint config and mise-based test/lint/build workflow"
 ```
 
 ---
@@ -618,7 +677,7 @@ The `license:` value is `AGPL-3.0` because that is what the repository's `LICENS
 
 - [ ] **Step 2: Validate the config**
 
-Run: `goreleaser check`
+Run: `mise exec -- goreleaser check`
 Expected: `1 configuration file(s) validated`.
 
 - [ ] **Step 3: Build a snapshot**
@@ -668,20 +727,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
+      - uses: jdx/mise-action@v2
+      - run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 ```
 
-`fetch-depth: 0` is required — GoReleaser builds the changelog from history and fails on a shallow clone.
+`fetch-depth: 0` is required — GoReleaser builds the changelog from history and fails on a shallow clone. The GoReleaser version comes from `mise.toml`, so a release is built by the same binary that validated the config on the pull request.
 
 - [ ] **Step 6: Commit**
 
@@ -869,7 +922,7 @@ func TestDefaultName(t *testing.T) {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./internal/source/ -v`
+Run: `mise exec -- go test ./internal/source/ -v`
 Expected: FAIL — `undefined: Parse`.
 
 - [ ] **Step 3: Write the implementation**
@@ -1049,7 +1102,7 @@ func (s Source) DefaultName() string {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/source/ -v`
+Run: `mise exec -- go test ./internal/source/ -v`
 Expected: PASS — every subtest.
 
 - [ ] **Step 5: Commit**
@@ -1212,13 +1265,13 @@ func TestListIsSortedByName(t *testing.T) {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./internal/state/ -v`
+Run: `mise exec -- go test ./internal/state/ -v`
 Expected: FAIL — `undefined: Open`, `undefined: DB`.
 
 - [ ] **Step 3: Write the implementation**
 
 ```bash
-go get github.com/gofrs/flock@latest
+mise exec -- go get github.com/gofrs/flock@latest
 ```
 
 Create `internal/state/state.go`:
@@ -1376,7 +1429,7 @@ func (h *Handle) Close() error {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/state/ -v`
+Run: `mise exec -- go test ./internal/state/ -v`
 Expected: PASS — all five tests.
 
 - [ ] **Step 5: Commit**
@@ -1493,13 +1546,13 @@ func TestSelect(t *testing.T) {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./internal/target/ -v`
+Run: `mise exec -- go test ./internal/target/ -v`
 Expected: FAIL — `undefined: Load`.
 
 - [ ] **Step 3: Write the config implementation**
 
 ```bash
-go get github.com/pelletier/go-toml/v2@latest
+mise exec -- go get github.com/pelletier/go-toml/v2@latest
 ```
 
 Create `internal/target/target.go`:
@@ -1629,7 +1682,7 @@ func (c Config) Select(names []string) ([]Target, error) {
 
 - [ ] **Step 4: Run the config tests to verify they pass**
 
-Run: `go test ./internal/target/ -run 'TestLoad|TestPresent|TestSelect' -v`
+Run: `mise exec -- go test ./internal/target/ -run 'TestLoad|TestPresent|TestSelect' -v`
 Expected: PASS.
 
 - [ ] **Step 5: Write the failing link test**
@@ -1729,7 +1782,7 @@ func TestUnlinkMissingPathSucceeds(t *testing.T) {
 
 - [ ] **Step 6: Run the link test to verify it fails**
 
-Run: `go test ./internal/target/ -run TestLink -v`
+Run: `mise exec -- go test ./internal/target/ -run TestLink -v`
 Expected: FAIL — `undefined: Link`.
 
 - [ ] **Step 7: Write the link implementation**
@@ -1795,7 +1848,7 @@ func Unlink(linkPath string) error {
 
 - [ ] **Step 8: Run all target tests**
 
-Run: `go test ./internal/target/ -v`
+Run: `mise exec -- go test ./internal/target/ -v`
 Expected: PASS — all nine tests.
 
 - [ ] **Step 9: Commit**
@@ -1878,7 +1931,7 @@ func TestIsEmpty(t *testing.T) {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./internal/plan/ -v`
+Run: `mise exec -- go test ./internal/plan/ -v`
 Expected: FAIL — `undefined: Plan`.
 
 - [ ] **Step 3: Write the plan implementation**
@@ -1976,7 +2029,7 @@ func (p Plan) Describe() []string {
 
 - [ ] **Step 4: Run the plan tests to verify they pass**
 
-Run: `go test ./internal/plan/ -v`
+Run: `mise exec -- go test ./internal/plan/ -v`
 Expected: PASS — both tests.
 
 - [ ] **Step 5: Write the failing executor test**
@@ -2107,7 +2160,7 @@ func TestApplyExecUsesInjectedRunner(t *testing.T) {
 
 - [ ] **Step 6: Run the executor test to verify it fails**
 
-Run: `go test ./internal/plan/ -run TestApply -v`
+Run: `mise exec -- go test ./internal/plan/ -run TestApply -v`
 Expected: FAIL — `undefined: Executor`.
 
 - [ ] **Step 7: Write the executor implementation**
@@ -2197,7 +2250,7 @@ Note the rollback undoes only the links this apply created — it deliberately d
 
 - [ ] **Step 8: Run all plan tests**
 
-Run: `go test ./internal/plan/ -v`
+Run: `mise exec -- go test ./internal/plan/ -v`
 Expected: PASS — all six tests.
 
 - [ ] **Step 9: Commit**
@@ -2422,7 +2475,7 @@ func TestMirrorPicksUpNewCommits(t *testing.T) {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `go test ./internal/gitx/ -v`
+Run: `mise exec -- go test ./internal/gitx/ -v`
 Expected: FAIL — `undefined: New`.
 
 - [ ] **Step 4: Write the git implementation**
@@ -2647,7 +2700,7 @@ func safeJoin(dest, name string) (string, error) {
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `go test ./internal/gitx/ -v`
+Run: `mise exec -- go test ./internal/gitx/ -v`
 Expected: PASS — all six tests.
 
 - [ ] **Step 7: Commit**
@@ -2752,7 +2805,7 @@ func TestHashDirDetectsNewFile(t *testing.T) {
 
 - [ ] **Step 2: Run the hash test to verify it fails**
 
-Run: `go test ./internal/store/ -v`
+Run: `mise exec -- go test ./internal/store/ -v`
 Expected: FAIL — `undefined: HashDir`.
 
 - [ ] **Step 3: Write the hash implementation**
@@ -2841,7 +2894,7 @@ func HashDir(root string) (string, error) {
 
 - [ ] **Step 4: Run the hash tests to verify they pass**
 
-Run: `go test ./internal/store/ -v`
+Run: `mise exec -- go test ./internal/store/ -v`
 Expected: PASS — all three hash tests.
 
 - [ ] **Step 5: Write the failing store test**
@@ -2963,7 +3016,7 @@ func TestEnsureLeavesNoTempDirOnFailure(t *testing.T) {
 
 - [ ] **Step 6: Run the store test to verify it fails**
 
-Run: `go test ./internal/store/ -run 'TestHome|TestPaths|TestEnsure' -v`
+Run: `mise exec -- go test ./internal/store/ -run 'TestHome|TestPaths|TestEnsure' -v`
 Expected: FAIL — `undefined: New`, `undefined: Home`.
 
 - [ ] **Step 7: Write the store implementation**
@@ -3066,7 +3119,7 @@ func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha s
 
 - [ ] **Step 8: Run all store tests**
 
-Run: `go test ./internal/store/ -v`
+Run: `mise exec -- go test ./internal/store/ -v`
 Expected: PASS — all eight tests.
 
 - [ ] **Step 9: Commit**
@@ -3184,13 +3237,13 @@ func TestRootMissingSkillFile(t *testing.T) {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./internal/discover/ -v`
+Run: `mise exec -- go test ./internal/discover/ -v`
 Expected: FAIL — `undefined: Frontmatter`.
 
 - [ ] **Step 3: Write the implementation**
 
 ```bash
-go get gopkg.in/yaml.v3@latest
+mise exec -- go get gopkg.in/yaml.v3@latest
 ```
 
 Create `internal/discover/discover.go`:
@@ -3272,7 +3325,7 @@ func Root(dir string) (Skill, error) {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/discover/ -v`
+Run: `mise exec -- go test ./internal/discover/ -v`
 Expected: PASS — all seven tests.
 
 - [ ] **Step 5: Commit**
@@ -3576,7 +3629,7 @@ func TestListEmpty(t *testing.T) {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `go test ./internal/cli/ -v`
+Run: `mise exec -- go test ./internal/cli/ -v`
 Expected: FAIL — `unknown command "install"`.
 
 - [ ] **Step 3: Write the shared command context**
@@ -4007,7 +4060,7 @@ In `internal/cli/root.go`, replace the `root.AddCommand(newVersionCmd())` line w
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `go test ./internal/cli/ -v`
+Run: `mise exec -- go test ./internal/cli/ -v`
 Expected: PASS — all eleven tests.
 
 - [ ] **Step 8: Run the whole suite and lint**
@@ -4041,7 +4094,7 @@ dir = "$SMOKE/agents/.codex/skills"
 EOF
 export SKILLSCTL_HOME="$SMOKE/store" SKILLSCTL_CONFIG="$SMOKE/config.toml"
 
-go build -o "$SMOKE/skillsctl" ./cmd/skillsctl
+mise exec -- go build -o "$SMOKE/skillsctl" ./cmd/skillsctl
 "$SMOKE/skillsctl" install conorbronsdon/avoid-ai-writing --dry-run
 "$SMOKE/skillsctl" install conorbronsdon/avoid-ai-writing
 "$SMOKE/skillsctl" list
@@ -4109,6 +4162,19 @@ plugins = true
 name = "codex"
 dir = "~/.codex/skills"
 ```
+
+## Development
+
+Tooling is pinned in `mise.toml` and installed with [mise](https://mise.jdx.dev):
+
+```bash
+mise install     # go, golangci-lint, goreleaser at the pinned versions
+make test
+make lint
+make snapshot    # build release artifacts locally, into dist/
+```
+
+CI installs the same `mise.toml`, so local and CI tool versions never drift.
 
 ## Design
 

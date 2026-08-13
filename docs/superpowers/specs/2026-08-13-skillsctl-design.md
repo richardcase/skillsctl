@@ -208,29 +208,37 @@ behind the `internal/gitx.Git` interface so tests run against fixture repos over
 
 ## CI
 
+All tooling — Go, `golangci-lint`, GoReleaser — is pinned in a checked-in
+`mise.toml` and installed by mise both locally and in CI (`jdx/mise-action`), so
+there is one source of truth for versions and no drift between a developer's
+machine and the runners. `actions/setup-go` and tool-specific actions are
+deliberately not used.
+
 `.github/workflows/ci.yml`, on pull request and pushes to `main`. Three jobs,
 run in parallel, all required to merge:
 
 - **test** — matrix `ubuntu-latest` × `macos-latest`, `go test -race -cover ./...`.
   Both runners ship `git`, which the integration tests need; the tests use
   `file://` fixture repos so no network and no credentials are involved.
-- **lint** — `golangci-lint` via `golangci-lint-action`, config checked in at
-  `.golangci.yml` (govet, staticcheck, errcheck, revive, gofumpt, misspell).
-  Plus `go mod tidy` check: run it and fail if the tree is dirty.
+- **lint** — `golangci-lint run`, config checked in at `.golangci.yml` (govet,
+  staticcheck, errcheck, revive, gofumpt, misspell). Plus a `go mod tidy` check:
+  run it and fail if the tree is dirty.
 - **build** — `goreleaser build --snapshot --clean` so a broken release config is
   caught on the PR that breaks it, not months later at tag time. Also the
   cheapest proof that every target platform compiles.
 
-Pin action versions by tag and enable Dependabot for `gomod` and
-`github-actions`.
+mise-action caches the tools; a separate `actions/cache` step covers the Go
+module and build caches. Pin action versions by tag and enable Dependabot for
+`gomod` and `github-actions`.
 
 ## Release
 
 `.github/workflows/release.yml`, triggered by pushed tags matching `v*.*.*`
 (the workflow re-validates the tag against a semver regex and fails fast on a
 malformed tag, since the glob alone is loose). Steps: checkout with
-`fetch-depth: 0` (GoReleaser needs full history for the changelog), set up Go,
-then `goreleaser release --clean`.
+`fetch-depth: 0` (GoReleaser needs full history for the changelog), install the
+pinned toolchain with `jdx/mise-action`, then `goreleaser release --clean` — the
+same GoReleaser version that validated the config on the pull request.
 
 Secrets: the default `GITHUB_TOKEN` for the release itself, plus a
 `HOMEBREW_TAP_TOKEN` PAT with write access to the tap repo.
@@ -255,8 +263,9 @@ Windows is deliberately out of scope.
 
 ## Build phases
 
-0. **Scaffold + CI** — module, cobra root, `version`, `.golangci.yml`,
-   `ci.yml`, `.goreleaser.yaml` and `release.yml`. Prove the release config with
+0. **Scaffold + CI** — `mise.toml`, module, cobra root, `version`,
+   `.golangci.yml`, `ci.yml`, `.goreleaser.yaml` and `release.yml`. Prove the
+   release config with
    `goreleaser release --snapshot --clean` locally, then cut `v0.0.1` to
    exercise the real pipeline while there is nothing to break.
 1. **Walking skeleton** — `state`, `target`, `plan`, `store`; `install owner/repo`
