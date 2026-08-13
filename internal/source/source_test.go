@@ -1,6 +1,9 @@
 package source
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -125,6 +128,27 @@ func TestSlug(t *testing.T) {
 		}
 		if got := s.Slug(); got != tc.want {
 			t.Errorf("Parse(%q).Slug() = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestSlugNeverEscapes(t *testing.T) {
+	raws := []string{
+		"file:///a/../../../../etc",
+		"file:///../../../etc/passwd",
+		"file:///tmp/./fixture/../fixture/my-skill",
+	}
+	for _, raw := range raws {
+		s, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", raw, err)
+		}
+		got := s.Slug()
+		if got == "" {
+			t.Errorf("Parse(%q).Slug() is empty", raw)
+		}
+		if strings.HasPrefix(got, "/") || strings.Contains(got, "..") {
+			t.Errorf("Parse(%q).Slug() = %q, want a safe relative path with no .. segments", raw, got)
 		}
 	}
 }

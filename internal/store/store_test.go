@@ -87,6 +87,17 @@ func TestEnsureExtractsAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestWithinRejectsPathsOutsideTheRoot(t *testing.T) {
+	s := New(t.TempDir())
+
+	if err := s.within(filepath.Join(s.Root, "rev", "github.com", "o", "r", "abc")); err != nil {
+		t.Errorf("within rejected a legitimate store path: %v", err)
+	}
+	if err := s.within(filepath.Join(s.Root, "rev", "..", "..", "escaped")); err == nil {
+		t.Error("within accepted a path outside the store root")
+	}
+}
+
 func TestEnsureLeavesNoTempDirOnFailure(t *testing.T) {
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": "x"})
 	src, _ := source.Parse(url)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/source"
@@ -49,18 +50,38 @@ func (s *Store) RevPath(slug, sha string) string {
 // StatePath is the receipts database.
 func (s *Store) StatePath() string { return filepath.Join(s.Root, "state.json") }
 
+// within reports whether p stays inside the store root. Store paths are built
+// from user-supplied source strings, so this is checked rather than assumed.
+func (s *Store) within(p string) error {
+	rel, err := filepath.Rel(s.Root, p)
+	if err != nil {
+		return fmt.Errorf("resolve %s against store root: %w", p, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to use path outside the store: %s", p)
+	}
+	return nil
+}
+
 // Ensure guarantees the revision is extracted, returning its path. It is a
 // no-op when the revision is already present, so it is safe to call on every
 // install including a --dry-run.
 func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha string) (string, error) {
 	slug := src.Slug()
 	rev := s.RevPath(slug, sha)
+	mirror := s.MirrorPath(slug)
+
+	if err := s.within(rev); err != nil {
+		return "", err
+	}
+	if err := s.within(mirror); err != nil {
+		return "", err
+	}
 
 	if fi, err := os.Stat(rev); err == nil && fi.IsDir() {
 		return rev, nil
 	}
 
-	mirror := s.MirrorPath(slug)
 	if err := g.Mirror(ctx, src.RepoURL, mirror); err != nil {
 		return "", fmt.Errorf("mirror %s: %w", src.RepoURL, err)
 	}
@@ -75,7 +96,11 @@ func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha s
 	if err != nil {
 		return "", fmt.Errorf("create temp revision directory: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(tmp) }()
+	defer func() {
+		if rerr := os.RemoveAll(tmp); rerr != nil {
+			fmt.Fprintf(os.Stderr, "skillsctl: could not remove temporary extraction directory %s: %v\n", tmp, rerr)
+		}
+	}()
 
 	if err := g.Extract(ctx, mirror, sha, tmp); err != nil {
 		return "", err

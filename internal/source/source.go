@@ -144,22 +144,36 @@ func (s Source) Slug() string {
 		if s.host == "file" {
 			u, err := url.Parse(s.RepoURL)
 			if err != nil {
-				return path.Join("file", sanitise(s.RepoURL))
+				return slugPath("file", s.RepoURL)
 			}
-			return path.Join("file", strings.Trim(u.Path, "/"))
+			return slugPath("file", u.Path)
 		}
-		return path.Join(s.host, s.owner, s.repo)
+		return slugPath(s.host, s.owner, s.repo)
 	case ChannelPlugin:
-		return path.Join("plugin", s.Marketplace, s.Plugin)
+		return slugPath("plugin", s.Marketplace, s.Plugin)
 	default:
-		return path.Join("local", sanitise(s.Path))
+		return slugPath("local", s.Path)
 	}
 }
 
 var unsafeRe = regexp.MustCompile(`[^A-Za-z0-9._/-]`)
 
-func sanitise(s string) string {
-	return strings.Trim(unsafeRe.ReplaceAllString(s, "-"), "/")
+// slugPath assembles a slug that is always a safe relative path: no absolute
+// prefix, no "." or ".." segments, and no characters that are awkward in a
+// filesystem path. Slug's whole job is to be filesystem-safe, so this is
+// enforced here rather than trusted at every call site.
+func slugPath(parts ...string) string {
+	var out []string
+	for _, part := range parts {
+		for _, seg := range strings.Split(part, "/") {
+			switch seg {
+			case "", ".", "..":
+				continue
+			}
+			out = append(out, unsafeRe.ReplaceAllString(seg, "-"))
+		}
+	}
+	return path.Join(out...)
 }
 
 // DefaultName is the skill name to use when SKILL.md declares none.
