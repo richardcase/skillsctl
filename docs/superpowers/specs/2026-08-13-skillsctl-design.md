@@ -43,10 +43,15 @@ executor applies. Channels differ *only* at resolve/fetch; discovery, linking,
 state and gc are shared.
 
 ```
-Resolve(source) → Fetch(rev) → Discover(SKILL.md) → Plan{Extract,Link,Record} → Apply
+Resolve(sha) → Ensure(rev in store) → Discover(SKILL.md) → Plan{Link,Record} → Apply
 ```
 
-Ops: `Fetch`, `Extract`, `Link`, `Unlink`, `Exec`, `Record`, `GC`.
+Ops: `Link`, `Unlink`, `Record`, `Forget`, `Exec`. A plan contains only
+user-visible mutations. Fetching and extracting are store cache population
+(`store.Ensure`) performed *before* planning — a skill's name comes from its
+extracted `SKILL.md`, so it cannot be known until the revision is on disk.
+Populating a content-addressed cache is idempotent, so this keeps `--dry-run`
+exact rather than speculative.
 
 Why: `--dry-run` is free (print the plan), a failed apply leaves state
 uncommitted rather than half-written, and tests assert over plans instead of
@@ -61,6 +66,10 @@ $SKILLSCTL_HOME (default $XDG_DATA_HOME/skillsctl, else ~/.local/share/skillsctl
   state.json                                         # receipts; atomic write + flock
 $XDG_CONFIG_HOME/skillsctl/config.toml               # target agents
 ```
+
+A revision directory holds the *whole repository* at that sha. Subpath selection
+happens at link time, so two skills taken from different subpaths of one commit
+share a single revision directory.
 
 Revision directories are immutable, so update is *extract new → re-point symlink
 → gc old*: atomic from the agent's point of view, rollback is re-pointing. No
@@ -189,7 +198,8 @@ back to `runtime/debug.ReadBuildInfo()` (module version + VCS stamp) so
 ## Package layout
 
 ```
-cmd/skillsctl/            cobra commands, flag parsing only
+cmd/skillsctl/            thin main(); calls cli.Execute()
+internal/cli/             cobra commands + output rendering
 internal/source/          parse source strings → Source
 internal/channel/         Channel interface; git.go, plugin.go, local.go
 internal/gitx/            Git interface + exec-backed impl (mirror, ls-remote, archive)
@@ -198,7 +208,6 @@ internal/store/           rev dirs, mirrors, gc
 internal/state/           Receipt, load/save (flock + temp-file rename), schema version
 internal/target/          config, agent dirs, symlink create/remove
 internal/plan/            Op types, Plan, Executor, dry-run renderer
-internal/cli/             shared output/table/JSON rendering
 ```
 
 **Shell out to the `git` binary, not go-git.** Auth is the reason: SSH keys,

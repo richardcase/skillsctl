@@ -1,0 +1,8 @@
+/dist/
+/skillsctl
+*.test
+.DS_Store
+
+# mise.toml is committed; per-machine overrides are not.
+mise.local.toml
+.mise.local.toml

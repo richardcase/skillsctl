@@ -1,0 +1,9 @@
+[tools]
+go = "1.25"
+goreleaser = "2"
+golangci-lint = "2"
+
+[env]
+# Keep module and build caches inside the repo-independent default locations,
+# so CI can cache them by path.
+GOTOOLCHAIN = "local"
