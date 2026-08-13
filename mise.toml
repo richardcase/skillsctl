@@ -1,0 +1,10 @@
+[tools]
+go = "1.25"
+goreleaser = "2"
+golangci-lint = "2"
+
+[env]
+# Pin the toolchain to the mise-installed Go: without this, a newer `go`
+# directive in go.mod silently downloads a different toolchain and the pin
+# above stops meaning anything.
+GOTOOLCHAIN = "local"
