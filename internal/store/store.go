@@ -103,7 +103,7 @@ func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha s
 	}()
 
 	if err := g.Extract(ctx, mirror, sha, tmp); err != nil {
-		return "", err
+		return "", fmt.Errorf("extract %s at %s: %w", src.RepoURL, sha, err)
 	}
 	if err := os.Rename(tmp, rev); err != nil {
 		// Another process may have won the race; accept its result.

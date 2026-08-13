@@ -10,6 +10,9 @@ deterministic. One store, symlinked into every agent you use.
 brew install richardcase/tap/skillsctl
 ```
 
+(macOS only — the Homebrew formula publishes a cask. On Linux, use the `.deb`/`.rpm`
+packages or the tarball below.)
+
 Or grab a binary or `.deb`/`.rpm` from the [releases page](https://github.com/richardcase/skillsctl/releases),
 or build from source with `go install github.com/richardcase/skillsctl/cmd/skillsctl@latest`.
 

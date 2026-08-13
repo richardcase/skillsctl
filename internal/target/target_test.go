@@ -106,6 +106,51 @@ func TestLoadExpandsBareTilde(t *testing.T) {
 	}
 }
 
+func TestConfigPathPrecedence(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory in this environment")
+	}
+
+	t.Run("SKILLSCTL_CONFIG wins over everything", func(t *testing.T) {
+		t.Setenv("SKILLSCTL_CONFIG", "/explicit/config.toml")
+		t.Setenv("XDG_CONFIG_HOME", "/xdg")
+		got, err := ConfigPath()
+		if err != nil {
+			t.Fatalf("ConfigPath: %v", err)
+		}
+		if got != "/explicit/config.toml" {
+			t.Errorf("ConfigPath() = %q, want the SKILLSCTL_CONFIG value", got)
+		}
+	})
+
+	t.Run("XDG_CONFIG_HOME wins when SKILLSCTL_CONFIG is unset", func(t *testing.T) {
+		t.Setenv("SKILLSCTL_CONFIG", "")
+		t.Setenv("XDG_CONFIG_HOME", "/xdg")
+		got, err := ConfigPath()
+		if err != nil {
+			t.Fatalf("ConfigPath: %v", err)
+		}
+		want := filepath.Join("/xdg", "skillsctl", "config.toml")
+		if got != want {
+			t.Errorf("ConfigPath() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("falls back to ~/.config when neither is set", func(t *testing.T) {
+		t.Setenv("SKILLSCTL_CONFIG", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+		got, err := ConfigPath()
+		if err != nil {
+			t.Fatalf("ConfigPath: %v", err)
+		}
+		want := filepath.Join(home, ".config", "skillsctl", "config.toml")
+		if got != want {
+			t.Errorf("ConfigPath() = %q, want %q", got, want)
+		}
+	})
+}
+
 func TestLoadRejectsTildeUser(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")

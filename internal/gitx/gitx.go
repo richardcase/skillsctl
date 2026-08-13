@@ -147,6 +147,5 @@ func (c *CLI) output(ctx context.Context, dir string, args ...string) (string, e
 func env() []string {
 	return append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
-		"GIT_ADVICE=0",
 	)
 }

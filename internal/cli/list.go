@@ -6,7 +6,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
@@ -32,9 +31,6 @@ func newListCmd() *cobra.Command {
 			receipts := h.DB.List()
 
 			if asJSON {
-				if receipts == nil {
-					receipts = []*state.Receipt{}
-				}
 				blob, err := json.MarshalIndent(receipts, "", "  ")
 				if err != nil {
 					return err

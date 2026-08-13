@@ -155,7 +155,8 @@ func runInstall(cmd *cobra.Command, raw string, agents []string, ref, as string,
 		return err
 	}
 	if err := h.Commit(); err != nil {
-		return fmt.Errorf("%w\nthe skill was linked but the receipt was not saved; re-run this command to repair", err)
+		return fmt.Errorf("%w\nthe skill was linked but the receipt was not saved; re-run this command to repair, "+
+			"or remove the symlink by hand if it now points at an older revision", err)
 	}
 
 	cmd.Printf("installed %s @ %s into %s\n", name, shortSha(sha), targetNames(targets))
