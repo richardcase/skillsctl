@@ -137,6 +137,8 @@ func TestSlugNeverEscapes(t *testing.T) {
 		"file:///a/../../../../etc",
 		"file:///../../../etc/passwd",
 		"file:///tmp/./fixture/../fixture/my-skill",
+		"git@github.com:../../etc",
+		"user@github.com:../../../secret",
 	}
 	for _, raw := range raws {
 		s, err := Parse(raw)
@@ -149,6 +151,18 @@ func TestSlugNeverEscapes(t *testing.T) {
 		}
 		if strings.HasPrefix(got, "/") || strings.Contains(got, "..") {
 			t.Errorf("Parse(%q).Slug() = %q, want a safe relative path with no .. segments", raw, got)
+		}
+	}
+}
+
+func TestParseRejectsSourcesWithNoIdentity(t *testing.T) {
+	raws := []string{
+		"user@..:../..",
+		"user@..:..",
+	}
+	for _, raw := range raws {
+		if got, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) = %+v with slug %q, want an error: a source with no usable identity must be rejected", raw, got, got.Slug())
 		}
 	}
 }

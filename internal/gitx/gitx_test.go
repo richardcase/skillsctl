@@ -94,6 +94,37 @@ func TestMirrorThenExtract(t *testing.T) {
 	}
 }
 
+func TestMirrorRefetchesFromTheRequestedURL(t *testing.T) {
+	first, _ := testrepo.New(t, map[string]string{"SKILL.md": "from-first"})
+	second, secondSha := testrepo.New(t, map[string]string{"SKILL.md": "from-second"})
+
+	ctx := context.Background()
+	root := t.TempDir()
+	mirror := filepath.Join(root, "shared.git")
+	g := New()
+
+	if err := g.Mirror(ctx, first, mirror); err != nil {
+		t.Fatal(err)
+	}
+	// Same mirror path, different repository: Mirror must fetch from the URL it
+	// was given, not from whatever origin the first call left configured.
+	if err := g.Mirror(ctx, second, mirror); err != nil {
+		t.Fatalf("second Mirror: %v", err)
+	}
+
+	dest := filepath.Join(root, "rev")
+	if err := g.Extract(ctx, mirror, secondSha, dest); err != nil {
+		t.Fatalf("Extract of the second repo's sha: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(dest, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "from-second" {
+		t.Errorf("extracted %q, want from-second", body)
+	}
+}
+
 func TestMirrorPicksUpNewCommits(t *testing.T) {
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": "v1"})
 	dir := testrepo.Dir(url)

@@ -71,6 +71,13 @@ func (c *CLI) Resolve(ctx context.Context, repoURL, ref string) (string, error) 
 // Mirror creates or updates a bare mirror of repoURL at mirrorPath.
 func (c *CLI) Mirror(ctx context.Context, repoURL, mirrorPath string) error {
 	if _, err := os.Stat(filepath.Join(mirrorPath, "HEAD")); err == nil {
+		// Re-point origin before fetching. The mirror is a cache keyed by a
+		// derived slug, so a stale or colliding entry must not silently serve
+		// another repository's objects — and this also handles a repo whose
+		// URL legitimately changed (ssh <-> https).
+		if _, err := c.output(ctx, mirrorPath, "remote", "set-url", "origin", repoURL); err != nil {
+			return err
+		}
 		_, err := c.output(ctx, mirrorPath, "fetch", "--prune", "--tags", "origin")
 		return err
 	}

@@ -51,6 +51,20 @@ var (
 
 // Parse canonicalises raw into a Source, inferring the channel from its shape.
 func Parse(raw string) (Source, error) {
+	s, err := parse(raw)
+	if err != nil {
+		return s, err
+	}
+	if s.Slug() == "" {
+		return Source{Raw: raw}, fmt.Errorf("source %q has no usable repository identity", raw)
+	}
+	return s, nil
+}
+
+// parse does the actual channel-inferring work of Parse. It is split out so
+// Parse can apply one validation pass, in one place, to whatever channel this
+// produces, rather than repeating a check before every return.
+func parse(raw string) (Source, error) {
 	s := Source{Raw: raw}
 
 	switch {
