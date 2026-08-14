@@ -21,12 +21,12 @@ import (
 // still names the skill, and one that was never written leaves an install
 // nothing can undo.
 func settle(ctx context.Context, ex *plan.Executor, ch channel.Channel, rs []state.Receipt) ([]state.Receipt, error) {
-	changed, err := ch.Settle(ctx, rs)
-	if err != nil {
-		return rs, err
-	}
+	// A channel that could complete some receipts and not others returns both
+	// the ones it settled and the reason for the rest, so a partial answer is
+	// still recorded.
+	changed, serr := ch.Settle(ctx, rs)
 	if len(changed) == 0 {
-		return rs, nil
+		return rs, serr
 	}
 
 	var p plan.Plan
@@ -34,7 +34,10 @@ func settle(ctx context.Context, ex *plan.Executor, ch channel.Channel, rs []sta
 		p.Add(plan.Record{Receipt: r})
 	}
 	if err := ex.Apply(ctx, p); err != nil {
-		return rs, err
+		if serr == nil {
+			serr = err
+		}
+		return rs, serr
 	}
 
 	byName := make(map[string]state.Receipt, len(changed))
@@ -49,5 +52,5 @@ func settle(ctx context.Context, ex *plan.Executor, ch channel.Channel, rs []sta
 		}
 		out = append(out, r)
 	}
-	return out, nil
+	return out, serr
 }

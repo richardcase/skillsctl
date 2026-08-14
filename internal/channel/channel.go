@@ -166,8 +166,10 @@ type Channel interface {
 	// ops that undo it. An empty drop means every agent.
 	Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error)
 
-	// Agents names the agents a receipt is live in, for list.
-	Agents(r state.Receipt, cfg target.Config) []string
+	// Agents names the agents a receipt is live in, for list. A channel that
+	// symlinks reads the receipt's links; one whose agent installs for itself
+	// answers from the config.
+	Agents(r state.Receipt) []string
 }
 
 // ErrUnsupported reports a channel that skillsctl can parse but cannot yet
@@ -210,9 +212,9 @@ func (r Registry) ForReceipt(rc *state.Receipt) (Channel, error) {
 // Agents names the agents a receipt is live in. A receipt whose channel is not
 // registered still answers, from its own links: what is on disk is a fact, and
 // list reports facts rather than refusing to describe them.
-func (r Registry) Agents(rc *state.Receipt, cfg target.Config) []string {
+func (r Registry) Agents(rc *state.Receipt) []string {
 	if ch, err := r.ForReceipt(rc); err == nil {
-		return ch.Agents(*rc, cfg)
+		return ch.Agents(*rc)
 	}
 	names := make([]string, 0, len(rc.Links))
 	for _, l := range rc.Links {

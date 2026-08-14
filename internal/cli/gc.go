@@ -6,6 +6,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
 	"github.com/spf13/cobra"
@@ -40,7 +41,7 @@ func newGCCmd() *cobra.Command {
 			}
 			defer func() { _ = h.Close() }()
 
-			found, err := e.store.Collect(liveRoots(h.DB))
+			found, err := e.store.Collect(e.liveRoots(h.DB))
 			if err != nil {
 				return err
 			}
@@ -79,7 +80,7 @@ func newGCCmd() *cobra.Command {
 // scan is dropped rather than turned into an error on a command that already
 // succeeded.
 func hintReclaimable(cmd *cobra.Command, e *env, db *state.DB) {
-	rep, err := e.store.Collect(liveRoots(db))
+	rep, err := e.store.Collect(e.liveRoots(db))
 	if err != nil || rep.IsEmpty() {
 		return
 	}
@@ -87,13 +88,25 @@ func hintReclaimable(cmd *cobra.Command, e *env, db *state.DB) {
 }
 
 // liveRoots reduces the receipt set to the store's root set.
-func liveRoots(db *state.DB) store.Live {
+//
+// A receipt whose channel owns its own files contributes nothing: its RevPath
+// is somewhere an agent chose, outside the store, and it has no slug. That
+// exclusion is load-bearing rather than tidy — store.Collect reads an empty
+// slug as "repository identity unknown" and abandons mirror collection
+// entirely, so one plugin receipt would otherwise stop gc reclaiming any
+// mirror at all.
+func (e *env) liveRoots(db *state.DB) store.Live {
 	receipts := db.List()
+	reg := e.channels()
+
 	live := store.Live{
 		RevPaths: make([]string, 0, len(receipts)),
 		Slugs:    make([]string, 0, len(receipts)),
 	}
 	for _, r := range receipts {
+		if ch, err := reg.ForReceipt(r); err == nil && ch.Ownership() != channel.StoreOwned {
+			continue
+		}
 		live.RevPaths = append(live.RevPaths, r.RevPath)
 		live.Slugs = append(live.Slugs, r.Slug)
 	}

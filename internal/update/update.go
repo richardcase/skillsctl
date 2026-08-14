@@ -107,6 +107,40 @@ func Plan(ctx context.Context, reg channel.Registry, receipts []*state.Receipt, 
 	return entries, p, nil
 }
 
+// Reconcile folds what a settle learned back into the entries a run will
+// report, and is called between applying the plan and printing it.
+//
+// It exists for the channel that cannot say in advance whether an update will
+// move anything. Such a channel plans every receipt as an update with no
+// Latest; once the agent has run and the settled receipt carries the version it
+// chose, an update that changed nothing becomes "current" — so a no-op neither
+// prints a line nor pushes the command to a partial exit code.
+func Reconcile(entries []Entry, settled []state.Receipt) []Entry {
+	if len(settled) == 0 {
+		return entries
+	}
+
+	byName := make(map[string]state.Receipt, len(settled))
+	for _, r := range settled {
+		byName[r.Name] = r
+	}
+
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		r, ok := byName[e.Name]
+		if !ok || e.Status != StatusUpdated || e.Latest != "" {
+			out = append(out, e)
+			continue
+		}
+		e.Latest = r.Resolved
+		if e.Latest == e.Current {
+			e.Status = StatusCurrent
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // skipped is the verdict for a receipt whose channel has nothing to update
 // from, which is what the local channel and any future read-only one will be.
 func skipped(r *state.Receipt) Entry {

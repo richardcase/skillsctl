@@ -2,12 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/outdated"
 	"github.com/richardcase/skillsctl/internal/testrepo"
 )
@@ -18,6 +20,12 @@ type harness struct {
 	agents string
 	claude string
 	codex  string
+
+	// plugins is what the claude CLI would have reported, and ran is what a
+	// plan's Exec ops asked it to do. Both are stubbed for every test, so no
+	// test can reach the real binary or the developer's own ~/.claude.
+	plugins *fakePlugins
+	ran     [][]string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -26,11 +34,25 @@ func newHarness(t *testing.T) *harness {
 	root := t.TempDir()
 	agents := t.TempDir()
 	h := &harness{
-		root:   filepath.Join(root, "store"),
-		agents: agents,
-		claude: filepath.Join(agents, ".claude", "skills"),
-		codex:  filepath.Join(agents, ".codex", "skills"),
+		root:    filepath.Join(root, "store"),
+		agents:  agents,
+		claude:  filepath.Join(agents, ".claude", "skills"),
+		codex:   filepath.Join(agents, ".codex", "skills"),
+		plugins: &fakePlugins{},
 	}
+
+	// Swapping the two seams for the whole test, restored by t.Cleanup. A test
+	// that means to exercise the plugin channel populates h.plugins; one that
+	// does not still cannot shell out.
+	realPlugins, realRunner := newPlugins, newRunner
+	newPlugins = func() claudex.Plugins { return h.plugins }
+	newRunner = func() func(context.Context, []string) error {
+		return func(_ context.Context, argv []string) error {
+			h.ran = append(h.ran, argv)
+			return h.plugins.exec(argv)
+		}
+	}
+	t.Cleanup(func() { newPlugins, newRunner = realPlugins, realRunner })
 
 	// Both agent parent directories exist, so both are "present".
 	for _, d := range []string{filepath.Join(agents, ".claude"), filepath.Join(agents, ".codex")} {
@@ -74,6 +96,23 @@ func (h *harness) runSplit(t *testing.T, args ...string) (stdout, stderr string,
 	root.SetArgs(args)
 	err = root.Execute()
 	return out.String(), errBuf.String(), err
+}
+
+// receipts reads the committed state, so a test can assert what was recorded
+// rather than only what was printed.
+func (h *harness) receipts(t *testing.T) map[string]map[string]any {
+	t.Helper()
+	blob, err := os.ReadFile(filepath.Join(h.root, "state.json"))
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	var db struct {
+		Receipts map[string]map[string]any `json:"receipts"`
+	}
+	if err := json.Unmarshal(blob, &db); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	return db.Receipts
 }
 
 const skillMD = "---\nname: demo-skill\ndescription: A demo\n---\n\nBody.\n"
@@ -204,12 +243,17 @@ func TestInstallAsOverridesName(t *testing.T) {
 func TestInstallRejectsUnsupportedChannel(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.run(t, "install", "superpowers@claude-plugins-official")
+	// The local channel parses and is not yet installable; the plugin channel
+	// used to be the example here and now works.
+	_, err := h.run(t, "install", "./some/local/skill")
 	if err == nil {
-		t.Fatal("plugin install succeeded; the plugin channel arrives in phase 3")
+		t.Fatal("local install succeeded; the local channel is not built yet")
 	}
 	if !strings.Contains(err.Error(), "not supported yet") {
 		t.Errorf("error = %v, want it to name the unsupported channel", err)
+	}
+	if !strings.Contains(err.Error(), "local") {
+		t.Errorf("error = %v, want it to name which channel", err)
 	}
 }
 

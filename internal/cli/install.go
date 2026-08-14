@@ -148,7 +148,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	}
 
 	for _, r := range receipts {
-		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), strings.Join(ch.Agents(r, e.cfg), ", "))
+		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), strings.Join(ch.Agents(r), ", "))
 	}
 	reportSkipped(cmd, skipped)
 	if serr != nil {

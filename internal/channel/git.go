@@ -315,7 +315,7 @@ func (c *Git) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error) {
 }
 
 // Agents reads the links, which are the record of where this skill was put.
-func (c *Git) Agents(r state.Receipt, _ target.Config) []string {
+func (c *Git) Agents(r state.Receipt) []string {
 	names := make([]string, 0, len(r.Links))
 	for _, l := range r.Links {
 		names = append(names, l.Target)

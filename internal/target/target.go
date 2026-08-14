@@ -110,6 +110,20 @@ func (c Config) Present() []Target {
 	return out
 }
 
+// WithPlugins narrows targets to the agents that install plugins from a
+// marketplace. A plugin's skills are already visible to the agent that
+// installed it, so this is both who the plugin channel can install for and who
+// a plugin receipt is live in.
+func WithPlugins(ts []Target) []Target {
+	var out []Target
+	for _, t := range ts {
+		if t.Plugins {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // Select returns the named targets, in the order given.
 func (c Config) Select(names []string) ([]Target, error) {
 	byName := make(map[string]Target, len(c.Targets))

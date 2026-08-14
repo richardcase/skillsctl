@@ -335,3 +335,38 @@ func TestPlanSkipsANonGitChannel(t *testing.T) {
 		t.Error("a local skill has no ref to update from")
 	}
 }
+
+// Reconcile exists for the channel that cannot say in advance whether an update
+// will move anything: it plans every receipt as updated with no Latest, and the
+// settled receipt is what finally decides.
+func TestReconcileCollapsesAnUpdateThatMovedNothing(t *testing.T) {
+	entries := []Entry{
+		{Name: "moved", Status: StatusUpdated, Current: "1.0.0"},
+		{Name: "still", Status: StatusUpdated, Current: "2.0.0"},
+		{Name: "git", Status: StatusUpdated, Current: "aaa", Latest: "bbb"},
+	}
+	settled := []state.Receipt{
+		{Name: "moved", Resolved: "1.1.0"},
+		{Name: "still", Resolved: "2.0.0"},
+		{Name: "git", Resolved: "zzz"},
+	}
+
+	got := Reconcile(entries, settled)
+
+	if got[0].Status != StatusUpdated || got[0].Latest != "1.1.0" {
+		t.Errorf("moved = %+v, want it updated to the version that was read back", got[0])
+	}
+	if got[1].Status != StatusCurrent {
+		t.Errorf("still = %+v, want a re-install at the same version reported as current", got[1])
+	}
+	if got[2].Latest != "bbb" {
+		t.Errorf("git = %+v, want an entry that already knew its Latest left alone", got[2])
+	}
+}
+
+func TestReconcileWithNothingSettledChangesNothing(t *testing.T) {
+	entries := []Entry{{Name: "a", Status: StatusUpdated, Current: "x", Latest: "y"}}
+	if got := Reconcile(entries, nil); got[0] != entries[0] {
+		t.Errorf("Reconcile = %+v, want the entries unchanged", got[0])
+	}
+}

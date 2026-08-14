@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/richardcase/skillsctl/internal/channel"
+	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
@@ -15,6 +16,10 @@ import (
 // binary. nil means os/exec; tests replace this to keep a unit test from
 // shelling out.
 var newRunner = func() func(context.Context, []string) error { return nil }
+
+// newPlugins builds the wrapper around the claude binary. Tests replace it, so
+// that no test installs a plugin into the developer's own ~/.claude.
+var newPlugins = func() claudex.Plugins { return claudex.New() }
 
 // env is the resolved environment a command runs against.
 type env struct {
@@ -56,10 +61,11 @@ func (e *env) openState() (*state.Handle, error) {
 }
 
 // channels is the registry every command dispatches through. It is built per
-// command rather than shared, because a channel is bound to the store and the
-// binaries the command is running against.
+// command rather than shared, because a channel is bound to the store, the
+// config and the binaries the command is running against.
 func (e *env) channels() channel.Registry {
 	return channel.Registry{
-		Git: channel.NewGit(e.store, gitx.New()),
+		Git:    channel.NewGit(e.store, gitx.New()),
+		Plugin: channel.NewPlugin(newPlugins(), e.cfg),
 	}
 }
