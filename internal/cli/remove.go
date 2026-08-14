@@ -2,10 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/richardcase/skillsctl/internal/plan"
-	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +37,10 @@ func newRemoveCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("%q is not installed", name)
 			}
+			ch, err := e.channels().ForReceipt(receipt)
+			if err != nil {
+				return err
+			}
 
 			drop := map[string]bool{}
 			if len(agents) > 0 {
@@ -51,27 +53,12 @@ func newRemoveCmd() *cobra.Command {
 				}
 			}
 
-			var p plan.Plan
-			var keep []state.Link
-			for _, l := range receipt.Links {
-				if len(drop) > 0 && !drop[l.Target] {
-					keep = append(keep, l)
-					continue
-				}
-				p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
+			p, err := ch.Remove(*receipt, drop)
+			if err != nil {
+				return err
 			}
-
 			if p.IsEmpty() {
 				return fmt.Errorf("%q is not linked into %v", name, agents)
-			}
-
-			if len(keep) == 0 {
-				p.Add(plan.Forget{Name: name})
-			} else {
-				updated := *receipt
-				updated.Links = keep
-				updated.UpdatedAt = time.Now().UTC()
-				p.Add(plan.Record{Receipt: updated})
 			}
 
 			if dryRun {
@@ -81,7 +68,7 @@ func newRemoveCmd() *cobra.Command {
 				return nil
 			}
 
-			ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout()}
+			ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
 			if err := ex.Apply(cmd.Context(), p); err != nil {
 				return err
 			}

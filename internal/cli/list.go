@@ -6,7 +6,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
 
@@ -50,13 +49,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
+			reg := e.channels()
+
 			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS")
 			for _, r := range receipts {
-				var agents []string
-				for _, l := range r.Links {
-					agents = append(agents, l.Target)
-				}
+				agents := reg.Agents(r, e.cfg)
 				version := shortSha(r.Resolved)
 				if r.Pinned {
 					version += " (pinned)"
@@ -76,12 +74,4 @@ func shortSha(sha string) string {
 		return sha[:7]
 	}
 	return sha
-}
-
-func targetNames(ts []target.Target) string {
-	names := make([]string, 0, len(ts))
-	for _, t := range ts {
-		names = append(names, t.Name)
-	}
-	return strings.Join(names, ", ")
 }

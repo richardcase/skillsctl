@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 
-	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/update"
 	"github.com/spf13/cobra"
@@ -45,7 +44,7 @@ func newUpdateCmd() *cobra.Command {
 				return nil
 			}
 
-			entries, p, err := update.Plan(cmd.Context(), gitx.New(), e.store, receipts,
+			entries, p, err := update.Plan(cmd.Context(), e.channels(), receipts,
 				update.Options{Names: args, Force: force})
 			if err != nil {
 				return err
@@ -60,7 +59,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			if !p.IsEmpty() {
-				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout()}
+				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
 				if err := ex.Apply(cmd.Context(), p); err != nil {
 					return err
 				}

@@ -114,6 +114,9 @@ else lives in `internal/`, one narrow responsibility per package:
 | --- | --- |
 | `cli` | Cobra command tree, flag wiring, output rendering |
 | `source` | Parse `owner/repo`, git URLs, `plugin@marketplace`, local paths into a `Source` |
+| `channel` | The `Channel` interface and its implementations; the only place a mechanism differs |
+| `update` | Select receipts for an update, dispatch them to their channels, merge the verdicts |
+| `outdated` | Compare each receipt's resolved sha against its tracked ref, without fetching |
 | `gitx` | The `git` binary behind a `Git` interface: `Resolve`, `Mirror`, `Extract` (+ safe untar) |
 | `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, collection (`Collect`/`Delete`), containment checks, tree hashing |
 | `discover` | Read `SKILL.md` and its YAML frontmatter |
@@ -128,6 +131,12 @@ else lives in `internal/`, one narrow responsibility per package:
 - **Plan/apply.** Model mutations as `plan.Op` values and let `--dry-run` print
   `p.Describe()`. Never branch on `dryRun` inside mutation code — that is how
   the dry run stays exact.
+- **Channels are the only place a mechanism differs.** A git skill is fetched
+  into the store and symlinked; a plugin is installed by the agent that owns it.
+  Everything after that — the plan, the executor, the receipts, the exit codes —
+  is shared. Put the difference behind `channel.Channel` rather than branching
+  on `source.Channel` at a call site; `list`, `remove` and `gc` ask
+  `Ownership()` and nothing finer.
 - **Scan/apply for store operations.** A plan holds only user-visible
   mutations, so store housekeeping is not a `plan.Op`. It gets the same
   exactness a different way: a pure scan returning a report (`store.Collect`)

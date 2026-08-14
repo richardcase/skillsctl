@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
@@ -92,7 +93,8 @@ func (f *fixture) plan(t *testing.T, o Options, receipts ...*state.Receipt) ([]E
 	if len(receipts) == 0 {
 		receipts = []*state.Receipt{f.receipt}
 	}
-	entries, p, err := Plan(context.Background(), f.git, f.store, receipts, o)
+	reg := channel.Registry{Git: channel.NewGit(f.store, f.git)}
+	entries, p, err := Plan(context.Background(), reg, receipts, o)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -295,7 +297,8 @@ func TestPlanReportsASkillThatIsGoneUpstream(t *testing.T) {
 func TestPlanRejectsANameThatIsNotInstalled(t *testing.T) {
 	f := newFixture(t)
 
-	_, _, err := Plan(context.Background(), f.git, f.store,
+	reg := channel.Registry{Git: channel.NewGit(f.store, f.git)}
+	_, _, err := Plan(context.Background(), reg,
 		[]*state.Receipt{f.receipt}, Options{Names: []string{"nope"}})
 
 	if err == nil {
@@ -330,30 +333,5 @@ func TestPlanSkipsANonGitChannel(t *testing.T) {
 	}
 	if !p.IsEmpty() {
 		t.Error("a local skill has no ref to update from")
-	}
-}
-
-func TestSlugFallsBackToTheSource(t *testing.T) {
-	src, err := source.Parse("owner/repo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := slugFor(&state.Receipt{Source: src.RepoURL})
-	if err != nil {
-		t.Fatalf("slugFor: %v", err)
-	}
-	if got != src.Slug() {
-		t.Errorf("slugFor = %q, want %q", got, src.Slug())
-	}
-}
-
-func TestSlugPrefersTheRecordedOne(t *testing.T) {
-	got, err := slugFor(&state.Receipt{Slug: "recorded/slug", Source: "https://example.com/o/r.git"})
-	if err != nil {
-		t.Fatalf("slugFor: %v", err)
-	}
-	if got != "recorded/slug" {
-		t.Errorf("slugFor = %q, want the recorded slug", got)
 	}
 }
