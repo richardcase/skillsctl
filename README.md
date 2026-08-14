@@ -71,6 +71,7 @@ skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
 skillsctl install owner/repo --dry-run             # show what would change
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
+skillsctl outdated                                 # what has moved upstream
 skillsctl remove avoid-ai-writing                  # unlink everywhere
 skillsctl version
 ```
@@ -98,6 +99,21 @@ skills in https://github.com/vercel-labs/agent-skills.git @ 7c41bf0:
   web-research  Research a topic against primary sources
 error: this repository holds 2 skills: pass --skill <name> (repeatable) or --all
 ```
+
+`outdated` compares each skill against its remote, reading refs only — nothing is
+fetched. It exits `3` when an update is available, so it works as a CI check:
+
+```
+$ skillsctl outdated
+NAME              CHANNEL  REF   CURRENT  LATEST   STATUS
+avoid-ai-writing  git      HEAD  3c0fd8a  3c0fd8a  current
+brainstorming     git      main  525e31b  9071811  outdated
+pinned-one        git      HEAD  525e31b  9071811  outdated (pinned)
+note: 1 update available
+```
+
+Pinned skills are listed and marked, so a pin never hides the fact that something
+moved, but they do not set that exit code on their own — `update` skips them.
 
 ## How it works
 
@@ -128,6 +144,7 @@ Locations can be overridden with environment variables:
 | --- | --- | --- |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `list` | `--json` | Show installed skills, versions and agents |
+| `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
 | `version` | | Print version, commit and build date |
 
@@ -136,7 +153,9 @@ the receipt; removing the last link forgets it.
 
 Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
 was and the rest is reported — `install --all` where one name is already taken
-installs the others and exits `2`.
+installs the others and exits `2`, and `outdated` exits `2` when it could not
+reach some of the remotes. `3` is a finding rather than a verdict on the work:
+`outdated` ran to completion and something has moved.
 
 ## Configuration
 

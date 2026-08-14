@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/outdated"
 	"github.com/richardcase/skillsctl/internal/testrepo"
 )
 
@@ -298,5 +299,114 @@ func TestListEmpty(t *testing.T) {
 	}
 	if !strings.Contains(out, "No skills installed") {
 		t.Errorf("empty list should say so, got:\n%s", out)
+	}
+}
+
+func TestOutdatedReportsAMovedRef(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	code, out := exitCode(t, "outdated")
+	if code != ExitOK {
+		t.Fatalf("a freshly installed skill should be current: exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "current") {
+		t.Errorf("want a current row, got:\n%s", out)
+	}
+
+	testrepo.Commit(t, testrepo.Dir(url), map[string]string{"NOTES.md": "moved on\n"})
+
+	code, out = exitCode(t, "outdated")
+	if code != ExitOutdated {
+		t.Fatalf("exit = %d, want %d once the ref moved\n%s", code, ExitOutdated, out)
+	}
+	if !strings.Contains(out, "outdated") {
+		t.Errorf("want an outdated row, got:\n%s", out)
+	}
+	if strings.Contains(out, "error:") {
+		t.Errorf("an available update is a finding, not a failure:\n%s", out)
+	}
+}
+
+// A skill whose remote cannot be read leaves the report covering only part of
+// what was asked, which is exactly what ExitPartial means.
+func TestOutdatedIsPartialWhenARemoteCannotBeRead(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if err := os.RemoveAll(testrepo.Dir(url)); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := exitCode(t, "outdated")
+	if code != ExitPartial {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitPartial, out)
+	}
+	if !strings.Contains(out, "error:") {
+		t.Errorf("the row should say why it could not be checked:\n%s", out)
+	}
+}
+
+// A pin is a decision, and update skips pinned skills — so the move is
+// reported but nothing actionable follows, and the exit code stays 0.
+func TestOutdatedMarksAPinnedSkillWithoutFailing(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url, "--pin"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	testrepo.Commit(t, testrepo.Dir(url), map[string]string{"NOTES.md": "moved on\n"})
+
+	code, out := exitCode(t, "outdated")
+	if code != ExitOK {
+		t.Fatalf("a pinned skill must not set an exit code: exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "outdated") || !strings.Contains(out, "pinned") {
+		t.Errorf("want the move reported and marked pinned, got:\n%s", out)
+	}
+}
+
+func TestOutdatedJSON(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	sha := testrepo.Commit(t, testrepo.Dir(url), map[string]string{"NOTES.md": "moved on\n"})
+
+	out, _ := h.run(t, "outdated", "--json")
+
+	var entries []outdated.Entry
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, out)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(entries))
+	}
+	if entries[0].Status != outdated.StatusOutdated {
+		t.Errorf("status = %q, want %q", entries[0].Status, outdated.StatusOutdated)
+	}
+	if entries[0].Latest != sha {
+		t.Errorf("latest = %q, want %q", entries[0].Latest, sha)
+	}
+}
+
+func TestOutdatedEmpty(t *testing.T) {
+	h := newHarness(t)
+	out, err := h.run(t, "outdated")
+	if err != nil {
+		t.Fatalf("outdated: %v", err)
+	}
+	if !strings.Contains(out, "No skills installed") {
+		t.Errorf("empty report should say so, got:\n%s", out)
 	}
 }

@@ -18,6 +18,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(
 		newInstallCmd(),
 		newListCmd(),
+		newOutdatedCmd(),
 		newRemoveCmd(),
 		newVersionCmd(),
 	)
@@ -41,6 +42,12 @@ func run(root *cobra.Command) int {
 	if errors.As(err, &partial) {
 		root.PrintErrf("note: %v\n", err)
 		return ExitPartial
+	}
+
+	var finding *OutdatedError
+	if errors.As(err, &finding) {
+		root.PrintErrf("note: %v\n", err)
+		return ExitOutdated
 	}
 
 	root.PrintErrf("error: %v\n", err)
