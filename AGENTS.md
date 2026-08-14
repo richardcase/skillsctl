@@ -138,7 +138,11 @@ else lives in `internal/`, one narrow responsibility per package:
   Everything after that — the plan, the executor, the receipts, the exit codes —
   is shared. Put the difference behind `channel.Channel` rather than branching
   on `source.Channel` at a call site; `list`, `remove` and `gc` ask
-  `Ownership()` and nothing finer.
+  `Ownership()` and nothing finer. It has three values because three channels
+  need three: a local skill's links are the removal contract like git's, while
+  nothing of it is in the store like a plugin's. A fourth channel that shares a
+  removal contract with an existing one should embed `linked` rather than
+  restate it.
 - **A binary we shell out to gets a package and an interface.** `gitx` and
   `claudex` both exist so that no unit test runs the real thing, and both read
   only. Every *mutation* stays a `plan.Exec` op built from an argv helper, which

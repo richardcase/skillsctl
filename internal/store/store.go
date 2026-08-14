@@ -62,6 +62,12 @@ func (s *Store) within(p string) error {
 	return nil
 }
 
+// Contains reports whether p is inside the store. The local channel uses it to
+// refuse linking a revision directory as though it were a skill of the user's
+// own: such a receipt would point into the store while claiming nothing there
+// belonged to it, which is exactly the state gc reasons about.
+func (s *Store) Contains(p string) bool { return s.within(p) == nil }
+
 // Join resolves a repository-relative subpath against a revision directory.
 // A subpath can come from a user-supplied source string or from a receipt, so
 // one that escapes the revision is refused rather than cleaned: silently

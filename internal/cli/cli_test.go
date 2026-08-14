@@ -240,23 +240,6 @@ func TestInstallAsOverridesName(t *testing.T) {
 	}
 }
 
-func TestInstallRejectsUnsupportedChannel(t *testing.T) {
-	h := newHarness(t)
-
-	// The local channel parses and is not yet installable; the plugin channel
-	// used to be the example here and now works.
-	_, err := h.run(t, "install", "./some/local/skill")
-	if err == nil {
-		t.Fatal("local install succeeded; the local channel is not built yet")
-	}
-	if !strings.Contains(err.Error(), "not supported yet") {
-		t.Errorf("error = %v, want it to name the unsupported channel", err)
-	}
-	if !strings.Contains(err.Error(), "local") {
-		t.Errorf("error = %v, want it to name which channel", err)
-	}
-}
-
 func TestRemoveSingleAgentKeepsReceipt(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})

@@ -148,7 +148,14 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	}
 
 	for _, r := range receipts {
-		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), strings.Join(ch.Agents(r), ", "))
+		// A local skill has no revision to name, and "@" with nothing after it
+		// reads as something missing rather than something absent.
+		where := strings.Join(ch.Agents(r), ", ")
+		if r.Resolved == "" {
+			cmd.Printf("installed %s into %s\n", r.Name, where)
+			continue
+		}
+		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), where)
 	}
 	reportSkipped(cmd, skipped)
 	if serr != nil {

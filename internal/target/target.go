@@ -71,7 +71,7 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("%s defines no [[target]] entries", path)
 	}
 	for i := range cfg.Targets {
-		dir, err := expand(cfg.Targets[i].Dir)
+		dir, err := Expand(cfg.Targets[i].Dir)
 		if err != nil {
 			return Config{}, fmt.Errorf("%s: %w", path, err)
 		}
@@ -80,7 +80,10 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-func expand(p string) (string, error) {
+// Expand resolves a leading ~ against the user's home directory. ~user syntax
+// is refused rather than guessed at, because the only sensible reading of it is
+// "a directory belonging to somebody else".
+func Expand(p string) (string, error) {
 	if p != "~" && !strings.HasPrefix(p, "~/") {
 		if strings.HasPrefix(p, "~") {
 			return "", fmt.Errorf("unsupported path %q: ~user syntax is not supported, use an absolute path", p)
