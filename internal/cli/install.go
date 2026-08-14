@@ -35,6 +35,8 @@ func newInstallCmd() *cobra.Command {
 		Short: "Install a skill",
 		Long: "Install one or more skills from a git repository.\n\n" +
 			"Sources may be owner/repo, owner/repo/path/to/skill, any git URL, or a local path.\n" +
+			"A // separates a repository from a subpath inside it, as in\n" +
+			"git@github.com:owner/repo.git//skills/alpha.\n\n" +
 			"A repository holding several skills needs --skill <name> or --all; without one of\n" +
 			"those, install lists what it found rather than guessing.",
 		Args: cobra.ExactArgs(1),

@@ -61,6 +61,7 @@ skillsctl install conorbronsdon/avoid-ai-writing   # link into every agent found
 skillsctl install owner/repo                       # lists the skills it finds
 skillsctl install owner/repo --skill web-research  # pick one (repeat for more)
 skillsctl install owner/repo --all                 # every skill in the repo
+skillsctl install owner/repo//skills/alpha         # a subpath, spelled out
 skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
@@ -79,7 +80,9 @@ brainstorming     git      9f8e7d6 (pinned)  claude
 ```
 
 A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
-(https, ssh or scp-style), or a local path.
+(https, ssh or scp-style), or a local path. `//` separates a repository from a
+subpath inside it — the only way to name one in a `.git`-suffixed or `git@host:`
+URL, where the repository boundary is otherwise the whole path.
 
 ## How it works
 

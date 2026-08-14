@@ -111,11 +111,20 @@ that someone edited a skill through the symlink.
 |---|---|
 | `owner/repo` | git, subpath `""` |
 | `owner/repo/path/to/skill` | git, subpath `path/to/skill` |
+| `<any git source>//path/to/skill` | git, subpath `path/to/skill` |
 | `https://…`, `git@…`, any git URL (incl. GitLab) | git |
 | `name@marketplace` (`@` is the discriminator) | plugin |
 | `./path`, `/path` | local |
 
 `--from git|plugin|local` forces the channel when inference is wrong.
+
+`//` separates a repository from a subpath within it, and wins over whatever the
+shape of the URL implied. Inference alone cannot reach every case: a `.git`
+suffix declares the whole path to be the repository, which is what makes a
+GitLab subgroup installable, and an scp-form URL has no path structure to split
+at all — so without the separator, neither can name a subpath. The scheme's own
+`//` is not a separator, and the subpath still shares the repository's slug, so
+skills taken from different subpaths of one commit share one revision directory.
 
 ### Discovery
 

@@ -228,3 +228,103 @@ func TestDefaultName(t *testing.T) {
 		}
 	}
 }
+
+func TestParseExplicitSubpath(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         string
+		wantRepoURL string
+		wantSubpath string
+	}{
+		{
+			name:        "file url, the only way a fixture repo can carry a subpath",
+			raw:         "file:///tmp/fixture/repo//skills/alpha",
+			wantRepoURL: "file:///tmp/fixture/repo",
+			wantSubpath: "skills/alpha",
+		},
+		{
+			name:        "gitlab subgroup, which the .git suffix otherwise closes off",
+			raw:         "https://gitlab.com/group/sub/repo.git//skills/alpha",
+			wantRepoURL: "https://gitlab.com/group/sub/repo.git",
+			wantSubpath: "skills/alpha",
+		},
+		{
+			name:        "scp form, which has no other subpath syntax at all",
+			raw:         "git@github.com:foo/bar.git//skills/alpha",
+			wantRepoURL: "git@github.com:foo/bar.git",
+			wantSubpath: "skills/alpha",
+		},
+		{
+			name:        "github shorthand",
+			raw:         "vercel-labs/agent-skills//skills/web-research",
+			wantRepoURL: "https://github.com/vercel-labs/agent-skills.git",
+			wantSubpath: "skills/web-research",
+		},
+		{
+			name:        "https url without a .git suffix",
+			raw:         "https://github.com/foo/bar//skills/alpha",
+			wantRepoURL: "https://github.com/foo/bar.git",
+			wantSubpath: "skills/alpha",
+		},
+		{
+			name:        "an explicit subpath overrides the inferred one",
+			raw:         "https://github.com/foo/bar/inferred//explicit",
+			wantRepoURL: "https://github.com/foo/bar.git",
+			wantSubpath: "explicit",
+		},
+		{
+			name:        "a trailing separator is no subpath",
+			raw:         "foo/bar//",
+			wantRepoURL: "https://github.com/foo/bar.git",
+			wantSubpath: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Parse(tc.raw)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.raw, err)
+			}
+			if got.RepoURL != tc.wantRepoURL {
+				t.Errorf("RepoURL = %q, want %q", got.RepoURL, tc.wantRepoURL)
+			}
+			if got.Subpath != tc.wantSubpath {
+				t.Errorf("Subpath = %q, want %q", got.Subpath, tc.wantSubpath)
+			}
+			if got.Raw != tc.raw {
+				t.Errorf("Raw = %q, want the source as typed %q", got.Raw, tc.raw)
+			}
+		})
+	}
+}
+
+func TestParseRejectsBadExplicitSubpaths(t *testing.T) {
+	raws := []string{
+		"file:///tmp/repo//../../etc",
+		"file:///tmp/repo//skills/../../etc",
+		"foo/bar//./skills",
+		"foo/bar//skills//alpha",
+		"./local//skills/alpha",
+	}
+	for _, raw := range raws {
+		if _, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) succeeded; want an error", raw)
+		}
+	}
+}
+
+func TestExplicitSubpathSharesTheRepositorySlug(t *testing.T) {
+	plain, err := Parse("file:///tmp/fixture/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := Parse("file:///tmp/fixture/repo//skills/alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Slug() != sub.Slug() {
+		t.Errorf("slugs differ (%q vs %q); every skill from one repository shares one revision directory",
+			plain.Slug(), sub.Slug())
+	}
+}

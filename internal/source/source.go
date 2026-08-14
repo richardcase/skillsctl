@@ -66,14 +66,60 @@ func Parse(raw string) (Source, error) {
 		if seg == "." || seg == ".." {
 			return Source{Raw: raw}, fmt.Errorf("source %q has a path segment %q: a subpath may not contain . or .. segments", raw, seg)
 		}
+		if seg == "" && s.Subpath != "" {
+			return Source{Raw: raw}, fmt.Errorf("source %q has an empty path segment: a subpath may not contain //", raw)
+		}
 	}
 	return s, nil
 }
 
-// parse does the actual channel-inferring work of Parse. It is split out so
-// Parse can apply one validation pass, in one place, to whatever channel this
-// produces, rather than repeating a check before every return.
+// SubpathSep separates a repository from a subpath within it. Inference alone
+// cannot express every case: a .git suffix declares the whole path to be the
+// repository, and an scp-form URL has no path structure to split at all, so
+// without an explicit separator those sources can name no subpath.
+const SubpathSep = "//"
+
+// splitSubpath removes an explicit //subpath, returning the source without it.
+// The scheme's own // is not a separator, and a trailing one names nothing.
+func splitSubpath(raw string) (rest, subpath string) {
+	offset := 0
+	if i := strings.Index(raw, "://"); i >= 0 {
+		offset = i + len("://")
+	}
+
+	j := strings.Index(raw[offset:], SubpathSep)
+	if j < 0 {
+		return raw, ""
+	}
+	return raw[:offset+j], raw[offset+j+len(SubpathSep):]
+}
+
+// parse peels off any explicit //subpath and infers the channel from what is
+// left, so every git source form gains the separator at once.
 func parse(raw string) (Source, error) {
+	repo, subpath := splitSubpath(raw)
+
+	s, err := parseChannel(repo)
+	s.Raw = raw
+	if err != nil {
+		return s, err
+	}
+	if subpath != "" {
+		if s.Channel != ChannelGit {
+			return s, fmt.Errorf("source %q: %s names a subpath within a git repository, which the %s channel has no use for",
+				raw, SubpathSep, s.Channel)
+		}
+		// An explicit subpath is a statement, so it wins over the one the
+		// shape of the URL implied.
+		s.Subpath = subpath
+	}
+	return s, nil
+}
+
+// parseChannel does the actual channel-inferring work. It is split out so Parse
+// can apply one validation pass, in one place, to whatever channel this
+// produces, rather than repeating a check before every return.
+func parseChannel(raw string) (Source, error) {
 	s := Source{Raw: raw}
 
 	switch {

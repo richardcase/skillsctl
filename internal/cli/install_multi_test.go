@@ -268,9 +268,75 @@ func TestInstallAllDryRunChangesNothing(t *testing.T) {
 	}
 }
 
-// A subpath source scopes the walk to that subtree, but a file:// URL cannot
-// carry one — source.Parse treats a file URL's whole path as the repository —
-// so subpath scoping is covered by discover.Walk's unit tests instead.
+func TestInstallSubpathThatIsASkillNeedsNoSelection(t *testing.T) {
+	h := newHarness(t)
+	url, _ := multiRepo(t)
+
+	if out, err := h.run(t, "install", url+"//skills/alpha"); err != nil {
+		t.Fatalf("subpath install: %v\n%s", err, out)
+	}
+	if !linked(t, h, "alpha") {
+		t.Error("alpha should be linked")
+	}
+	if linked(t, h, "beta") {
+		t.Error("a subpath install should reach only that subpath")
+	}
+}
+
+func TestInstallSubpathScopesTheWalk(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"skills/alpha/SKILL.md": alphaMD,
+		"skills/beta/SKILL.md":  betaMD,
+		"vendor/gamma/SKILL.md": "---\nname: gamma\n---\n",
+	})
+
+	// The subpath is above two skills, so the choice is still ambiguous, but
+	// the third skill outside it is not on offer.
+	out, err := h.run(t, "install", url+"//skills")
+	if err == nil {
+		t.Fatalf("bare install under a multi-skill subpath succeeded\n%s", out)
+	}
+	if !strings.Contains(out, "alpha") || !strings.Contains(out, "beta") {
+		t.Errorf("listing should cover the subpath:\n%s", out)
+	}
+	if strings.Contains(out, "gamma") {
+		t.Errorf("listing reached outside the subpath:\n%s", out)
+	}
+
+	if out, err := h.run(t, "install", url+"//skills", "--all"); err != nil {
+		t.Fatalf("install --all under a subpath: %v\n%s", err, out)
+	}
+	for _, name := range []string{"alpha", "beta"} {
+		if !linked(t, h, name) {
+			t.Errorf("%s should be linked", name)
+		}
+	}
+	if linked(t, h, "gamma") {
+		t.Error("--all installed a skill outside the subpath")
+	}
+}
+
+func TestInstallSubpathSharesTheRepositoryRevision(t *testing.T) {
+	h := newHarness(t)
+	url, _ := multiRepo(t)
+
+	if _, err := h.run(t, "install", url+"//skills/alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.run(t, "install", url+"//skills/beta"); err != nil {
+		t.Fatal(err)
+	}
+
+	alpha, aerr := os.Readlink(filepath.Join(h.claude, "alpha"))
+	beta, berr := os.Readlink(filepath.Join(h.claude, "beta"))
+	if aerr != nil || berr != nil {
+		t.Fatalf("links missing: %v %v", aerr, berr)
+	}
+	if filepath.Dir(alpha) != filepath.Dir(beta) {
+		t.Errorf("two subpath installs of one commit landed in different revisions:\n%s\n%s", alpha, beta)
+	}
+}
 
 func TestInstallSingleSkillRepoNeedsNoSelection(t *testing.T) {
 	h := newHarness(t)
