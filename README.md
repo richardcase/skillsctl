@@ -42,6 +42,9 @@ exact.
 - **Repositories of many skills.** `--skill` takes the ones you name, `--all`
   takes every one it finds, and they share a single copy of the repository. A
   bare `install` on such a repository lists what is there rather than guessing.
+- **Disk you can get back.** `skillsctl gc` deletes the revisions and mirrors no
+  installed skill references, and reports what it freed. Nothing shared is
+  collected while any skill still points at it.
 - **Scriptable.** `skillsctl list --json` emits the raw receipts, and a partial
   install exits `2` so a script can tell it from having installed nothing.
 - **One static binary.** No runtime dependency beyond `git`.
@@ -73,6 +76,8 @@ skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
 skillsctl outdated                                 # what has moved upstream
 skillsctl remove avoid-ai-writing                  # unlink everywhere
+skillsctl gc                                       # reclaim disk nothing uses
+skillsctl gc --dry-run                             # show what it would free
 skillsctl version
 ```
 
@@ -146,15 +151,30 @@ Locations can be overridden with environment variables:
 | `list` | `--json` | Show installed skills, versions and agents |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
+| `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `version` | | Print version, commit and build date |
 
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
 the receipt; removing the last link forgets it.
 
+Nothing in the store is deleted until you ask. `remove` unlinks a skill and
+forgets its receipt, but leaves the copy on disk, because another skill may be
+installed from the same commit — which is the normal case for a repository
+installed with `--all`. `gc` reclaims what no receipt references: the revision,
+and the bare mirror once no revision of that repository is left.
+
+```
+$ skillsctl gc --dry-run
+rev/github.com/obra/superpowers/9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c  4.1 MB
+cache/github.com/obra/superpowers.git                                     2.7 MB
+would reclaim 1 revision and 1 mirror, 6.8 MB
+```
+
 Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
 was and the rest is reported — `install --all` where one name is already taken
-installs the others and exits `2`, and `outdated` exits `2` when it could not
-reach some of the remotes. `3` is a finding rather than a verdict on the work:
+installs the others and exits `2`, `outdated` exits `2` when it could not reach
+some of the remotes, and `gc` exits `2` when it freed some of what it found but
+could not remove the rest. `3` is a finding rather than a verdict on the work:
 `outdated` ran to completion and something has moved.
 
 ## Configuration
@@ -184,8 +204,8 @@ marketplaces.
 The `git` channel is implemented and is what the examples above use. The
 `plugin` (`name@marketplace`) and `local` path channels are parsed but not yet
 installable — they report that the channel is not supported yet. `update`,
-`outdated`, `link`, `adopt`, `bundle`, `sync`, `doctor` and `gc` are designed
-but not built.
+`outdated`, `link`, `adopt`, `bundle`, `sync` and `doctor` are designed but not
+built.
 
 See [the design spec](docs/superpowers/specs/2026-08-13-skillsctl-design.md) for
 the full intended surface.

@@ -115,7 +115,7 @@ else lives in `internal/`, one narrow responsibility per package:
 | `cli` | Cobra command tree, flag wiring, output rendering |
 | `source` | Parse `owner/repo`, git URLs, `plugin@marketplace`, local paths into a `Source` |
 | `gitx` | The `git` binary behind a `Git` interface: `Resolve`, `Mirror`, `Extract` (+ safe untar) |
-| `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, containment checks, tree hashing |
+| `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, collection (`Collect`/`Delete`), containment checks, tree hashing |
 | `discover` | Read `SKILL.md` and its YAML frontmatter |
 | `target` | Agent config TOML, defaults, safe `Link`/`Unlink`, `ValidateSkillName` |
 | `plan` | Mutations as inspectable `Op` values; executor with rollback |
@@ -128,6 +128,11 @@ else lives in `internal/`, one narrow responsibility per package:
 - **Plan/apply.** Model mutations as `plan.Op` values and let `--dry-run` print
   `p.Describe()`. Never branch on `dryRun` inside mutation code — that is how
   the dry run stays exact.
+- **Scan/apply for store operations.** A plan holds only user-visible
+  mutations, so store housekeeping is not a `plan.Op`. It gets the same
+  exactness a different way: a pure scan returning a report (`store.Collect`)
+  and a separate step that applies it (`store.Delete`). `--dry-run` skips the
+  second call rather than taking a different path through the first.
 - **State.** The executor never persists. Only an explicit `h.Commit()` after a
   successful apply writes to disk, with the `state.Handle` flock held across the
   whole read-modify-write.
