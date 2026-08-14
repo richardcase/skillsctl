@@ -171,17 +171,7 @@ func (c *Local) Install(req Request, chosen []Candidate) (plan.Plan, []state.Rec
 	}
 
 	for _, s := range chosen {
-		// No slug, no resolved revision, no content hash: a slug says where in
-		// the store something lives, and nothing of this is in the store.
-		receipt := state.Receipt{
-			Name:        s.Name,
-			Channel:     string(source.ChannelLocal),
-			Source:      root,
-			Subpath:     s.Subpath,
-			RevPath:     s.Path,
-			InstalledAt: now,
-			UpdatedAt:   now,
-		}
+		receipt := localReceipt(s.Name, root, s.Subpath, s.Path, now)
 
 		for _, t := range req.Targets {
 			linkPath := filepath.Join(t.Dir, s.Name)
@@ -195,6 +185,21 @@ func (c *Local) Install(req Request, chosen []Candidate) (plan.Plan, []state.Rec
 		receipts = append(receipts, receipt)
 	}
 	return p, receipts, nil
+}
+
+// localReceipt is the shape of every local receipt, whether it was linked or
+// adopted. No slug, no resolved revision, no content hash: a slug says where in
+// the store something lives, and nothing of this is in the store.
+func localReceipt(name, root, subpath, revPath string, now time.Time) state.Receipt {
+	return state.Receipt{
+		Name:        name,
+		Channel:     string(source.ChannelLocal),
+		Source:      root,
+		Subpath:     subpath,
+		RevPath:     revPath,
+		InstalledAt: now,
+		UpdatedAt:   now,
+	}
 }
 
 // Update has nothing to do. A local skill is already whatever its directory

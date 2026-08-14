@@ -47,6 +47,10 @@ exact.
   directory you are working in, linked rather than copied, so every edit is live
   in every agent immediately. `remove` takes away the symlinks and never the
   directory.
+- **Takes over what is already there.** `skillsctl adopt` records the skills
+  already sitting in each agent's skills directory, so hand-made symlinks stop
+  being invisible. One that leads into a clean git checkout is recorded with the
+  sha it is at, pinned. Nothing is moved, copied or deleted.
 - **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
   installs through `claude plugin` and records a receipt, so a plugin shows up in
   `list` and comes out with `remove` alongside everything else. A plugin Claude
@@ -95,6 +99,8 @@ skillsctl update                                   # move everything to its ref'
 skillsctl update avoid-ai-writing                  # just this one, pin or not
 skillsctl update --dry-run                         # show what would change
 skillsctl remove avoid-ai-writing                  # unlink everywhere
+skillsctl adopt --dry-run                          # what is already in your agents
+skillsctl adopt                                    # take it over
 skillsctl gc                                       # reclaim disk nothing uses
 skillsctl gc --dry-run                             # show what it would free
 skillsctl version
@@ -183,6 +189,18 @@ takes away skillsctl's own symlinks and leaves your directory exactly as it was.
 A directory inside the store, or already inside an agent's skills directory, is
 refused rather than linked.
 
+`adopt` is how a skill that was installed by hand becomes one of these. A
+symlink is recorded exactly as `link` would have recorded it — the same receipt,
+so removing it later takes away the symlink and leaves its target alone. One
+that leads into a git checkout with a remote is recorded on the `git` channel
+instead, at the sha the checkout is at and pinned, so `outdated` still reports
+when the ref moves while `update` re-points it only when you name it. A checkout
+with uncommitted changes stays local, because the sha would not describe the
+files on disk. A real directory sitting in a skills directory is reported rather
+than adopted: there is no symlink to record as the removal contract, and adopt
+moves nothing. Nor does it touch anything already managed, anything dangling, or
+anything without a `SKILL.md` — it says what it found and why.
+
 A plugin is the second exception, because Claude Code owns it. `skillsctl` records the
 `plugin@marketplace` id, the version and the install path claude reported, and
 nothing else: there is no revision in the store, no content hash and no symlink,
@@ -205,6 +223,7 @@ Locations can be overridden with environment variables:
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
+| `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
 | `list` | `--json` | Show installed skills, versions and agents |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
@@ -240,8 +259,10 @@ Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
 was and the rest is reported — `install --all` where one name is already taken
 installs the others and exits `2`, `outdated` exits `2` when it could not reach
 some of the remotes, `update` exits `2` when it updated some skills and skipped
-others (and `1` when it updated none of them), and `gc` exits `2` when it freed
-some of what it found but could not remove the rest. `3` is a finding rather
+others (and `1` when it updated none of them), `gc` exits `2` when it freed
+some of what it found but could not remove the rest, and `adopt` exits `2` when
+it adopted some of what it found and skipped the rest (and `1` when it could
+adopt none of it). `3` is a finding rather
 than a verdict on the work:
 `outdated` ran to completion and something has moved.
 
@@ -272,9 +293,10 @@ without it through `-a` is an error rather than a silent no-op.
 ## Status
 
 All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
-`local` (`./path`). `adopt`, `bundle`, `sync` and `doctor` are designed but not
-built, and `link` currently takes a path — linking an already-installed skill
-into another agent is not built yet.
+`local` (`./path`). `bundle`, `sync` and `doctor` are designed but not built,
+and `link` currently takes a path — linking an already-installed skill into
+another agent is not built yet, which is also why `adopt` reports a hand-made
+link whose name is already managed rather than adding it as a second link.
 
 Two things the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `n/a`, and a plugin's skills are not fanned out to agents other than

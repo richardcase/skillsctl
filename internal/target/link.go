@@ -43,7 +43,10 @@ func Link(linkPath, revPath string) (created bool, err error) {
 		if rerr == nil && existing == revPath {
 			return false, nil
 		}
-		return false, fmt.Errorf("%s is already a symlink to %s: remove it first", linkPath, existing)
+		// A symlink somebody made by hand is exactly what adopt takes over, so
+		// name it rather than only the blunt remedy. A real directory is not:
+		// there would be no link to record, so the message below stays as it is.
+		return false, fmt.Errorf("%s is already a symlink to %s: run `skillsctl adopt` to take it over, or remove it first", linkPath, existing)
 	case err == nil:
 		return false, fmt.Errorf("%s already exists and is not a skillsctl symlink: remove it first", linkPath)
 	case !os.IsNotExist(err):

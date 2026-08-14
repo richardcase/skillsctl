@@ -56,9 +56,20 @@ Per present target, per direct child of the skills directory:
 | Symlink into a checkout with uncommitted changes | `local` | See below |
 | A real directory | skipped | No symlink means no removal contract |
 | Dangling symlink, or a link to a non-directory | skipped | `doctor` reports these |
-| A symlink into the store with no receipt | skipped | An orphan; the slug does not reverse into a source |
 | A name already in the receipts | managed | Nothing to do |
+| A symlink into the store with no receipt | skipped | An orphan; the slug does not reverse into a source |
 | No `SKILL.md` | skipped | Not a skill |
+| A dot entry | ignored | The agent's own bookkeeping, not a skill |
+
+Those two middle rows are in that order for a reason a hand-check found:
+everything skillsctl installs points into the store, so asking where a link
+points before asking whether a receipt claims it reports every managed skill as
+an orphan.
+
+A dot entry is ignored rather than reported — codex keeps a `.system` directory
+in its skills directory, and calling that unadoptable would leave a permanent
+skipped entry, and so a permanent exit code 2, on a machine with nothing wrong
+with it.
 
 ### The real directory
 
