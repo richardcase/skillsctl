@@ -58,6 +58,9 @@ or build from source with `go install github.com/richardcase/skillsctl/cmd/skill
 
 ```bash
 skillsctl install conorbronsdon/avoid-ai-writing   # link into every agent found
+skillsctl install owner/repo                       # lists the skills it finds
+skillsctl install owner/repo --skill web-research  # pick one (repeat for more)
+skillsctl install owner/repo --all                 # every skill in the repo
 skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version

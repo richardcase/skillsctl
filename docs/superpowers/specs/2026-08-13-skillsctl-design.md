@@ -130,6 +130,27 @@ for `SKILL.md`, parsing YAML frontmatter for `name`/`description`. Also read
 - name collision with an existing receipt → error naming the current owner,
   suggest `--as`
 
+Refinements made while implementing this:
+
+- A directory holding a `SKILL.md` **is** a skill and is not descended into. That
+  one rule gives "root `SKILL.md` → single skill" for free, and stops example
+  directories inside a skill from becoming skills of their own.
+- `.claude-plugin/marketplace.json` and `plugin.json` are **display metadata
+  only** — a heading above the listing saying which repository the skills came
+  from. They never affect which skills are discovered or what they are named, and
+  a missing or malformed file is not an error: decoration must not fail an
+  install.
+- `--skill <name>` matches a skill's resolved name first, then its path within
+  the repository, so a skill whose frontmatter is missing or ambiguous can still
+  be asked for.
+- A name that is already installed is a hard error when a single skill was
+  selected — the user asked for that one in particular. When several were
+  selected the request is for whatever is missing, so collisions are reported and
+  skipped, the rest install, and the command exits non-zero. Every name colliding
+  is an error that changes nothing.
+- The link name for a nameless skill falls back to the source only for a skill
+  that is the walk root; a nested one falls back to its own directory name.
+
 ### Targets
 
 ```toml
