@@ -59,7 +59,7 @@ func TestEnsureExtractsAndIsIdempotent(t *testing.T) {
 	s := New(t.TempDir())
 	ctx := context.Background()
 
-	rev, err := s.Ensure(ctx, gitx.New(), src, sha)
+	rev, err := s.Ensure(ctx, gitx.New(), src.Slug(), src.RepoURL, sha)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestEnsureExtractsAndIsIdempotent(t *testing.T) {
 	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	again, err := s.Ensure(ctx, gitx.New(), src, sha)
+	again, err := s.Ensure(ctx, gitx.New(), src.Slug(), src.RepoURL, sha)
 	if err != nil {
 		t.Fatalf("second Ensure: %v", err)
 	}
@@ -84,6 +84,37 @@ func TestEnsureExtractsAndIsIdempotent(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Error("second Ensure re-extracted instead of reusing the cached revision")
+	}
+}
+
+func TestJoinResolvesASubpathInsideTheRevision(t *testing.T) {
+	root := filepath.Join("/root", "rev", "github.com", "o", "r", "abc")
+
+	got, err := Join(root, "skills/alpha")
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if want := filepath.Join(root, "skills", "alpha"); got != want {
+		t.Errorf("Join = %q, want %q", got, want)
+	}
+
+	// An empty subpath means the repository itself is the skill.
+	got, err = Join(root, "")
+	if err != nil {
+		t.Fatalf("Join with an empty subpath: %v", err)
+	}
+	if got != root {
+		t.Errorf("Join = %q, want %q", got, root)
+	}
+}
+
+func TestJoinRejectsASubpathThatEscapesTheRevision(t *testing.T) {
+	root := filepath.Join("/root", "rev", "github.com", "o", "r", "abc")
+
+	for _, subpath := range []string{"..", "../elsewhere", "skills/../../elsewhere", "/etc", "skills/../.."} {
+		if got, err := Join(root, subpath); err == nil {
+			t.Errorf("Join(%q) = %q, want an error", subpath, got)
+		}
 	}
 }
 
@@ -103,7 +134,7 @@ func TestEnsureLeavesNoTempDirOnFailure(t *testing.T) {
 	src, _ := source.Parse(url)
 
 	s := New(t.TempDir())
-	_, err := s.Ensure(context.Background(), gitx.New(), src, "0123456789abcdef0123456789abcdef01234567")
+	_, err := s.Ensure(context.Background(), gitx.New(), src.Slug(), src.RepoURL, "0123456789abcdef0123456789abcdef01234567")
 	if err == nil {
 		t.Fatal("Ensure succeeded for a sha that does not exist")
 	}

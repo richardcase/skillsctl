@@ -26,6 +26,21 @@ func (o Link) Describe() string {
 	return fmt.Sprintf("link    %s -> %s [%s]", o.LinkPath, o.RevPath, o.Target)
 }
 
+// Relink points an existing symlink at a different revision. Rolling one back
+// is putting the previous revision back rather than removing the link:
+// revision directories are immutable, so the one it moved away from is still
+// there and still valid.
+type Relink struct {
+	Target   string
+	LinkPath string
+	RevPath  string
+}
+
+// Describe renders a user-visible description of the Relink op.
+func (o Relink) Describe() string {
+	return fmt.Sprintf("relink  %s -> %s [%s]", o.LinkPath, o.RevPath, o.Target)
+}
+
 // Unlink removes a symlink skillsctl created.
 type Unlink struct {
 	Target   string

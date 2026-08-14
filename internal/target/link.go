@@ -56,6 +56,57 @@ func Link(linkPath, revPath string) (created bool, err error) {
 	return true, nil
 }
 
+// Relink points an existing symlink at revPath, returning what it pointed at
+// before so the caller can put it back. A missing linkPath is created, which
+// repairs a receipt whose link was deleted by hand; anything that is not a
+// symlink is refused, never replaced.
+//
+// The new link is written into a sibling temporary directory and renamed over
+// the old one, so an agent reading the skills directory during an update sees
+// either the old skill or the new one, never a gap.
+func Relink(linkPath, revPath string) (previous string, err error) {
+	dir := filepath.Dir(linkPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create skills directory: %w", err)
+	}
+
+	fi, err := os.Lstat(linkPath)
+	switch {
+	case os.IsNotExist(err):
+		if err := os.Symlink(revPath, linkPath); err != nil {
+			return "", fmt.Errorf("link %s: %w", linkPath, err)
+		}
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("inspect %s: %w", linkPath, err)
+	case fi.Mode()&os.ModeSymlink == 0:
+		return "", fmt.Errorf("refusing to re-point %s: it is not a skillsctl symlink", linkPath)
+	}
+
+	previous, err = os.Readlink(linkPath)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", linkPath, err)
+	}
+	if previous == revPath {
+		return previous, nil
+	}
+
+	tmp, err := os.MkdirTemp(dir, ".tmp-link-")
+	if err != nil {
+		return "", fmt.Errorf("create temp link directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+
+	staged := filepath.Join(tmp, filepath.Base(linkPath))
+	if err := os.Symlink(revPath, staged); err != nil {
+		return "", fmt.Errorf("link %s: %w", linkPath, err)
+	}
+	if err := os.Rename(staged, linkPath); err != nil {
+		return "", fmt.Errorf("re-point %s: %w", linkPath, err)
+	}
+	return previous, nil
+}
+
 // Unlink removes linkPath when it is a symlink. A missing path succeeds; a
 // real file or directory is an error, never a deletion.
 func Unlink(linkPath string) error {

@@ -99,15 +99,3 @@ func newRemoveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
 }
-
-// hintReclaimable mentions disk the removal just orphaned. Removal never
-// deletes from the store itself, so this is the only thing that tells the user
-// the copy is still there. A failed scan is dropped rather than turned into an
-// error on a command that already succeeded.
-func hintReclaimable(cmd *cobra.Command, e *env, db *state.DB) {
-	rep, err := e.store.Collect(liveRoots(db))
-	if err != nil || rep.IsEmpty() {
-		return
-	}
-	cmd.Printf("%s (%s) now unreferenced; run `skillsctl gc` to reclaim\n", gcSummary(rep), humanBytes(rep.Bytes()))
-}

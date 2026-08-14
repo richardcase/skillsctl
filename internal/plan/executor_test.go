@@ -124,6 +124,78 @@ func TestApplyExecUsesInjectedRunner(t *testing.T) {
 	}
 }
 
+func TestApplyRelinksToTheNewRevision(t *testing.T) {
+	root := t.TempDir()
+	old := filepath.Join(root, "old")
+	fresh := filepath.Join(root, "new")
+	for _, d := range []string{old, fresh} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(root, "skills", "foo")
+
+	e := newExecutor()
+	var setup Plan
+	setup.Add(Link{Target: "claude", LinkPath: link, RevPath: old})
+	if err := e.Apply(context.Background(), setup); err != nil {
+		t.Fatal(err)
+	}
+
+	var p Plan
+	p.Add(Relink{Target: "claude", LinkPath: link, RevPath: fresh})
+	if err := e.Apply(context.Background(), p); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got, err := os.Readlink(link); err != nil || got != fresh {
+		t.Errorf("Readlink = %q, %v; want %q", got, err, fresh)
+	}
+}
+
+// A failed update must leave the old revision linked: that is the whole
+// rollback story for immutable revision directories.
+func TestApplyRollsBackARelinkToTheOldRevision(t *testing.T) {
+	root := t.TempDir()
+	old := filepath.Join(root, "old")
+	fresh := filepath.Join(root, "new")
+	for _, d := range []string{old, fresh} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	link := filepath.Join(root, "a", "skills", "foo")
+	e := newExecutor()
+	var setup Plan
+	setup.Add(Link{Target: "claude", LinkPath: link, RevPath: old})
+	if err := e.Apply(context.Background(), setup); err != nil {
+		t.Fatal(err)
+	}
+
+	// A real directory at the second link path makes that op fail.
+	blocked := filepath.Join(root, "b", "skills", "foo")
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var p Plan
+	p.Add(
+		Relink{Target: "claude", LinkPath: link, RevPath: fresh},
+		Relink{Target: "codex", LinkPath: blocked, RevPath: fresh},
+		Record{Receipt: state.Receipt{Name: "foo", Resolved: "new"}},
+	)
+
+	if err := e.Apply(context.Background(), p); err == nil {
+		t.Fatal("Apply succeeded despite a failing Relink op")
+	}
+	if got, err := os.Readlink(link); err != nil || got != old {
+		t.Errorf("Readlink = %q, %v; want the old revision %q", got, err, old)
+	}
+	if _, ok := e.DB.Receipts["foo"]; ok {
+		t.Error("no receipt should be recorded when apply fails")
+	}
+}
+
 func TestApplyRollbackKeepsPreExistingLinks(t *testing.T) {
 	root := t.TempDir()
 	rev := filepath.Join(root, "rev")

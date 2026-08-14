@@ -111,6 +111,85 @@ func TestUnlinkMissingPathSucceeds(t *testing.T) {
 	}
 }
 
+func TestRelinkRepointsAndReportsThePrevious(t *testing.T) {
+	root := t.TempDir()
+	old := filepath.Join(root, "old")
+	fresh := filepath.Join(root, "new")
+	for _, d := range []string{old, fresh} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(root, "skills", "my-skill")
+	if _, err := Link(link, old); err != nil {
+		t.Fatal(err)
+	}
+
+	previous, err := Relink(link, fresh)
+	if err != nil {
+		t.Fatalf("Relink: %v", err)
+	}
+	if previous != old {
+		t.Errorf("Relink reported previous %q, want %q", previous, old)
+	}
+	got, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("Readlink: %v", err)
+	}
+	if got != fresh {
+		t.Errorf("symlink points at %q, want %q", got, fresh)
+	}
+
+	// Nothing may be left in the skills directory beyond the link itself: a
+	// leftover temp directory would show up as a skill to the agent.
+	entries, err := os.ReadDir(filepath.Dir(link))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("skills directory holds %d entries, want just the link", len(entries))
+	}
+}
+
+func TestRelinkCreatesAMissingLink(t *testing.T) {
+	root := t.TempDir()
+	rev := filepath.Join(root, "rev")
+	if err := os.MkdirAll(rev, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "skills", "my-skill")
+
+	previous, err := Relink(link, rev)
+	if err != nil {
+		t.Fatalf("Relink: %v", err)
+	}
+	if previous != "" {
+		t.Errorf("Relink reported previous %q, want empty for a link it created", previous)
+	}
+	if got, err := os.Readlink(link); err != nil || got != rev {
+		t.Errorf("Readlink = %q, %v; want %q", got, err, rev)
+	}
+}
+
+func TestRelinkRefusesToClobber(t *testing.T) {
+	root := t.TempDir()
+	rev := filepath.Join(root, "rev")
+	if err := os.MkdirAll(rev, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "skills", "my-skill")
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Relink(link, rev); err == nil {
+		t.Fatal("Relink replaced a real directory; want an error")
+	}
+	if fi, err := os.Lstat(link); err != nil || !fi.IsDir() {
+		t.Error("the existing directory must be left untouched")
+	}
+}
+
 func TestValidateSkillName(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/richardcase/skillsctl/internal/gitx"
-	"github.com/richardcase/skillsctl/internal/source"
 )
 
 // Store is a skillsctl data root.
@@ -63,11 +62,29 @@ func (s *Store) within(p string) error {
 	return nil
 }
 
+// Join resolves a repository-relative subpath against a revision directory.
+// A subpath can come from a user-supplied source string or from a receipt, so
+// one that escapes the revision is refused rather than cleaned: silently
+// stripping a .. segment would select a different skill than the one named.
+func Join(root, subpath string) (string, error) {
+	if subpath == "" {
+		return root, nil
+	}
+	clean := filepath.Clean(filepath.FromSlash(subpath))
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("subpath %q resolves outside the revision directory", subpath)
+	}
+	return filepath.Join(root, clean), nil
+}
+
 // Ensure guarantees the revision is extracted, returning its path. It is a
 // no-op when the revision is already present, so it is safe to call on every
 // install including a --dry-run.
-func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha string) (string, error) {
-	slug := src.Slug()
+//
+// It takes the slug rather than a source.Source because a receipt records the
+// slug it was installed under: re-deriving one by parsing the recorded URL
+// would make the store layout depend on a round trip nothing asserts.
+func (s *Store) Ensure(ctx context.Context, g gitx.Git, slug, repoURL, sha string) (string, error) {
 	rev := s.RevPath(slug, sha)
 	mirror := s.MirrorPath(slug)
 
@@ -82,8 +99,8 @@ func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha s
 		return rev, nil
 	}
 
-	if err := g.Mirror(ctx, src.RepoURL, mirror); err != nil {
-		return "", fmt.Errorf("mirror %s: %w", src.RepoURL, err)
+	if err := g.Mirror(ctx, repoURL, mirror); err != nil {
+		return "", fmt.Errorf("mirror %s: %w", repoURL, err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(rev), 0o755); err != nil {
@@ -103,7 +120,7 @@ func (s *Store) Ensure(ctx context.Context, g gitx.Git, src source.Source, sha s
 	}()
 
 	if err := g.Extract(ctx, mirror, sha, tmp); err != nil {
-		return "", fmt.Errorf("extract %s at %s: %w", src.RepoURL, sha, err)
+		return "", fmt.Errorf("extract %s at %s: %w", repoURL, sha, err)
 	}
 	if err := os.Rename(tmp, rev); err != nil {
 		// Another process may have won the race; accept its result.

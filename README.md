@@ -32,6 +32,10 @@ exact.
   it never guesses.
 - **`--dry-run` that is exact.** Commands build a plan of the mutations and
   print it. What you see is what runs; the dry run is not a separate code path.
+- **Updates that keep your choices.** `skillsctl update` moves a skill to the
+  head of the ref it tracks, keeping the name you installed it under, the agents
+  you linked it into, and its pin. A skill you edited through its symlink is
+  reported rather than overwritten.
 - **Pin to an immutable commit.** `--ref v1.2.0 --pin` freezes the resolved sha
   so a later update skips it.
 - **Safe by construction.** Path-escaping skill names, subpaths and tar entries
@@ -75,6 +79,9 @@ skillsctl install owner/repo --dry-run             # show what would change
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
 skillsctl outdated                                 # what has moved upstream
+skillsctl update                                   # move everything to its ref's head
+skillsctl update avoid-ai-writing                  # just this one, pin or not
+skillsctl update --dry-run                         # show what would change
 skillsctl remove avoid-ai-writing                  # unlink everywhere
 skillsctl gc                                       # reclaim disk nothing uses
 skillsctl gc --dry-run                             # show what it would free
@@ -120,6 +127,24 @@ note: 1 update available
 Pinned skills are listed and marked, so a pin never hides the fact that something
 moved, but they do not set that exit code on their own — `update` skips them.
 
+`update` re-points each symlink at the new revision and rewrites the receipt,
+keeping the name, the agents and the pin:
+
+```
+$ skillsctl update
+updated avoid-ai-writing 3c0fd8a -> 9071811
+skipped brainstorming: edited since it was installed; pass --force to update it anyway
+skipped pinned-one: pinned at 525e31b; name it explicitly to update it
+1 revision (4.1 MB) now unreferenced; run `skillsctl gc` to reclaim
+```
+
+Naming a skill updates it even when it is pinned, re-pinning it at the new
+commit. Revision directories carry no `.git`, so a skill edited through its
+symlink is spotted by re-hashing it against what was recorded at install time,
+and skipped rather than overwritten — `--force` updates it anyway, discarding
+the edit. The old revision stays on disk until `skillsctl gc`, so a failed
+update leaves the previous one linked and the receipt untouched.
+
 ## How it works
 
 Skills are fetched once into `~/.local/share/skillsctl` and symlinked into each
@@ -150,6 +175,7 @@ Locations can be overridden with environment variables:
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `list` | `--json` | Show installed skills, versions and agents |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
+| `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `version` | | Print version, commit and build date |
@@ -158,10 +184,11 @@ Locations can be overridden with environment variables:
 the receipt; removing the last link forgets it.
 
 Nothing in the store is deleted until you ask. `remove` unlinks a skill and
-forgets its receipt, but leaves the copy on disk, because another skill may be
-installed from the same commit — which is the normal case for a repository
-installed with `--all`. `gc` reclaims what no receipt references: the revision,
-and the bare mirror once no revision of that repository is left.
+forgets its receipt, and `update` moves it off the revision it was on, but both
+leave the copy on disk, because another skill may be installed from the same
+commit — which is the normal case for a repository installed with `--all`. `gc`
+reclaims what no receipt references: the revision, and the bare mirror once no
+revision of that repository is left.
 
 ```
 $ skillsctl gc --dry-run
@@ -173,8 +200,10 @@ would reclaim 1 revision and 1 mirror, 6.8 MB
 Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
 was and the rest is reported — `install --all` where one name is already taken
 installs the others and exits `2`, `outdated` exits `2` when it could not reach
-some of the remotes, and `gc` exits `2` when it freed some of what it found but
-could not remove the rest. `3` is a finding rather than a verdict on the work:
+some of the remotes, `update` exits `2` when it updated some skills and skipped
+others (and `1` when it updated none of them), and `gc` exits `2` when it freed
+some of what it found but could not remove the rest. `3` is a finding rather
+than a verdict on the work:
 `outdated` ran to completion and something has moved.
 
 ## Configuration
@@ -203,9 +232,8 @@ marketplaces.
 
 The `git` channel is implemented and is what the examples above use. The
 `plugin` (`name@marketplace`) and `local` path channels are parsed but not yet
-installable — they report that the channel is not supported yet. `update`,
-`outdated`, `link`, `adopt`, `bundle`, `sync` and `doctor` are designed but not
-built.
+installable — they report that the channel is not supported yet. `link`,
+`adopt`, `bundle`, `sync` and `doctor` are designed but not built.
 
 See [the design spec](docs/superpowers/specs/2026-08-13-skillsctl-design.md) for
 the full intended surface.

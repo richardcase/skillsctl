@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/richardcase/skillsctl/internal/discover"
@@ -103,13 +102,13 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	// Populating the content-addressed cache is idempotent and not a
 	// user-visible mutation, so it runs even for --dry-run. It is what lets
 	// the plan below name the skills exactly rather than guess.
-	revRoot, err := e.store.Ensure(ctx, g, src, sha)
+	revRoot, err := e.store.Ensure(ctx, g, src.Slug(), src.RepoURL, sha)
 	if err != nil {
 		return err
 	}
-	revPath := filepath.Join(revRoot, filepath.FromSlash(src.Subpath))
-	if rel, rerr := filepath.Rel(revRoot, revPath); rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("refusing to install: subpath %q resolves outside the revision directory", src.Subpath)
+	revPath, err := store.Join(revRoot, src.Subpath)
+	if err != nil {
+		return fmt.Errorf("refusing to install: %w", err)
 	}
 
 	chosen, err := chooseSkills(cmd, src, sha, revPath, o)
