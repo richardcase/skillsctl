@@ -39,7 +39,11 @@ exact.
   symlinks is ever deleted; and links created by a failed apply are rolled back.
 - **Fast on repeats.** A git mirror cache plus a content-addressed revision
   store means reinstalling a commit you already have does no network work.
-- **Scriptable.** `skillsctl list --json` emits the raw receipts.
+- **Repositories of many skills.** `--skill` takes the ones you name, `--all`
+  takes every one it finds, and they share a single copy of the repository. A
+  bare `install` on such a repository lists what is there rather than guessing.
+- **Scriptable.** `skillsctl list --json` emits the raw receipts, and a partial
+  install exits `2` so a script can tell it from having installed nothing.
 - **One static binary.** No runtime dependency beyond `git`.
 
 ## Install
@@ -58,12 +62,11 @@ or build from source with `go install github.com/richardcase/skillsctl/cmd/skill
 
 ```bash
 skillsctl install conorbronsdon/avoid-ai-writing   # link into every agent found
-skillsctl install owner/repo                       # lists the skills it finds
+skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
+skillsctl install owner/repo//path/to/skill        # the same, boundary spelled out
 skillsctl install owner/repo --skill web-research  # pick one (repeat for more)
 skillsctl install owner/repo --all                 # every skill in the repo
-skillsctl install owner/repo//skills/alpha         # a subpath, spelled out
 skillsctl install owner/repo -a claude             # just one agent
-skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
 skillsctl install owner/repo --dry-run             # show what would change
 skillsctl list                                     # what's installed
@@ -83,6 +86,18 @@ A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
 (https, ssh or scp-style), or a local path. `//` separates a repository from a
 subpath inside it — the only way to name one in a `.git`-suffixed or `git@host:`
 URL, where the repository boundary is otherwise the whole path.
+
+A repository holding several skills needs `--skill <name>` (repeatable, matching
+a skill's name or its path) or `--all`. Without one of them, `install` lists what
+it found and stops rather than guessing:
+
+```
+$ skillsctl install vercel-labs/agent-skills
+skills in https://github.com/vercel-labs/agent-skills.git @ 7c41bf0:
+  pdf-forms     Extract and fill PDF forms
+  web-research  Research a topic against primary sources
+error: this repository holds 2 skills: pass --skill <name> (repeatable) or --all
+```
 
 ## How it works
 
@@ -111,7 +126,7 @@ Locations can be overridden with environment variables:
 
 | Command | Flags | Does |
 | --- | --- | --- |
-| `install <source>` | `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch a skill and link it into each agent |
+| `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `list` | `--json` | Show installed skills, versions and agents |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
 | `version` | | Print version, commit and build date |
