@@ -73,6 +73,19 @@ func newGCCmd() *cobra.Command {
 	return cmd
 }
 
+// hintReclaimable mentions disk a command just orphaned: the revision a remove
+// dropped, or the one an update moved off. Neither deletes from the store, so
+// this is the only thing that tells the user the copy is still there. A failed
+// scan is dropped rather than turned into an error on a command that already
+// succeeded.
+func hintReclaimable(cmd *cobra.Command, e *env, db *state.DB) {
+	rep, err := e.store.Collect(liveRoots(db))
+	if err != nil || rep.IsEmpty() {
+		return
+	}
+	cmd.Printf("%s (%s) now unreferenced; run `skillsctl gc` to reclaim\n", gcSummary(rep), humanBytes(rep.Bytes()))
+}
+
 // liveRoots reduces the receipt set to the store's root set.
 func liveRoots(db *state.DB) store.Live {
 	receipts := db.List()

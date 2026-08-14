@@ -21,15 +21,24 @@ type Executor struct {
 	Run func(ctx context.Context, argv []string) error
 }
 
-// Apply runs every op in order. If one fails, symlinks created by this apply
-// are removed before the error is returned.
+// undoStep reverses one op this apply carried out. The path is kept alongside
+// the function so a rollback that itself fails can say which link it is
+// warning about.
+type undoStep struct {
+	path string
+	fn   func() error
+}
+
+// Apply runs every op in order. If one fails, the filesystem changes this apply
+// made are undone before the error is returned: a symlink it created is
+// removed, and one it re-pointed goes back to the revision it came from.
 func (e *Executor) Apply(ctx context.Context, p Plan) error {
-	var linked []string
+	var undo []undoStep
 
 	rollback := func() {
-		for i := len(linked) - 1; i >= 0; i-- {
-			if err := target.Unlink(linked[i]); err != nil {
-				_, _ = fmt.Fprintf(e.Out, "warning: could not roll back %s: %v\n", linked[i], err)
+		for i := len(undo) - 1; i >= 0; i-- {
+			if err := undo[i].fn(); err != nil {
+				_, _ = fmt.Fprintf(e.Out, "warning: could not roll back %s: %v\n", undo[i].path, err)
 			}
 		}
 	}
@@ -41,7 +50,21 @@ func (e *Executor) Apply(ctx context.Context, p Plan) error {
 			var created bool
 			created, err = target.Link(o.LinkPath, o.RevPath)
 			if err == nil && created {
-				linked = append(linked, o.LinkPath)
+				undo = append(undo, undoStep{path: o.LinkPath, fn: func() error { return target.Unlink(o.LinkPath) }})
+			}
+		case Relink:
+			var previous string
+			previous, err = target.Relink(o.LinkPath, o.RevPath)
+			if err == nil && previous != o.RevPath {
+				// Restore what was actually there, not what the op expected:
+				// a link that had drifted goes back where it was found.
+				undo = append(undo, undoStep{path: o.LinkPath, fn: func() error {
+					if previous == "" {
+						return target.Unlink(o.LinkPath)
+					}
+					_, rerr := target.Relink(o.LinkPath, previous)
+					return rerr
+				}})
 			}
 		case Unlink:
 			err = target.Unlink(o.LinkPath)

@@ -11,6 +11,7 @@ func TestDescribeRendersEveryOp(t *testing.T) {
 	var p Plan
 	p.Add(
 		Link{Target: "claude", LinkPath: "/h/.claude/skills/foo", RevPath: "/s/rev/x/abc"},
+		Relink{Target: "claude", LinkPath: "/h/.claude/skills/foo", RevPath: "/s/rev/x/def"},
 		Unlink{Target: "codex", LinkPath: "/h/.codex/skills/foo"},
 		Record{Receipt: state.Receipt{Name: "foo", Resolved: "abc1234"}},
 		Forget{Name: "bar"},
@@ -18,12 +19,13 @@ func TestDescribeRendersEveryOp(t *testing.T) {
 	)
 
 	got := p.Describe()
-	if len(got) != 5 {
-		t.Fatalf("Describe() produced %d lines, want 5", len(got))
+	if len(got) != 6 {
+		t.Fatalf("Describe() produced %d lines, want 6", len(got))
 	}
 
 	wantFragments := []string{
 		"/h/.claude/skills/foo",
+		"/s/rev/x/def",
 		"/h/.codex/skills/foo",
 		"foo",
 		"bar",
