@@ -29,8 +29,10 @@ make tidy-check   # go mod tidy, then fail if go.mod/go.sum changed
 make snapshot     # goreleaser release --snapshot --clean
 ```
 
-**Definition of done:** `make test && make lint && make tidy-check` all pass.
-Add `goreleaser check` only when `.goreleaser.yaml` changes. These mirror the
+**Definition of done:** `make test && make lint && make tidy-check` all pass,
+and `README.md` reflects any user-visible change (see
+[Keeping the README current](#keeping-the-readme-current)). Add
+`goreleaser check` only when `.goreleaser.yaml` changes. The commands mirror the
 three jobs in `.github/workflows/ci.yml`, so a green local run means a green PR.
 
 ## Commit messages
@@ -68,6 +70,40 @@ docs: describe installation and usage
 
 Follow the established rhythm: a `feat:` commit for the change, then focused
 `fix:` commits addressing review findings, rather than amending history.
+
+## Keeping the README current
+
+`README.md` is the only documentation most users will read, and an undocumented
+feature is one nobody uses. **Any change to the user-visible surface updates the
+README in the same pull request** — not in a follow-up.
+
+Update it when you:
+
+- add or rename a command, or change what one does;
+- add, rename or remove a flag, or change its default;
+- add a capability worth advertising — that belongs in **Features**, phrased as
+  what the user gets rather than how it is implemented;
+- change the store layout, the config file schema, or an environment variable;
+- change an error message or output format that the README shows;
+- move something between built and unbuilt — the **Status** section lists the
+  channels and commands that are designed but not yet available, and a new
+  command must come off that list as it lands.
+
+Check the whole README against the change, not just the section you were
+thinking of: a new flag usually touches the **Commands** table, the `Use`
+examples, and sometimes **Features**.
+
+Two rules for what goes in it:
+
+- **Only claim what the code does today.** The feature list is a promise. If
+  something works for one channel but not another, say so rather than implying
+  it is general.
+- **Keep the examples runnable.** Commands, flags and sample output in the
+  README are checked against `--help` and against the real output format during
+  review, so they must match the code as merged.
+
+The same applies to this file: a new convention, package or build command
+belongs in `AGENTS.md` as part of the change that introduces it.
 
 ## Architecture
 
