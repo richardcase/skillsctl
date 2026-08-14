@@ -34,6 +34,12 @@ const (
 	// records the install and undoes it through the agent; nothing of ours is
 	// in the store, so gc has nothing to count.
 	AgentOwned
+	// UserOwned means the files are the user's own, in a directory they chose.
+	// skillsctl links to them and records where they are; it never copies them,
+	// never updates them, and on remove takes away only its own symlinks. Like
+	// AgentOwned the store holds nothing, and like StoreOwned the links are the
+	// removal contract — which is why there are three of these and not two.
+	UserOwned
 )
 
 // Request is one install invocation, already parsed.

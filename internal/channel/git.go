@@ -21,6 +21,8 @@ import (
 // Git installs skills from a git repository: a bare mirror in the store, an
 // immutable revision directory per sha, and a symlink per agent.
 type Git struct {
+	linked
+
 	store *store.Store
 	git   gitx.Git
 }
@@ -281,46 +283,6 @@ func (c *Git) Update(ctx context.Context, rs []*state.Receipt, o UpdateOptions) 
 // so is every path derived from it.
 func (c *Git) Settle(context.Context, []state.Receipt) ([]state.Receipt, error) {
 	return nil, nil
-}
-
-// Remove unlinks the receipt from the agents in drop, and forgets it when that
-// was the last of them. An empty drop means every agent.
-//
-// An empty plan means nothing in drop was linked; the caller reports that,
-// because it is the one that knows what the user typed.
-func (c *Git) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error) {
-	var p plan.Plan
-	var keep []state.Link
-
-	for _, l := range r.Links {
-		if len(drop) > 0 && !drop[l.Target] {
-			keep = append(keep, l)
-			continue
-		}
-		p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
-	}
-	if p.IsEmpty() {
-		return p, nil
-	}
-
-	if len(keep) == 0 {
-		p.Add(plan.Forget{Name: r.Name})
-	} else {
-		updated := r
-		updated.Links = keep
-		updated.UpdatedAt = time.Now().UTC()
-		p.Add(plan.Record{Receipt: updated})
-	}
-	return p, nil
-}
-
-// Agents reads the links, which are the record of where this skill was put.
-func (c *Git) Agents(r state.Receipt) []string {
-	names := make([]string, 0, len(r.Links))
-	for _, l := range r.Links {
-		names = append(names, l.Target)
-	}
-	return names
 }
 
 // inspect reports whether the linked subtree has been edited since it was
