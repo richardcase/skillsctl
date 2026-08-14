@@ -278,6 +278,46 @@ func TestListJSON(t *testing.T) {
 	}
 }
 
+func TestListWritesToStdout(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	// An empty store still has to say so on stdout: `list > skills.txt`
+	// should not produce an empty file.
+	stdout, stderr, err := h.runSplit(t, "list")
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "No skills installed") {
+		t.Errorf("the empty-store message is not on stdout:\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+
+	if out, ierr := h.run(t, "install", url); ierr != nil {
+		t.Fatalf("install: %v\n%s", ierr, out)
+	}
+
+	for _, args := range [][]string{{"list"}, {"list", "--json"}} {
+		stdout, stderr, err = h.runSplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, stderr)
+		}
+		if !strings.Contains(stdout, "demo-skill") {
+			t.Errorf("%v wrote its output somewhere other than stdout:\nstdout:\n%s\nstderr:\n%s", args, stdout, stderr)
+		}
+		if stderr != "" {
+			t.Errorf("%v wrote to stderr on success:\n%s", args, stderr)
+		}
+	}
+
+	// The JSON form must be parseable on its own, with nothing else mixed in.
+	var receipts []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &receipts); err != nil {
+		t.Fatalf("list --json stdout is not valid JSON on its own: %v\n%s", err, stdout)
+	}
+}
+
 func TestInstallRejectsEscapingNameFromFrontmatter(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{

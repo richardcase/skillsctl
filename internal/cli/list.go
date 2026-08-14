@@ -30,21 +30,27 @@ func newListCmd() *cobra.Command {
 
 			receipts := h.DB.List()
 
+			// cmd.Print and friends resolve to stderr unless a writer was
+			// set, so everything list produces is written to stdout by hand.
+			// The listing is the command's product: `list --json > skills.json`
+			// has to capture it.
+			out := cmd.OutOrStdout()
+
 			if asJSON {
 				blob, err := json.MarshalIndent(receipts, "", "  ")
 				if err != nil {
 					return err
 				}
-				cmd.Println(string(blob))
-				return nil
+				_, err = fmt.Fprintln(out, string(blob))
+				return err
 			}
 
 			if len(receipts) == 0 {
-				cmd.Println("No skills installed.")
-				return nil
+				_, err := fmt.Fprintln(out, "No skills installed.")
+				return err
 			}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS")
 			for _, r := range receipts {
 				var agents []string
