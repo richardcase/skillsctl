@@ -119,6 +119,10 @@ Locations can be overridden with environment variables:
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
 the receipt; removing the last link forgets it.
 
+Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
+was and the rest is reported — `install --all` where one name is already taken
+installs the others and exits `2`.
+
 ## Configuration
 
 Agents are configured in `~/.config/skillsctl/config.toml`. Without one,

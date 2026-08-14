@@ -2,6 +2,8 @@
 package cli
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 )
 
@@ -24,10 +26,23 @@ func NewRootCmd() *cobra.Command {
 
 // Execute runs the command tree and returns the process exit code.
 func Execute() int {
-	root := NewRootCmd()
-	if err := root.Execute(); err != nil {
-		root.PrintErrf("error: %v\n", err)
-		return 1
+	return run(NewRootCmd())
+}
+
+// run executes a command tree and maps its error to an exit code. It is split
+// from Execute so tests can drive it with their own args and buffers.
+func run(root *cobra.Command) int {
+	err := root.Execute()
+	if err == nil {
+		return ExitOK
 	}
-	return 0
+
+	var partial *PartialError
+	if errors.As(err, &partial) {
+		root.PrintErrf("note: %v\n", err)
+		return ExitPartial
+	}
+
+	root.PrintErrf("error: %v\n", err)
+	return ExitError
 }

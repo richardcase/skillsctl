@@ -285,5 +285,6 @@ func skippedErr(skipped []string, chosen []selection) error {
 	if len(skipped) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%d of %d selected skills were skipped: their names are already installed", len(skipped), len(chosen))
+	return partialf("%d of %d selected skills were skipped: their names are already installed",
+		len(skipped), len(chosen))
 }

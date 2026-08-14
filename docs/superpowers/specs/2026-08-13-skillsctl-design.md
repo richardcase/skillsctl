@@ -155,8 +155,8 @@ Refinements made while implementing this:
 - A name that is already installed is a hard error when a single skill was
   selected — the user asked for that one in particular. When several were
   selected the request is for whatever is missing, so collisions are reported and
-  skipped, the rest install, and the command exits non-zero. Every name colliding
-  is an error that changes nothing.
+  skipped, the rest install, and the command exits 2 (see Exit codes). Every name
+  colliding is an error that changes nothing.
 - The link name for a nameless skill falls back to the source only for a skill
   that is the walk root; a nested one falls back to its own directory name.
 
@@ -224,6 +224,20 @@ back to `runtime/debug.ReadBuildInfo()` (module version + VCS stamp) so
 - `doctor` reports dangling symlinks, receipts whose links are missing, rev dirs
   with no receipt, and name collisions across targets.
 - `gc` deletes rev dirs and bare mirrors that no receipt references.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | everything asked for was done |
+| 1 | nothing was done; the message says why |
+| 2 | some of it was done, and what was skipped is reported |
+
+Code 2 exists because a single failure code cannot express a partial result:
+`install --all` over a repository where one name is already taken installs the
+rest, and a script has to be able to tell that from having installed nothing. It
+is rendered as `note:` rather than `error:`, since the work stands. `update`
+across several skills will report the same way.
 
 ## Package layout
 
