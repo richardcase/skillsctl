@@ -2,6 +2,7 @@ package gitx
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -196,5 +197,105 @@ func TestExtractFailsFastWhenDestinationIsUnwritable(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("Extract hung: the tar stream was not drained before Wait")
+	}
+}
+
+func TestDescribeReadsACheckout(t *testing.T) {
+	url, sha := testrepo.New(t, map[string]string{"skills/demo/SKILL.md": "---\nname: demo\n---\n"})
+	clone := testrepo.Clone(t, url)
+
+	got, err := New().Describe(context.Background(), filepath.Join(clone, "skills", "demo"))
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if got.Prefix != "skills/demo" {
+		t.Errorf("Prefix = %q, want skills/demo", got.Prefix)
+	}
+	if got.RepoURL != url {
+		t.Errorf("RepoURL = %q, want %q", got.RepoURL, url)
+	}
+	if got.SHA != sha {
+		t.Errorf("SHA = %q, want %q", got.SHA, sha)
+	}
+	if got.Ref != "main" {
+		t.Errorf("Ref = %q, want main", got.Ref)
+	}
+	if got.Dirty {
+		t.Error("a fresh clone reported as dirty")
+	}
+}
+
+func TestDescribeScopesDirtinessToTheDirectory(t *testing.T) {
+	url, _ := testrepo.New(t, map[string]string{
+		"skills/demo/SKILL.md": "---\nname: demo\n---\n",
+		"elsewhere/notes.md":   "notes\n",
+	})
+	clone := testrepo.Clone(t, url)
+	demo := filepath.Join(clone, "skills", "demo")
+
+	// Churn outside the skill says nothing about the skill.
+	if err := os.WriteFile(filepath.Join(clone, "elsewhere", "notes.md"), []byte("edited"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := New().Describe(context.Background(), demo)
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if got.Dirty {
+		t.Error("an edit outside the directory made it dirty")
+	}
+
+	if err := os.WriteFile(filepath.Join(demo, "SKILL.md"), []byte("edited"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = New().Describe(context.Background(), demo)
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if !got.Dirty {
+		t.Error("an edit inside the directory did not make it dirty")
+	}
+}
+
+func TestDescribeCountsAnUntrackedFileAsDirty(t *testing.T) {
+	url, _ := testrepo.New(t, map[string]string{"skills/demo/SKILL.md": "---\nname: demo\n---\n"})
+	clone := testrepo.Clone(t, url)
+	demo := filepath.Join(clone, "skills", "demo")
+
+	if err := os.WriteFile(filepath.Join(demo, "extra.md"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := New().Describe(context.Background(), demo)
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if !got.Dirty {
+		t.Error("a file git has never seen did not count as dirty")
+	}
+}
+
+func TestDescribeReportsNoRemoteRatherThanFailing(t *testing.T) {
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": "---\nname: demo\n---\n"})
+
+	got, err := New().Describe(context.Background(), testrepo.Dir(url))
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if got.RepoURL != "" {
+		t.Errorf("RepoURL = %q, want empty for a repository with no origin", got.RepoURL)
+	}
+	if got.Prefix != "" {
+		t.Errorf("Prefix = %q, want empty at the repository root", got.Prefix)
+	}
+	if got.SHA == "" {
+		t.Error("SHA is empty for a repository that has a commit")
+	}
+}
+
+func TestDescribeRejectsSomethingThatIsNotARepository(t *testing.T) {
+	_, err := New().Describe(context.Background(), t.TempDir())
+	if !errors.Is(err, ErrNotRepo) {
+		t.Errorf("Describe outside a repository = %v, want ErrNotRepo", err)
 	}
 }
