@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/plan"
+	"github.com/richardcase/skillsctl/internal/source"
+	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/update"
 	"github.com/spf13/cobra"
 )
@@ -45,7 +47,7 @@ func newUpdateCmd() *cobra.Command {
 				return nil
 			}
 
-			entries, p, err := update.Plan(cmd.Context(), gitx.New(), e.store, receipts,
+			entries, p, err := update.Plan(cmd.Context(), e.channels(), receipts,
 				update.Options{Names: args, Force: force})
 			if err != nil {
 				return err
@@ -59,11 +61,18 @@ func newUpdateCmd() *cobra.Command {
 				return updateExit(entries)
 			}
 
+			var serr error
 			if !p.IsEmpty() {
-				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout()}
+				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
 				if err := ex.Apply(cmd.Context(), p); err != nil {
 					return err
 				}
+
+				// A channel whose agent chooses the version can only be asked
+				// once it has run, so the entries are corrected before they are
+				// reported rather than after.
+				entries, serr = settleUpdated(cmd.Context(), ex, e, h.DB, entries)
+
 				if err := h.Commit(); err != nil {
 					return fmt.Errorf("%w\nthe skills were re-linked but the receipts were not saved; re-run this command to repair", err)
 				}
@@ -73,13 +82,64 @@ func newUpdateCmd() *cobra.Command {
 			if !p.IsEmpty() {
 				hintReclaimable(cmd, e, h.DB)
 			}
-			return updateExit(entries)
+			if serr != nil {
+				cmd.Printf("warning: %v\n", serr)
+			}
+			if err := updateExit(entries); err != nil {
+				return err
+			}
+			if serr != nil {
+				return partialf("the update ran, but a version could not be read back")
+			}
+			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "update even a skill that has been edited since it was installed")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
+}
+
+// settleUpdated completes the receipts an update just wrote, for the channels
+// that cannot know a version until their agent has run, and folds the result
+// back into the entries so the report says what actually happened rather than
+// what was planned.
+//
+// It groups by channel for the same reason update.Plan does: a channel is asked
+// once, and answers for everything it owns.
+func settleUpdated(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, entries []update.Entry) ([]update.Entry, error) {
+	reg := e.channels()
+	grouped := map[string][]state.Receipt{}
+	var order []string
+
+	for _, en := range entries {
+		if en.Status != update.StatusUpdated {
+			continue
+		}
+		r, ok := db.Receipts[en.Name]
+		if !ok {
+			continue
+		}
+		if _, seen := grouped[en.Channel]; !seen {
+			order = append(order, en.Channel)
+		}
+		grouped[en.Channel] = append(grouped[en.Channel], *r)
+	}
+
+	var settled []state.Receipt
+	var firstErr error
+	for _, name := range order {
+		ch, err := reg.For(source.Channel(name))
+		if err != nil {
+			continue
+		}
+		got, err := settle(ctx, ex, ch, grouped[name])
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		settled = append(settled, got...)
+	}
+	return update.Reconcile(entries, settled), firstErr
 }
 
 // reportUpdate writes one line per skill that is not simply current. A run
@@ -109,7 +169,14 @@ func reportUpdate(cmd *cobra.Command, entries []update.Entry, dryRun bool) {
 func updateLine(e update.Entry, verb string) string {
 	switch e.Status {
 	case update.StatusUpdated:
+		// An empty Latest is not missing information, it is the answer: the
+		// plugin channel cannot name the version its agent will install until
+		// the agent has installed it, so a --dry-run says so rather than
+		// printing an arrow pointing at nothing.
 		line := fmt.Sprintf("%s %s %s -> %s", verb, e.Name, shortSha(e.Current), shortSha(e.Latest))
+		if e.Latest == "" {
+			line = fmt.Sprintf("%s %s from %s, to whatever version its source publishes", verb, e.Name, shortSha(e.Current))
+		}
 		if e.Note != "" {
 			line += fmt.Sprintf(" (%s)", e.Note)
 		}

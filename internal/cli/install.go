@@ -1,16 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
-	"path/filepath"
-	"time"
+	"strings"
 
-	"github.com/richardcase/skillsctl/internal/discover"
-	"github.com/richardcase/skillsctl/internal/gitx"
+	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
-	"github.com/richardcase/skillsctl/internal/store"
 	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
@@ -69,21 +67,16 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	if err != nil {
 		return err
 	}
-	if src.Channel != source.ChannelGit {
-		return fmt.Errorf("the %s channel is not supported yet", src.Channel)
-	}
 
 	e, err := newEnv()
 	if err != nil {
 		return err
 	}
-	targets, err := e.targets(o.agents)
+	ch, err := e.channels().For(src.Channel)
 	if err != nil {
 		return err
 	}
-
-	g := gitx.New()
-	sha, err := g.Resolve(ctx, src.RepoURL, o.ref)
+	targets, err := e.targets(o.agents)
 	if err != nil {
 		return err
 	}
@@ -99,27 +92,26 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	}
 	defer func() { _ = h.Close() }()
 
-	// Populating the content-addressed cache is idempotent and not a
-	// user-visible mutation, so it runs even for --dry-run. It is what lets
-	// the plan below name the skills exactly rather than guess.
-	revRoot, err := e.store.Ensure(ctx, g, src.Slug(), src.RepoURL, sha)
-	if err != nil {
-		return err
-	}
-	revPath, err := store.Join(revRoot, src.Subpath)
-	if err != nil {
-		return fmt.Errorf("refusing to install: %w", err)
+	req := channel.Request{
+		Source:  src,
+		Targets: targets,
+		Skills:  o.skills,
+		All:     o.all,
+		Ref:     o.ref,
+		Pin:     o.pin,
 	}
 
-	chosen, err := chooseSkills(cmd, src, sha, revPath, o)
+	chosen, err := ch.Prepare(ctx, req)
 	if err != nil {
+		reportAmbiguous(cmd, err)
 		return err
 	}
+
 	if o.as != "" {
 		if err := target.ValidateSkillName(o.as); err != nil {
 			return fmt.Errorf("refusing to install: %w (from --as); pass --as <name> to choose one", err)
 		}
-		chosen[0].name = o.as
+		chosen[0].Name = o.as
 	}
 
 	wanted, skipped, err := dropInstalled(h.DB, chosen)
@@ -127,7 +119,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		return err
 	}
 
-	p, receipts, err := installPlan(wanted, targets, src, sha, revRoot, o)
+	p, receipts, err := ch.Install(req, wanted)
 	if err != nil {
 		return err
 	}
@@ -140,65 +132,40 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		return skippedErr(skipped, chosen)
 	}
 
-	ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout()}
+	ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
 	if err := ex.Apply(ctx, p); err != nil {
 		return err
 	}
+
+	// A failed settle is reported after the receipts are committed, never
+	// instead of committing them: an install we cannot fully describe still
+	// beats one nothing recorded.
+	receipts, serr := settle(ctx, ex, ch, receipts)
+
 	if err := h.Commit(); err != nil {
 		return fmt.Errorf("%w\nthe skill was linked but the receipt was not saved; re-run this command to repair, "+
 			"or remove the symlink by hand if it now points at an older revision", err)
 	}
 
 	for _, r := range receipts {
-		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(sha), targetNames(targets))
+		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), strings.Join(ch.Agents(r), ", "))
 	}
 	reportSkipped(cmd, skipped)
+	if serr != nil {
+		return serr
+	}
 	return skippedErr(skipped, chosen)
 }
 
-// chooseSkills discovers the skills in revPath and narrows them to the ones the
-// user asked for. When the choice is ambiguous it prints what is available and
-// returns an error: install never guesses which skill was meant.
-func chooseSkills(cmd *cobra.Command, src source.Source, sha, revPath string, o installOpts) ([]selection, error) {
-	found, err := discover.Walk(revPath)
-	if err != nil {
-		return nil, err
+// reportAmbiguous prints what the user could have asked for, when the channel
+// could not narrow the request to a single answer. The channel returns the
+// candidates; how a listing looks is this package's business.
+func reportAmbiguous(cmd *cobra.Command, err error) {
+	var amb *channel.Ambiguous
+	if !errors.As(err, &amb) {
+		return
 	}
-	if len(found) == 0 {
-		return nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
-	}
-
-	available, err := resolveNames(found, src.DefaultName())
-	if err != nil {
-		return nil, err
-	}
-
-	switch {
-	case o.all:
-		return available, nil
-
-	case len(o.skills) > 0:
-		chosen, err := pickSkills(available, o.skills)
-		if err != nil {
-			printAvailable(cmd, src, sha, revPath, available)
-			return nil, err
-		}
-		return chosen, nil
-
-	case len(available) == 1:
-		return available, nil
-
-	default:
-		printAvailable(cmd, src, sha, revPath, available)
-		return nil, fmt.Errorf("this repository holds %d skills: pass --skill <name> (repeatable) or --all", len(available))
-	}
-}
-
-// printAvailable writes the listing that accompanies an ambiguous or unmatched
-// selection, so the next command the user types can be a correct one.
-func printAvailable(cmd *cobra.Command, src source.Source, sha, revPath string, sels []selection) {
-	header := fmt.Sprintf("skills in %s @ %s:", src.RepoURL, shortSha(sha))
-	for _, line := range listing(discover.PluginMeta(revPath), header, sels) {
+	for _, line := range listing(amb.Meta, amb.Header, amb.Available) {
 		cmd.Println(line)
 	}
 }
@@ -207,74 +174,23 @@ func printAvailable(cmd *cobra.Command, src source.Source, sha, revPath string, 
 // whose names are already taken. Naming a single skill is a request for that
 // skill in particular, so a collision there is an error; asking for several is
 // a request for whatever is missing, so collisions are reported and skipped.
-func dropInstalled(db *state.DB, chosen []selection) (wanted []selection, skipped []string, err error) {
+func dropInstalled(db *state.DB, chosen []channel.Candidate) (wanted []channel.Candidate, skipped []string, err error) {
 	for _, s := range chosen {
-		existing, ok := db.Receipts[s.name]
+		existing, ok := db.Receipts[s.Name]
 		if !ok {
 			wanted = append(wanted, s)
 			continue
 		}
 		if len(chosen) == 1 {
 			return nil, nil, fmt.Errorf("%q is already installed from %s: remove it first, or install this one with --as <name>",
-				s.name, existing.Source)
+				s.Name, existing.Source)
 		}
-		skipped = append(skipped, fmt.Sprintf("skipped %s: already installed from %s", s.name, existing.Source))
+		skipped = append(skipped, fmt.Sprintf("skipped %s: already installed from %s", s.Name, existing.Source))
 	}
 	if len(wanted) == 0 {
 		return nil, nil, fmt.Errorf("every skill selected is already installed: remove one first, or install with --as <name>")
 	}
 	return wanted, skipped, nil
-}
-
-// installPlan builds the whole install as one plan: every link for every skill,
-// then every receipt. One apply, so a failure part-way leaves nothing behind.
-func installPlan(wanted []selection, targets []target.Target, src source.Source, sha, revRoot string, o installOpts) (plan.Plan, []state.Receipt, error) {
-	var p plan.Plan
-	receipts := make([]state.Receipt, 0, len(wanted))
-	now := time.Now().UTC()
-
-	for _, s := range wanted {
-		hash, err := store.HashDir(s.skill.Dir)
-		if err != nil {
-			return p, nil, err
-		}
-		subpath, err := filepath.Rel(revRoot, s.skill.Dir)
-		if err != nil {
-			return p, nil, err
-		}
-		if subpath = filepath.ToSlash(subpath); subpath == "." {
-			subpath = ""
-		}
-
-		receipt := state.Receipt{
-			Name:        s.name,
-			Channel:     string(src.Channel),
-			Source:      src.RepoURL,
-			Slug:        src.Slug(),
-			Subpath:     subpath,
-			Resolved:    sha,
-			Pinned:      o.pin,
-			RevPath:     s.skill.Dir,
-			ContentHash: hash,
-			InstalledAt: now,
-			UpdatedAt:   now,
-		}
-		if !o.pin {
-			receipt.Ref = o.ref
-		}
-
-		for _, t := range targets {
-			linkPath := filepath.Join(t.Dir, s.name)
-			if filepath.Dir(linkPath) != filepath.Clean(t.Dir) {
-				return p, nil, fmt.Errorf("refusing to install %q: it would resolve outside %s", s.name, t.Dir)
-			}
-			p.Add(plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: s.skill.Dir})
-			receipt.Links = append(receipt.Links, state.Link{Target: t.Name, Path: linkPath})
-		}
-		p.Add(plan.Record{Receipt: receipt})
-		receipts = append(receipts, receipt)
-	}
-	return p, receipts, nil
 }
 
 func reportSkipped(cmd *cobra.Command, skipped []string) {
@@ -285,7 +201,7 @@ func reportSkipped(cmd *cobra.Command, skipped []string) {
 
 // skippedErr makes a partial install exit non-zero, after the skills that could
 // be installed have been reported: the work stands, the shell still notices.
-func skippedErr(skipped []string, chosen []selection) error {
+func skippedErr(skipped []string, chosen []channel.Candidate) error {
 	if len(skipped) == 0 {
 		return nil
 	}

@@ -22,6 +22,7 @@ Makefile puts mise's shims on `PATH` so they work without shell activation.
 ```bash
 mise install      # go 1.25, golangci-lint 2, goreleaser 2
 make test         # go test -race -cover ./...
+make test-manual  # opt-in: really runs claude plugin install|uninstall
 make lint         # golangci-lint run
 make fmt          # golangci-lint fmt (gofumpt + goimports)
 make build        # go build -o skillsctl ./cmd/skillsctl
@@ -114,7 +115,11 @@ else lives in `internal/`, one narrow responsibility per package:
 | --- | --- |
 | `cli` | Cobra command tree, flag wiring, output rendering |
 | `source` | Parse `owner/repo`, git URLs, `plugin@marketplace`, local paths into a `Source` |
+| `channel` | The `Channel` interface and its implementations; the only place a mechanism differs |
+| `update` | Select receipts for an update, dispatch them to their channels, merge the verdicts |
+| `outdated` | Compare each receipt's resolved sha against its tracked ref, without fetching |
 | `gitx` | The `git` binary behind a `Git` interface: `Resolve`, `Mirror`, `Extract` (+ safe untar) |
+| `claudex` | The `claude` binary behind a `Plugins` interface: `List` plus the argv a `plan.Exec` runs |
 | `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, collection (`Collect`/`Delete`), containment checks, tree hashing |
 | `discover` | Read `SKILL.md` and its YAML frontmatter |
 | `target` | Agent config TOML, defaults, safe `Link`/`Unlink`, `ValidateSkillName` |
@@ -128,6 +133,20 @@ else lives in `internal/`, one narrow responsibility per package:
 - **Plan/apply.** Model mutations as `plan.Op` values and let `--dry-run` print
   `p.Describe()`. Never branch on `dryRun` inside mutation code — that is how
   the dry run stays exact.
+- **Channels are the only place a mechanism differs.** A git skill is fetched
+  into the store and symlinked; a plugin is installed by the agent that owns it.
+  Everything after that — the plan, the executor, the receipts, the exit codes —
+  is shared. Put the difference behind `channel.Channel` rather than branching
+  on `source.Channel` at a call site; `list`, `remove` and `gc` ask
+  `Ownership()` and nothing finer.
+- **A binary we shell out to gets a package and an interface.** `gitx` and
+  `claudex` both exist so that no unit test runs the real thing, and both read
+  only. Every *mutation* stays a `plan.Exec` op built from an argv helper, which
+  is what keeps `--dry-run` printing the command that will actually run rather
+  than a description of it. The two seams are `plan.Executor.Run` and an
+  injected `output` func on the CLI type; `cli` swaps them through the
+  package-level `newRunner` and `newPlugins` vars, and the test harness swaps
+  both for every test so nothing can reach the developer's own `~/.claude`.
 - **Scan/apply for store operations.** A plan holds only user-visible
   mutations, so store housekeeping is not a `plan.Op`. It gets the same
   exactness a different way: a pure scan returning a report (`store.Collect`)

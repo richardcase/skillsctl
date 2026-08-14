@@ -43,6 +43,10 @@ exact.
   symlinks is ever deleted; and links created by a failed apply are rolled back.
 - **Fast on repeats.** A git mirror cache plus a content-addressed revision
   store means reinstalling a commit you already have does no network work.
+- **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
+  installs through `claude plugin` and records a receipt, so a plugin shows up in
+  `list` and comes out with `remove` alongside everything else. A plugin Claude
+  already has is adopted rather than reinstalled.
 - **Repositories of many skills.** `--skill` takes the ones you name, `--all`
   takes every one it finds, and they share a single copy of the repository. A
   bare `install` on such a repository lists what is there rather than guessing.
@@ -51,7 +55,8 @@ exact.
   collected while any skill still points at it.
 - **Scriptable.** `skillsctl list --json` emits the raw receipts, and a partial
   install exits `2` so a script can tell it from having installed nothing.
-- **One static binary.** No runtime dependency beyond `git`.
+- **One static binary.** No runtime dependency beyond `git`, and `claude` only
+  if you install plugins.
 
 ## Install
 
@@ -76,6 +81,7 @@ skillsctl install owner/repo --all                 # every skill in the repo
 skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
 skillsctl install owner/repo --dry-run             # show what would change
+skillsctl install superpowers@claude-plugins-official  # a Claude Code plugin
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
 skillsctl outdated                                 # what has moved upstream
@@ -93,6 +99,7 @@ $ skillsctl list
 NAME              CHANNEL  VERSION           AGENTS
 avoid-ai-writing  git      a1b2c3d           claude,codex
 brainstorming     git      9f8e7d6 (pinned)  claude
+superpowers       plugin   6.3.0             claude
 ```
 
 A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
@@ -161,6 +168,14 @@ A receipt records the source, channel, requested ref, resolved sha, whether it
 is pinned, the revision path, a content hash of the tree, and every symlink the
 install created — which is what makes `remove` deterministic.
 
+A plugin is the exception, because Claude Code owns it. `skillsctl` records the
+`plugin@marketplace` id, the version and the install path claude reported, and
+nothing else: there is no revision in the store, no content hash and no symlink,
+since a plugin's skills are already visible to the agent that installed it. So
+`install`, `update` and `remove` run `claude plugin install|update|uninstall`
+and read back what claude decided, `list` shows the plugin's version, and `gc`
+leaves it alone. `claude` must be on `PATH`; nothing else needs it.
+
 Locations can be overridden with environment variables:
 
 | Variable | Overrides | Falls back to |
@@ -173,6 +188,7 @@ Locations can be overridden with environment variables:
 | Command | Flags | Does |
 | --- | --- | --- |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
+| `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
 | `list` | `--json` | Show installed skills, versions and agents |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
@@ -181,7 +197,14 @@ Locations can be overridden with environment variables:
 | `version` | | Print version, commit and build date |
 
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
-the receipt; removing the last link forgets it.
+the receipt; removing the last link forgets it. A plugin has no links to keep,
+so removing it uninstalls it through `claude` and forgets the receipt outright.
+
+`--skill`, `--all`, `--ref` and `--pin` mean nothing for a plugin — it is
+installed whole, at whichever version its marketplace publishes — and are
+refused rather than ignored. For the same reason `outdated` reports a plugin as
+`n/a`: `claude plugin` offers no way to see a newer version without installing
+it, so `skillsctl update` is what finds out.
 
 Nothing in the store is deleted until you ask. `remove` unlinks a skill and
 forgets its receipt, and `update` moves it off the revision it was on, but both
@@ -226,14 +249,20 @@ dir = "~/.codex/skills"
 
 `dir` is the agent's user-level skills directory, `project_dir` the
 repository-relative one, and `plugins` marks an agent that also supports plugin
-marketplaces.
+marketplaces. That last one is what the plugin channel installs for: a
+`name@marketplace` source needs an agent with `plugins = true`, and naming one
+without it through `-a` is an error rather than a silent no-op.
 
 ## Status
 
-The `git` channel is implemented and is what the examples above use. The
-`plugin` (`name@marketplace`) and `local` path channels are parsed but not yet
-installable — they report that the channel is not supported yet. `link`,
-`adopt`, `bundle`, `sync` and `doctor` are designed but not built.
+The `git` and `plugin` (`name@marketplace`) channels are implemented. The
+`local` path channel is parsed but not yet installable — it reports that the
+channel is not supported yet. `link`, `adopt`, `bundle`, `sync` and `doctor` are
+designed but not built.
+
+Two things the plugin channel deliberately does not do yet: `outdated` reports a
+plugin as `n/a`, and a plugin's skills are not fanned out to agents other than
+the one that installed it.
 
 See [the design spec](docs/superpowers/specs/2026-08-13-skillsctl-design.md) for
 the full intended surface.

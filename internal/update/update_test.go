@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
@@ -92,7 +93,8 @@ func (f *fixture) plan(t *testing.T, o Options, receipts ...*state.Receipt) ([]E
 	if len(receipts) == 0 {
 		receipts = []*state.Receipt{f.receipt}
 	}
-	entries, p, err := Plan(context.Background(), f.git, f.store, receipts, o)
+	reg := channel.Registry{Git: channel.NewGit(f.store, f.git)}
+	entries, p, err := Plan(context.Background(), reg, receipts, o)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
@@ -295,7 +297,8 @@ func TestPlanReportsASkillThatIsGoneUpstream(t *testing.T) {
 func TestPlanRejectsANameThatIsNotInstalled(t *testing.T) {
 	f := newFixture(t)
 
-	_, _, err := Plan(context.Background(), f.git, f.store,
+	reg := channel.Registry{Git: channel.NewGit(f.store, f.git)}
+	_, _, err := Plan(context.Background(), reg,
 		[]*state.Receipt{f.receipt}, Options{Names: []string{"nope"}})
 
 	if err == nil {
@@ -333,27 +336,37 @@ func TestPlanSkipsANonGitChannel(t *testing.T) {
 	}
 }
 
-func TestSlugFallsBackToTheSource(t *testing.T) {
-	src, err := source.Parse("owner/repo")
-	if err != nil {
-		t.Fatal(err)
+// Reconcile exists for the channel that cannot say in advance whether an update
+// will move anything: it plans every receipt as updated with no Latest, and the
+// settled receipt is what finally decides.
+func TestReconcileCollapsesAnUpdateThatMovedNothing(t *testing.T) {
+	entries := []Entry{
+		{Name: "moved", Status: StatusUpdated, Current: "1.0.0"},
+		{Name: "still", Status: StatusUpdated, Current: "2.0.0"},
+		{Name: "git", Status: StatusUpdated, Current: "aaa", Latest: "bbb"},
+	}
+	settled := []state.Receipt{
+		{Name: "moved", Resolved: "1.1.0"},
+		{Name: "still", Resolved: "2.0.0"},
+		{Name: "git", Resolved: "zzz"},
 	}
 
-	got, err := slugFor(&state.Receipt{Source: src.RepoURL})
-	if err != nil {
-		t.Fatalf("slugFor: %v", err)
+	got := Reconcile(entries, settled)
+
+	if got[0].Status != StatusUpdated || got[0].Latest != "1.1.0" {
+		t.Errorf("moved = %+v, want it updated to the version that was read back", got[0])
 	}
-	if got != src.Slug() {
-		t.Errorf("slugFor = %q, want %q", got, src.Slug())
+	if got[1].Status != StatusCurrent {
+		t.Errorf("still = %+v, want a re-install at the same version reported as current", got[1])
+	}
+	if got[2].Latest != "bbb" {
+		t.Errorf("git = %+v, want an entry that already knew its Latest left alone", got[2])
 	}
 }
 
-func TestSlugPrefersTheRecordedOne(t *testing.T) {
-	got, err := slugFor(&state.Receipt{Slug: "recorded/slug", Source: "https://example.com/o/r.git"})
-	if err != nil {
-		t.Fatalf("slugFor: %v", err)
-	}
-	if got != "recorded/slug" {
-		t.Errorf("slugFor = %q, want the recorded slug", got)
+func TestReconcileWithNothingSettledChangesNothing(t *testing.T) {
+	entries := []Entry{{Name: "a", Status: StatusUpdated, Current: "x", Latest: "y"}}
+	if got := Reconcile(entries, nil); got[0] != entries[0] {
+		t.Errorf("Reconcile = %+v, want the entries unchanged", got[0])
 	}
 }

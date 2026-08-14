@@ -57,8 +57,14 @@ type Record struct {
 	Receipt state.Receipt
 }
 
-// Describe renders a user-visible description of the Record op.
+// Describe renders a user-visible description of the Record op. A receipt with
+// no resolved revision is named without one rather than with an empty "@": a
+// plugin's version is not knowable until the agent has installed it, and a
+// dry-run should not imply otherwise.
 func (o Record) Describe() string {
+	if o.Receipt.Resolved == "" {
+		return "record  " + o.Receipt.Name
+	}
 	return fmt.Sprintf("record  %s @ %s", o.Receipt.Name, short(o.Receipt.Resolved))
 }
 

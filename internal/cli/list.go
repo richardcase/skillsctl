@@ -6,7 +6,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
 
@@ -50,13 +49,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
+			reg := e.channels()
+
 			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 			_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS")
 			for _, r := range receipts {
-				var agents []string
-				for _, l := range r.Links {
-					agents = append(agents, l.Target)
-				}
+				agents := reg.Agents(r)
 				version := shortSha(r.Resolved)
 				if r.Pinned {
 					version += " (pinned)"
@@ -71,17 +69,26 @@ func newListCmd() *cobra.Command {
 	return cmd
 }
 
-func shortSha(sha string) string {
-	if len(sha) > 7 {
-		return sha[:7]
+// shortSha abbreviates a commit sha and leaves everything else alone. It is
+// deliberately narrow: a plugin's Resolved is a version string, and truncating
+// "2026.01.15" to "2026.01" would report a version that was never installed.
+func shortSha(resolved string) string {
+	if len(resolved) != shaLen || !isHex(resolved) {
+		return resolved
 	}
-	return sha
+	return resolved[:7]
 }
 
-func targetNames(ts []target.Target) string {
-	names := make([]string, 0, len(ts))
-	for _, t := range ts {
-		names = append(names, t.Name)
+// shaLen is the length of the full hex sha git resolves to.
+const shaLen = 40
+
+func isHex(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
 	}
-	return strings.Join(names, ", ")
+	return true
 }
