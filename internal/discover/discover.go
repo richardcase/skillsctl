@@ -5,8 +5,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +19,15 @@ var ErrNoSkill = errors.New("no SKILL.md")
 
 // FileName is the file that marks a directory as a skill.
 const FileName = "SKILL.md"
+
+// MaxDepth bounds how far below the walk root Walk descends. Skills live near
+// the top of a repository; the bound keeps a pathological tree from turning a
+// walk into a full-repository scan.
+const MaxDepth = 5
+
+// skipDirs are never descended into: neither holds skills, and both can be
+// large enough to dominate the walk.
+var skipDirs = map[string]bool{".git": true, "node_modules": true}
 
 // Meta is the frontmatter skillsctl cares about.
 type Meta struct {
@@ -27,6 +39,11 @@ type Meta struct {
 type Skill struct {
 	Meta
 	Dir string
+	// Rel is Dir as a slash path relative to the root the walk started from,
+	// "." when that root is itself the skill. It names the skill's position in
+	// the repository, which is what a receipt records and what --skill matches
+	// when a name is missing or ambiguous.
+	Rel string
 }
 
 // Frontmatter parses a leading `---` YAML block. A file with no block is not
@@ -89,5 +106,56 @@ func Root(dir string) (Skill, error) {
 	if err != nil {
 		return Skill{}, fmt.Errorf("%s: %w", p, err)
 	}
-	return Skill{Meta: m, Dir: dir}, nil
+	return Skill{Meta: m, Dir: dir, Rel: "."}, nil
+}
+
+// Walk returns every skill at or under dir, ordered by Rel.
+//
+// A directory holding a SKILL.md is a skill and is not descended into, so a
+// repository whose root is a skill yields exactly one, and example directories
+// inside a skill never become skills of their own. A tree with no SKILL.md
+// anywhere is not an error: the caller decides whether that is fatal.
+func Walk(dir string) ([]Skill, error) {
+	if _, err := os.Stat(dir); err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	var skills []Skill
+	walk := func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			return nil
+		}
+
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+
+		if rel != "." {
+			if skipDirs[d.Name()] || strings.Count(rel, "/")+1 > MaxDepth {
+				return fs.SkipDir
+			}
+		}
+
+		s, err := Root(p)
+		if errors.Is(err, ErrNoSkill) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		s.Rel = rel
+		skills = append(skills, s)
+		return fs.SkipDir
+	}
+	if err := filepath.WalkDir(dir, walk); err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(skills, func(a, b Skill) int { return strings.Compare(a.Rel, b.Rel) })
+	return skills, nil
 }

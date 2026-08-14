@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,6 +80,173 @@ func TestRootMissingSkillFile(t *testing.T) {
 	_, err := Root(t.TempDir())
 	if !errors.Is(err, ErrNoSkill) {
 		t.Fatalf("Root error = %v, want ErrNoSkill", err)
+	}
+}
+
+// writeSkill creates dir/rel/SKILL.md with frontmatter naming the skill.
+func writeSkill(t *testing.T, root, rel, name string) {
+	t.Helper()
+	dir := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: " + name + "\ndescription: The " + name + " skill\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// rels returns the Rel of each skill, for comparing against a want list.
+func rels(skills []Skill) []string {
+	out := make([]string, len(skills))
+	for i, s := range skills {
+		out[i] = s.Rel
+	}
+	return out
+}
+
+func equal(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestWalkRootSkillWinsAndStopsDescending(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, ".", "demo")
+	writeSkill(t, dir, "examples/nested", "nested")
+
+	got, err := Walk(dir)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("Walk found %v, want just the root skill: a skill directory is never descended into", rels(got))
+	}
+	if got[0].Rel != "." {
+		t.Errorf("Rel = %q, want \".\"", got[0].Rel)
+	}
+	if got[0].Name != "demo" {
+		t.Errorf("Name = %q, want demo", got[0].Name)
+	}
+	if got[0].Dir != dir {
+		t.Errorf("Dir = %q, want %q", got[0].Dir, dir)
+	}
+}
+
+func TestWalkFindsSeveralSkillsSorted(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "skills/beta", "beta")
+	writeSkill(t, dir, "skills/alpha", "alpha")
+
+	got, err := Walk(dir)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	want := []string{"skills/alpha", "skills/beta"}
+	if !equal(rels(got), want) {
+		t.Fatalf("Rel = %v, want %v", rels(got), want)
+	}
+	if got[0].Name != "alpha" || got[1].Name != "beta" {
+		t.Errorf("names = %q/%q, want alpha/beta", got[0].Name, got[1].Name)
+	}
+	if got[0].Dir != filepath.Join(dir, "skills", "alpha") {
+		t.Errorf("Dir = %q, want the skill directory", got[0].Dir)
+	}
+}
+
+func TestWalkSkipsGitAndNodeModules(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "skills/real", "real")
+	writeSkill(t, dir, ".git/skills/ghost", "ghost")
+	writeSkill(t, dir, "node_modules/pkg", "vendored")
+
+	got, err := Walk(dir)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if !equal(rels(got), []string{"skills/real"}) {
+		t.Fatalf("Rel = %v, want just skills/real", rels(got))
+	}
+}
+
+func TestWalkStopsAtMaxDepth(t *testing.T) {
+	dir := t.TempDir()
+	deep := "a/b/c/d/e/f/g"
+	writeSkill(t, dir, deep, "too-deep")
+
+	got, err := Walk(dir)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Walk found %v at depth beyond MaxDepth=%d, want none", rels(got), MaxDepth)
+	}
+}
+
+func TestWalkNoSkillsIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Walk(dir)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Walk = %v, want none", rels(got))
+	}
+}
+
+func TestWalkMissingDirErrors(t *testing.T) {
+	if _, err := Walk(filepath.Join(t.TempDir(), "absent")); err == nil {
+		t.Fatal("Walk accepted a missing directory; want an error")
+	}
+}
+
+func TestWalkMalformedFrontmatterErrorsNamingTheFile(t *testing.T) {
+	dir := t.TempDir()
+	writeSkill(t, dir, "skills/ok", "ok")
+	bad := filepath.Join(dir, "skills", "broken")
+	if err := os.MkdirAll(bad, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, FileName), []byte("---\nname: [unclosed\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Walk(dir)
+	if err == nil {
+		t.Fatal("Walk accepted malformed frontmatter; want an error")
+	}
+	if !strings.Contains(err.Error(), filepath.Join("skills", "broken")) {
+		t.Errorf("error = %v, want it to name the offending file", err)
+	}
+}
+
+func TestWalkSkillWithoutFrontmatterIsStillASkill(t *testing.T) {
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "skills", "plain")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain, FileName), []byte("# Just a heading\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Walk(dir)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "" {
+		t.Fatalf("got %+v, want one skill with an empty Name so the caller can fall back", got)
 	}
 }
 

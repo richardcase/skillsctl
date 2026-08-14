@@ -111,11 +111,20 @@ that someone edited a skill through the symlink.
 |---|---|
 | `owner/repo` | git, subpath `""` |
 | `owner/repo/path/to/skill` | git, subpath `path/to/skill` |
+| `<any git source>//path/to/skill` | git, subpath `path/to/skill` |
 | `https://…`, `git@…`, any git URL (incl. GitLab) | git |
 | `name@marketplace` (`@` is the discriminator) | plugin |
 | `./path`, `/path` | local |
 
 `--from git|plugin|local` forces the channel when inference is wrong.
+
+`//` separates a repository from a subpath within it, and wins over whatever the
+shape of the URL implied. Inference alone cannot reach every case: a `.git`
+suffix declares the whole path to be the repository, which is what makes a
+GitLab subgroup installable, and an scp-form URL has no path structure to split
+at all — so without the separator, neither can name a subpath. The scheme's own
+`//` is not a separator, and the subpath still shares the repository's slug, so
+skills taken from different subpaths of one commit share one revision directory.
 
 ### Discovery
 
@@ -129,6 +138,27 @@ for `SKILL.md`, parsing YAML frontmatter for `name`/`description`. Also read
 - link name = frontmatter `name`, overridable with `--as`
 - name collision with an existing receipt → error naming the current owner,
   suggest `--as`
+
+Refinements made while implementing this:
+
+- A directory holding a `SKILL.md` **is** a skill and is not descended into. That
+  one rule gives "root `SKILL.md` → single skill" for free, and stops example
+  directories inside a skill from becoming skills of their own.
+- `.claude-plugin/marketplace.json` and `plugin.json` are **display metadata
+  only** — a heading above the listing saying which repository the skills came
+  from. They never affect which skills are discovered or what they are named, and
+  a missing or malformed file is not an error: decoration must not fail an
+  install.
+- `--skill <name>` matches a skill's resolved name first, then its path within
+  the repository, so a skill whose frontmatter is missing or ambiguous can still
+  be asked for.
+- A name that is already installed is a hard error when a single skill was
+  selected — the user asked for that one in particular. When several were
+  selected the request is for whatever is missing, so collisions are reported and
+  skipped, the rest install, and the command exits 2 (see Exit codes). Every name
+  colliding is an error that changes nothing.
+- The link name for a nameless skill falls back to the source only for a skill
+  that is the walk root; a nested one falls back to its own directory name.
 
 ### Targets
 
@@ -194,6 +224,20 @@ back to `runtime/debug.ReadBuildInfo()` (module version + VCS stamp) so
 - `doctor` reports dangling symlinks, receipts whose links are missing, rev dirs
   with no receipt, and name collisions across targets.
 - `gc` deletes rev dirs and bare mirrors that no receipt references.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | everything asked for was done |
+| 1 | nothing was done; the message says why |
+| 2 | some of it was done, and what was skipped is reported |
+
+Code 2 exists because a single failure code cannot express a partial result:
+`install --all` over a repository where one name is already taken installs the
+rest, and a script has to be able to tell that from having installed nothing. It
+is rendered as `note:` rather than `error:`, since the work stands. `update`
+across several skills will report the same way.
 
 ## Package layout
 
