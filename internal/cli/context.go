@@ -67,5 +67,6 @@ func (e *env) channels() channel.Registry {
 	return channel.Registry{
 		Git:    channel.NewGit(e.store, gitx.New()),
 		Plugin: channel.NewPlugin(newPlugins(), e.cfg),
+		Local:  channel.NewLocal(e.store),
 	}
 }

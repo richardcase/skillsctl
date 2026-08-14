@@ -199,15 +199,19 @@ func updateLine(e update.Entry, verb string) string {
 // something else did move and ExitError when nothing did — a run that updated
 // nothing it was asked to update is not a success, whatever the reason.
 //
-// A pin is not a skip in that sense: skipping it is what the user asked for by
-// pinning, so like outdated it never sets a code on its own.
+// Two statuses are deliberately not skips in that sense, because neither is
+// work that failed. A pin was skipped because the user asked for it to be, by
+// pinning. A channel with nothing to update from — a local skill is whatever
+// its directory says right now — had nothing to do rather than something it
+// could not do. Neither sets a code on its own; `skillsctl update` on a machine
+// holding only local skills has succeeded completely.
 func updateExit(entries []update.Entry) error {
 	var updated, skipped int
 	for _, e := range entries {
 		switch e.Status {
 		case update.StatusUpdated:
 			updated++
-		case update.StatusDirty, update.StatusError, update.StatusSkipped:
+		case update.StatusDirty, update.StatusError:
 			skipped++
 		}
 	}

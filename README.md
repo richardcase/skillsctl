@@ -43,6 +43,10 @@ exact.
   symlinks is ever deleted; and links created by a failed apply are rolled back.
 - **Fast on repeats.** A git mirror cache plus a content-addressed revision
   store means reinstalling a commit you already have does no network work.
+- **Develop a skill in place.** `skillsctl link ./my-skill` registers a
+  directory you are working in, linked rather than copied, so every edit is live
+  in every agent immediately. `remove` takes away the symlinks and never the
+  directory.
 - **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
   installs through `claude plugin` and records a receipt, so a plugin shows up in
   `list` and comes out with `remove` alongside everything else. A plugin Claude
@@ -82,6 +86,8 @@ skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
 skillsctl install owner/repo --dry-run             # show what would change
 skillsctl install superpowers@claude-plugins-official  # a Claude Code plugin
+skillsctl link ./my-skill                          # a skill you are writing
+skillsctl install ./my-skill                       # the same thing
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
 skillsctl outdated                                 # what has moved upstream
@@ -100,6 +106,7 @@ NAME              CHANNEL  VERSION           AGENTS
 avoid-ai-writing  git      a1b2c3d           claude,codex
 brainstorming     git      9f8e7d6 (pinned)  claude
 superpowers       plugin   6.3.0             claude
+my-skill          local    -                 claude
 ```
 
 A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
@@ -168,7 +175,15 @@ A receipt records the source, channel, requested ref, resolved sha, whether it
 is pinned, the revision path, a content hash of the tree, and every symlink the
 install created — which is what makes `remove` deterministic.
 
-A plugin is the exception, because Claude Code owns it. `skillsctl` records the
+A local skill is recorded but never copied: the receipt holds the directory you
+gave and the symlinks point straight at it, so edits are live and there is
+nothing in the store. It has no revision, no content hash and nothing to update
+from — `list` shows a `-` for its version and `update` says so. Removing it
+takes away skillsctl's own symlinks and leaves your directory exactly as it was.
+A directory inside the store, or already inside an agent's skills directory, is
+refused rather than linked.
+
+A plugin is the second exception, because Claude Code owns it. `skillsctl` records the
 `plugin@marketplace` id, the version and the install path claude reported, and
 nothing else: there is no revision in the store, no content hash and no symlink,
 since a plugin's skills are already visible to the agent that installed it. So
@@ -189,6 +204,7 @@ Locations can be overridden with environment variables:
 | --- | --- | --- |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
+| `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `list` | `--json` | Show installed skills, versions and agents |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
@@ -255,10 +271,10 @@ without it through `-a` is an error rather than a silent no-op.
 
 ## Status
 
-The `git` and `plugin` (`name@marketplace`) channels are implemented. The
-`local` path channel is parsed but not yet installable — it reports that the
-channel is not supported yet. `link`, `adopt`, `bundle`, `sync` and `doctor` are
-designed but not built.
+All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
+`local` (`./path`). `adopt`, `bundle`, `sync` and `doctor` are designed but not
+built, and `link` currently takes a path — linking an already-installed skill
+into another agent is not built yet.
 
 Two things the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `n/a`, and a plugin's skills are not fanned out to agents other than

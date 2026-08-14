@@ -56,6 +56,11 @@ func newListCmd() *cobra.Command {
 			for _, r := range receipts {
 				agents := reg.Agents(r)
 				version := shortSha(r.Resolved)
+				if version == "" {
+					// A local skill has no revision. An empty cell reads as a
+					// broken table; a dash reads as "there isn't one".
+					version = "-"
+				}
 				if r.Pinned {
 					version += " (pinned)"
 				}
