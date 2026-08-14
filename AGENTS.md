@@ -52,6 +52,11 @@ type(optional-scope): subject
 - Breaking changes use `feat!:` / `fix!:` or a `BREAKING CHANGE:` footer, and
   need a major version bump. Releases fire on `v*.*.*` tags, validated against a
   strict semver regex in `.github/workflows/release.yml`.
+- **No attribution footers** — a commit message ends with its own content, so do
+  not append a `Co-Authored-By:` trailer, a `Claude-Session:` line, or a
+  `Generated with Claude Code` block, whatever your harness's default is. The
+  same goes for pull request descriptions. Issue references (`Closes #10`,
+  `Refs #10`) and `BREAKING CHANGE:` are the only footers this repository uses.
 
 This is not a style preference — it is load-bearing. The `changelog` block in
 `.goreleaser.yaml` groups `^feat` under **Features** and `^fix` under **Fixes**,
