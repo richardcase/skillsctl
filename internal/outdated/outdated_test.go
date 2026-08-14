@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/state"
 )
 
@@ -31,6 +32,10 @@ func (f *fakeGit) Mirror(context.Context, string, string) error {
 
 func (f *fakeGit) Extract(context.Context, string, string, string) error {
 	panic("outdated must not extract")
+}
+
+func (f *fakeGit) Describe(context.Context, string) (gitx.Origin, error) {
+	panic("outdated must not describe a working copy")
 }
 
 func TestCheckReportsAMovedRefAsOutdated(t *testing.T) {

@@ -62,3 +62,13 @@ func Commit(t *testing.T, dir string, files map[string]string) string {
 
 // Dir converts a file:// URL returned by New back into a filesystem path.
 func Dir(url string) string { return strings.TrimPrefix(url, "file://") }
+
+// Clone checks url out into a fresh directory and returns it. Unlike the
+// repository New builds, a clone has an origin remote, which is what makes it
+// a working copy whose provenance can be recovered.
+func Clone(t *testing.T, url string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "clone")
+	run(t, "", "clone", "-q", url, dir)
+	return dir
+}

@@ -6,6 +6,7 @@ package gitx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +24,32 @@ type Git interface {
 	Mirror(ctx context.Context, repoURL, mirrorPath string) error
 	// Extract writes the tree at sha into dest, without a .git directory.
 	Extract(ctx context.Context, mirrorPath, sha, dest string) error
+	// Describe reports the working copy dir belongs to, or ErrNotRepo.
+	Describe(ctx context.Context, dir string) (Origin, error)
+}
+
+// ErrNotRepo reports that a directory is not inside a git working copy.
+var ErrNotRepo = errors.New("not a git working copy")
+
+// Origin is the provenance of a directory that lives in a git working copy.
+// It is what lets adopt recover where a hand-installed skill came from.
+type Origin struct {
+	// Prefix is the described directory's path relative to the repository
+	// root, slash-separated and without a trailing slash; empty at the top
+	// level. It comes from git rather than from comparing paths, because git
+	// reports a symlink-resolved top level that would not sit under the path
+	// the caller asked about.
+	Prefix string
+	// RepoURL is origin's fetch URL, empty when the repository has no remote.
+	RepoURL string
+	// Ref is the branch HEAD is on, empty when HEAD is detached.
+	Ref string
+	// SHA is the commit HEAD points at.
+	SHA string
+	// Dirty reports uncommitted changes *within the described directory*, not
+	// across the whole repository: unrelated churn elsewhere in a monorepo
+	// says nothing about the subtree being described.
+	Dirty bool
 }
 
 // CLI implements Git using the git binary.
@@ -126,6 +153,52 @@ func (c *CLI) Extract(ctx context.Context, mirrorPath, sha, dest string) error {
 		return fmt.Errorf("git archive %s: %w: %s", sha, waitErr, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// Describe reports the working copy dir belongs to.
+//
+// Every command here reads: describing a directory must never leave a mark on
+// a repository the user owns, since the whole point is that adopt looks before
+// it records anything.
+//
+// A repository with no remote, or a detached HEAD, is described rather than
+// refused. Deciding whether that is enough provenance to record belongs to the
+// caller, which is the only one that knows what it would do with it.
+func (c *CLI) Describe(ctx context.Context, dir string) (Origin, error) {
+	prefix, err := c.output(ctx, dir, "rev-parse", "--show-prefix")
+	if err != nil {
+		return Origin{}, fmt.Errorf("describe %s: %w", dir, ErrNotRepo)
+	}
+
+	o := Origin{Prefix: strings.Trim(strings.TrimSpace(prefix), "/")}
+
+	// A repository without an origin remote is not an error: git exits 1 with
+	// no output, which is the answer.
+	if url, err := c.output(ctx, dir, "config", "--get", "remote.origin.url"); err == nil {
+		o.RepoURL = strings.TrimSpace(url)
+	}
+	// Likewise a detached HEAD, which --quiet turns into an empty answer.
+	if ref, err := c.output(ctx, dir, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil {
+		o.Ref = strings.TrimSpace(ref)
+	}
+
+	sha, err := c.output(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		// An initialised repository with no commits has no HEAD to record.
+		return Origin{}, fmt.Errorf("describe %s: %w", dir, ErrNotRepo)
+	}
+	o.SHA = strings.TrimSpace(sha)
+
+	// The pathspec scopes the answer to dir. --porcelain also reports
+	// untracked files, which matters: a skill with a file git has never seen
+	// is not the tree that sha names.
+	status, err := c.output(ctx, dir, "status", "--porcelain", "--", ".")
+	if err != nil {
+		return Origin{}, err
+	}
+	o.Dirty = strings.TrimSpace(status) != ""
+
+	return o, nil
 }
 
 func (c *CLI) output(ctx context.Context, dir string, args ...string) (string, error) {

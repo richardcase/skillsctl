@@ -16,6 +16,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(
+		newAdoptCmd(),
 		newGCCmd(),
 		newInstallCmd(),
 		newLinkCmd(),

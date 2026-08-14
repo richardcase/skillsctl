@@ -3,6 +3,7 @@ package target
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,6 +73,33 @@ func TestLinkRefusesToClobber(t *testing.T) {
 	}
 	if fi, err := os.Lstat(link); err != nil || !fi.IsDir() {
 		t.Error("the existing directory must be left untouched")
+	}
+}
+
+func TestLinkPointsAHandMadeSymlinkAtAdopt(t *testing.T) {
+	root := t.TempDir()
+	rev := filepath.Join(root, "rev")
+	other := filepath.Join(root, "other")
+	for _, d := range []string{rev, other} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(root, "skills", "my-skill")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, link); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Link(link, rev)
+	if err == nil {
+		t.Fatal("Link re-pointed a symlink somebody else made; want an error")
+	}
+	// Taking it over is the whole point of adopt, so the error has to say so.
+	if !strings.Contains(err.Error(), "skillsctl adopt") {
+		t.Errorf("error = %q, want it to name adopt as the takeover path", err)
 	}
 }
 

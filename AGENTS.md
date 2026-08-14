@@ -123,6 +123,7 @@ else lives in `internal/`, one narrow responsibility per package:
 | `channel` | The `Channel` interface and its implementations; the only place a mechanism differs |
 | `update` | Select receipts for an update, dispatch them to their channels, merge the verdicts |
 | `outdated` | Compare each receipt's resolved sha against its tracked ref, without fetching |
+| `adopt` | Classify what is already in an agent's skills directory: adoptable, managed, or skipped and why |
 | `gitx` | The `git` binary behind a `Git` interface: `Resolve`, `Mirror`, `Extract` (+ safe untar) |
 | `claudex` | The `claude` binary behind a `Plugins` interface: `List` plus the argv a `plan.Exec` runs |
 | `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, collection (`Collect`/`Delete`), containment checks, tree hashing |
