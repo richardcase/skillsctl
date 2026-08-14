@@ -63,6 +63,19 @@ func (h *harness) run(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+// runSplit is run with the two streams kept apart, for asserting which one
+// output lands on. run merges them, which hides the difference.
+func (h *harness) runSplit(t *testing.T, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	var out, errBuf bytes.Buffer
+	root := NewRootCmd()
+	root.SetOut(&out)
+	root.SetErr(&errBuf)
+	root.SetArgs(args)
+	err = root.Execute()
+	return out.String(), errBuf.String(), err
+}
+
 const skillMD = "---\nname: demo-skill\ndescription: A demo\n---\n\nBody.\n"
 
 func TestInstallListRemoveRoundTrip(t *testing.T) {
@@ -265,6 +278,46 @@ func TestListJSON(t *testing.T) {
 	}
 }
 
+func TestListWritesToStdout(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	// An empty store still has to say so on stdout: `list > skills.txt`
+	// should not produce an empty file.
+	stdout, stderr, err := h.runSplit(t, "list")
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "No skills installed") {
+		t.Errorf("the empty-store message is not on stdout:\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+
+	if out, ierr := h.run(t, "install", url); ierr != nil {
+		t.Fatalf("install: %v\n%s", ierr, out)
+	}
+
+	for _, args := range [][]string{{"list"}, {"list", "--json"}} {
+		stdout, stderr, err = h.runSplit(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, stderr)
+		}
+		if !strings.Contains(stdout, "demo-skill") {
+			t.Errorf("%v wrote its output somewhere other than stdout:\nstdout:\n%s\nstderr:\n%s", args, stdout, stderr)
+		}
+		if stderr != "" {
+			t.Errorf("%v wrote to stderr on success:\n%s", args, stderr)
+		}
+	}
+
+	// The JSON form must be parseable on its own, with nothing else mixed in.
+	var receipts []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &receipts); err != nil {
+		t.Fatalf("list --json stdout is not valid JSON on its own: %v\n%s", err, stdout)
+	}
+}
+
 func TestInstallRejectsEscapingNameFromFrontmatter(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{
@@ -288,6 +341,223 @@ func TestInstallRejectsEscapingAsFlag(t *testing.T) {
 
 	if _, err := h.run(t, "install", url, "--as", "../escaped"); err == nil {
 		t.Fatal("install accepted a traversing --as value")
+	}
+}
+
+// revDir is the revision directory an install of url created, found by
+// following one of the symlinks it left behind.
+func (h *harness) revDir(t *testing.T, name string) string {
+	t.Helper()
+	dest, err := os.Readlink(filepath.Join(h.claude, name))
+	if err != nil {
+		t.Fatalf("link for %q missing: %v", name, err)
+	}
+	return dest
+}
+
+func TestGCKeepsSharedRevisionUntilTheLastReceiptGoes(t *testing.T) {
+	h := newHarness(t)
+
+	// Two skills in one repository, installed with --all, is the case gc has
+	// to get right: two receipts naming different subpaths of one revision.
+	url, _ := testrepo.New(t, map[string]string{
+		"a/SKILL.md": "---\nname: a\ndescription: A\n---\n",
+		"b/SKILL.md": "---\nname: b\ndescription: B\n---\n",
+	})
+	if out, err := h.run(t, "install", url, "--all"); err != nil {
+		t.Fatalf("install --all: %v\n%s", err, out)
+	}
+
+	// Both links resolve into the same revision, one subpath deeper.
+	rev := filepath.Dir(h.revDir(t, "b"))
+	if other := filepath.Dir(h.revDir(t, "a")); other != rev {
+		t.Fatalf("the two skills did not share a revision: %q vs %q", other, rev)
+	}
+
+	if out, err := h.run(t, "remove", "a"); err != nil {
+		t.Fatalf("remove a: %v\n%s", err, out)
+	}
+	out, err := h.run(t, "gc")
+	if err != nil {
+		t.Fatalf("gc: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Nothing to reclaim") {
+		t.Errorf("gc collected something while a receipt still shares the revision:\n%s", out)
+	}
+	// The whole revision survives, not just the subpath b still links to:
+	// a revision is collected entire or not at all.
+	for _, sub := range []string{"a", "b"} {
+		if _, serr := os.Stat(filepath.Join(rev, sub, "SKILL.md")); serr != nil {
+			t.Fatalf("gc removed %s/ from a revision that is still in use: %v", sub, serr)
+		}
+	}
+
+	if out, err := h.run(t, "remove", "b"); err != nil {
+		t.Fatalf("remove b: %v\n%s", err, out)
+	}
+	out, err = h.run(t, "gc")
+	if err != nil {
+		t.Fatalf("gc: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "reclaimed") || !strings.Contains(out, "B") {
+		t.Errorf("gc should report what it reclaimed and how much:\n%s", out)
+	}
+	if _, serr := os.Stat(rev); !os.IsNotExist(serr) {
+		t.Errorf("the unreferenced revision survived gc: %v", serr)
+	}
+	if _, serr := os.Stat(filepath.Join(h.root, "cache")); serr == nil {
+		entries, _ := os.ReadDir(filepath.Join(h.root, "cache"))
+		if len(entries) != 0 {
+			t.Errorf("the unreferenced mirror survived gc: %v", entries)
+		}
+	}
+}
+
+func TestGCCollectsARevisionADryRunLeftBehind(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	// install --dry-run still extracts, because that is what lets it name the
+	// skill exactly. Nothing records the result, so gc owns the cleanup.
+	if out, err := h.run(t, "install", url, "--dry-run"); err != nil {
+		t.Fatalf("install --dry-run: %v\n%s", err, out)
+	}
+	revRoot := filepath.Join(h.root, "rev")
+	if _, err := os.Stat(revRoot); err != nil {
+		t.Fatalf("dry run extracted nothing, so there is nothing to collect: %v", err)
+	}
+
+	out, err := h.run(t, "gc")
+	if err != nil {
+		t.Fatalf("gc: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "reclaimed") {
+		t.Errorf("gc did not collect the orphaned extraction:\n%s", out)
+	}
+	entries, _ := os.ReadDir(revRoot)
+	if len(entries) != 0 {
+		t.Errorf("rev/ still holds %v after gc", entries)
+	}
+}
+
+func TestGCDryRunChangesNothing(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	rev := h.revDir(t, "demo-skill")
+	if out, err := h.run(t, "remove", "demo-skill"); err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+
+	out, err := h.run(t, "gc", "--dry-run")
+	if err != nil {
+		t.Fatalf("gc --dry-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "would reclaim") {
+		t.Errorf("dry run should say what it would reclaim:\n%s", out)
+	}
+	if _, serr := os.Stat(filepath.Join(rev, "SKILL.md")); serr != nil {
+		t.Errorf("gc --dry-run deleted the revision: %v", serr)
+	}
+
+	// The real run then collects exactly what the dry run described.
+	if out, err := h.run(t, "gc"); err != nil {
+		t.Fatalf("gc: %v\n%s", err, out)
+	}
+	if _, serr := os.Stat(rev); !os.IsNotExist(serr) {
+		t.Errorf("revision survived the real gc: %v", serr)
+	}
+}
+
+func TestGCWithNothingToReclaim(t *testing.T) {
+	h := newHarness(t)
+	out, err := h.run(t, "gc")
+	if err != nil {
+		t.Fatalf("gc: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Nothing to reclaim") {
+		t.Errorf("gc on an empty store should say so, got:\n%s", out)
+	}
+}
+
+func TestRemoveHintsAtReclaimableDisk(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	out, err := h.run(t, "remove", "demo-skill")
+	if err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "skillsctl gc") {
+		t.Errorf("remove should point at gc for the disk it orphaned:\n%s", out)
+	}
+}
+
+func TestGCWritesItsWholeReportToStdout(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if out, err := h.run(t, "remove", "demo-skill"); err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+
+	// `skillsctl gc > log` must capture the listing and its summary together.
+	stdout, stderr, err := h.runSplit(t, "gc", "--dry-run")
+	if err != nil {
+		t.Fatalf("gc: %v\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "would reclaim") {
+		t.Errorf("the summary is not on stdout:\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+	if !strings.Contains(stdout, "rev/") {
+		t.Errorf("the listing is not on stdout:\nstdout:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("gc wrote to stderr on success:\n%s", stderr)
+	}
+}
+
+func TestGCJSON(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if out, err := h.run(t, "remove", "demo-skill"); err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+
+	out, err := h.run(t, "gc", "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("gc --json: %v\n%s", err, out)
+	}
+	var got struct {
+		Revisions []struct {
+			Rel   string `json:"rel"`
+			Bytes int64  `json:"bytes"`
+		} `json:"revisions"`
+		Mirrors []struct {
+			Rel string `json:"rel"`
+		} `json:"mirrors"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("gc --json emitted invalid JSON: %v\n%s", err, out)
+	}
+	if len(got.Revisions) != 1 || got.Revisions[0].Bytes == 0 {
+		t.Errorf("want one sized revision, got %+v", got.Revisions)
+	}
+	if len(got.Mirrors) != 1 {
+		t.Errorf("want one mirror, got %+v", got.Mirrors)
 	}
 }
 

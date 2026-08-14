@@ -89,6 +89,17 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		return err
 	}
 
+	// The state lock is taken before anything is written to the store, and
+	// held until this command exits. That is the invariant gc relies on: no
+	// revision directory exists without its creator holding the lock until
+	// the receipt that makes it live has been committed, so a concurrent gc
+	// can never collect an extraction that is about to be recorded.
+	h, err := e.openState()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = h.Close() }()
+
 	// Populating the content-addressed cache is idempotent and not a
 	// user-visible mutation, so it runs even for --dry-run. It is what lets
 	// the plan below name the skills exactly rather than guess.
@@ -111,12 +122,6 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		}
 		chosen[0].name = o.as
 	}
-
-	h, err := e.openState()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = h.Close() }()
 
 	wanted, skipped, err := dropInstalled(h.DB, chosen)
 	if err != nil {

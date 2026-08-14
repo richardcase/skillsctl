@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -16,6 +18,46 @@ func exitCode(t *testing.T, args ...string) (int, string) {
 	root.SetErr(&buf)
 	root.SetArgs(args)
 	return run(root), buf.String()
+}
+
+// TestExitPartialWhenGCFreesSomeOfWhatItFound makes one dead revision
+// undeletable by taking write permission off the directory holding it, so gc
+// frees the other and cannot free that one.
+func TestExitPartialWhenGCFreesSomeOfWhatItFound(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions, so nothing can be made undeletable")
+	}
+	h := newHarness(t)
+
+	// Two unreferenced revisions of two repositories, and no receipts.
+	var stuck string
+	for i, slug := range []string{"github.com/o/free", "github.com/o/stuck"} {
+		dir := filepath.Join(h.root, "rev", filepath.FromSlash(slug), strings.Repeat("abcdef01", 5))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			stuck = filepath.Dir(dir)
+		}
+	}
+	if err := os.Chmod(stuck, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stuck, 0o755) })
+
+	code, out := exitCode(t, "gc")
+	if code != ExitPartial {
+		t.Fatalf("exit = %d, want %d for a gc that freed some of what it found\n%s", code, ExitPartial, out)
+	}
+	if !strings.Contains(out, "freed") {
+		t.Errorf("a partial gc should say what it did free:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "rev", "github.com", "o", "free")); !os.IsNotExist(err) {
+		t.Errorf("the deletable revision was not freed: %v", err)
+	}
 }
 
 func TestExitOKOnSuccess(t *testing.T) {
