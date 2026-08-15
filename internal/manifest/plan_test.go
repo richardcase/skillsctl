@@ -274,4 +274,69 @@ func TestPlanReportsAnUnknownAgent(t *testing.T) {
 	}
 }
 
+// differs is the one gate between "sync adds" and "sync adds onto the wrong
+// skill", so each of its branches is exercised directly rather than trusting
+// that the two scenarios other tests happen to hit are the only ones that
+// matter.
+func TestPlanReportsEveryKindOfDifference(t *testing.T) {
+	f := newPlanFixture(t).agents(t)
+
+	cases := []struct {
+		name  string
+		entry Entry
+		mut   func(*state.Receipt)
+	}{
+		{
+			name:  "channel mismatch",
+			entry: Entry{Name: "demo", Source: "some-plugin@marketplace"},
+			mut:   func(*state.Receipt) {},
+		},
+		{
+			name:  "source mismatch",
+			entry: Entry{Name: "demo", Source: "https://github.com/other/repo.git"},
+			mut:   func(*state.Receipt) {},
+		},
+		{
+			name:  "subpath mismatch",
+			entry: Entry{Name: "demo", Source: f.url + "//sub"},
+			mut:   func(*state.Receipt) {},
+		},
+		{
+			name:  "manifest pinned, install not",
+			entry: Entry{Name: "demo", Source: f.url, Ref: f.sha, Pinned: true},
+			mut:   func(r *state.Receipt) { r.Pinned = false },
+		},
+		{
+			name:  "install pinned, manifest not",
+			entry: Entry{Name: "demo", Source: f.url},
+			mut:   func(r *state.Receipt) { r.Pinned = true },
+		},
+		{
+			name:  "both pinned, different sha",
+			entry: Entry{Name: "demo", Source: f.url, Ref: "0000000000000000000000000000000000000000", Pinned: true},
+			mut:   func(r *state.Receipt) { r.Pinned = true },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := f.installedReceipt(t, "claude", "codex")
+			tc.mut(r)
+			db := &state.DB{Receipts: map[string]*state.Receipt{"demo": r}}
+
+			rep, ops := f.plan(t, File{Skills: []Entry{tc.entry}}, db)
+
+			if len(rep.Verdicts) != 1 || rep.Verdicts[0].Status != StatusDiffers {
+				t.Fatalf("verdicts = %+v, want one differs", rep.Verdicts)
+			}
+			if rep.Verdicts[0].Detail == "" {
+				t.Error("a differs verdict has to say how")
+			}
+			if ops != 0 {
+				t.Errorf("sync only ever adds, but the plan has %d ops", ops)
+			}
+		})
+	}
+}
+
 func mkdirAll(dir string) error { return os.MkdirAll(dir, 0o755) }
