@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/manifest"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
@@ -50,7 +51,10 @@ func newSyncCmd() *cobra.Command {
 			}
 			defer func() { _ = h.Close() }()
 
-			rep, p := manifest.Plan(cmd.Context(), e.channels(), f, h.DB, e.cfg)
+			// Built once and reused for settleSynced below, so a git repository
+			// resolved while planning is not resolved a second time settling.
+			reg := e.channels()
+			rep, p := manifest.Plan(cmd.Context(), reg, f, h.DB, e.cfg)
 
 			if dryRun {
 				for _, line := range p.Describe() {
@@ -64,13 +68,22 @@ func newSyncCmd() *cobra.Command {
 			if !p.IsEmpty() {
 				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
 				if err := ex.Apply(cmd.Context(), p); err != nil {
+					// A mixed plan can fail asymmetrically: if one entry is a
+					// plugin (a plan.Exec that already ran `claude plugin
+					// install`) and a later entry's link fails, rollback undoes
+					// the symlinks but cannot undo the Exec, and h.Commit below
+					// never runs — so the plugin ends up installed with no
+					// receipt. This self-heals rather than needing handling
+					// here: the next sync's Plugin.Prepare finds it already
+					// installed, adopts it, and records it without running the
+					// command again.
 					return err
 				}
 
 				// A channel whose agent chooses the version can only be asked
 				// once it has run, so the receipts are completed before they are
 				// committed rather than after.
-				rep, serr = settleSynced(cmd.Context(), ex, e, h.DB, rep)
+				rep, serr = settleSynced(cmd.Context(), ex, reg, h.DB, rep)
 
 				if err := h.Commit(); err != nil {
 					return fmt.Errorf("%w\nthe skills were linked but the receipts were not saved; re-run this command to repair", err)
@@ -101,9 +114,10 @@ func newSyncCmd() *cobra.Command {
 // planned.
 //
 // It groups by channel for the reason update does: a channel is asked once, and
-// answers for everything it owns.
-func settleSynced(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, rep manifest.Report) (manifest.Report, error) {
-	reg := e.channels()
+// answers for everything it owns. reg is the same registry manifest.Plan ran
+// against, passed in rather than rebuilt, so that a git repository resolved
+// while planning is not resolved a second time settling.
+func settleSynced(ctx context.Context, ex *plan.Executor, reg channel.Registry, db *state.DB, rep manifest.Report) (manifest.Report, error) {
 	grouped := map[string][]state.Receipt{}
 	var order []string
 
