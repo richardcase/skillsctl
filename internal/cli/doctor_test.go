@@ -53,7 +53,7 @@ func TestDoctorReportsALinkDeletedByHand(t *testing.T) {
 	if !strings.Contains(out, "missing links") {
 		t.Errorf("want the finding grouped under a heading:\n%s", out)
 	}
-	if !strings.Contains(out, "skillsctl update demo-skill") {
+	if !strings.Contains(out, "skillsctl link demo-skill -a codex") {
 		t.Errorf("every finding names the command that repairs it:\n%s", out)
 	}
 	// doctor ran to completion; what it found is the answer, not a failure.
@@ -92,7 +92,7 @@ func TestDoctorReportsASkillEditedThroughItsSymlink(t *testing.T) {
 	if code != ExitUnhealthy {
 		t.Fatalf("exit = %d, want %d\n%s", code, ExitUnhealthy, out)
 	}
-	if !strings.Contains(out, "edited since install") || !strings.Contains(out, "--force") {
+	if !strings.Contains(out, "edited since install") || !strings.Contains(out, "skillsctl gc") {
 		t.Errorf("want the edit reported with the way to discard it:\n%s", out)
 	}
 }
@@ -144,7 +144,7 @@ func TestDoctorWritesItsWholeReportToStdout(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout, stderr, _ = h.runSplit(t, "doctor")
-	for _, want := range []string{"missing links", "demo-skill", "fix:", "skillsctl update"} {
+	for _, want := range []string{"missing links", "demo-skill", "fix:", "skillsctl link"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout is missing %q:\nstdout:\n%s\nstderr:\n%s", want, stdout, stderr)
 		}

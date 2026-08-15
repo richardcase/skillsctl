@@ -100,8 +100,12 @@ func reportDoctor(cmd *cobra.Command, rep doctor.Report, asJSON bool) error {
 		if err := w.Flush(); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(out, "  fix: %s\n", g.Remedy); err != nil {
-			return err
+		// One command per skill, so a group covering two skills never prints a
+		// repair that names the wrong one.
+		for _, fix := range g.Remedies {
+			if _, err := fmt.Fprintf(out, "  fix: %s\n", fix); err != nil {
+				return err
+			}
 		}
 	}
 	// The count is the verdict rather than the report, so it goes out as the

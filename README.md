@@ -322,18 +322,25 @@ report a clean bill of health for a broken one.
 $ skillsctl doctor
 missing links
   tdd  codex  ~/.codex/skills/tdd is recorded but not on disk
-  fix: skillsctl update tdd
+  fix: skillsctl remove tdd -a codex, then skillsctl link tdd -a codex
 
 dangling links
-  writing-plans  claude  points at ~/src/writing-plans, which is gone
-  writing-plans  codex   points at ~/src/writing-plans, which is gone
-  fix: skillsctl update writing-plans, or skillsctl remove writing-plans
+  brainstorming  claude  points at ~/.local/share/skillsctl/rev/…/9f8e7d6c, which is gone
+  brainstorming  codex   points at ~/.local/share/skillsctl/rev/…/9f8e7d6c, which is gone
+  fix: skillsctl remove brainstorming, then skillsctl install obra/superpowers
 
 orphan revisions
   rev/github.com/obra/superpowers/9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c  4.1 MB
   fix: skillsctl gc
 note: 4 problems in 2 skills
 ```
+
+The repairs are deliberately not `skillsctl update`: update moves a skill to the
+head of the ref it tracks and stops at *current* when the ref has not moved,
+which is the usual state of a skill whose link somebody deleted. Putting a link
+back is `remove -a` followed by `link -a`, and replacing store content is a
+reinstall — with a `gc` in between when the revision was edited in place, since
+`install` reuses a revision directory that is already there.
 
 Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
 was and the rest is reported — `install --all` where one name is already taken

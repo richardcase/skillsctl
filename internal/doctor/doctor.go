@@ -98,10 +98,14 @@ type Finding struct {
 	// Path is the link or the revision directory the finding is about.
 	Path string `json:"path,omitempty"`
 	// Bytes is what deleting the path would reclaim, set for orphan revisions.
-	Bytes  int64  `json:"bytes,omitempty"`
+	Bytes int64 `json:"bytes,omitempty"`
+	// Source is where the skill came from, carried because several remedies
+	// have to name it: putting a revision back is a reinstall, and only the
+	// receipt knows what to reinstall from.
+	Source string `json:"source,omitempty"`
 	Detail string `json:"detail"`
-	// Remedy is the command that repairs this finding on its own. A group of
-	// findings of one kind repairs in a single command; see Group.Remedy.
+	// Remedy is the command that repairs this finding on its own. Several
+	// findings about one skill repair in one command; see Group.Remedies.
 	Remedy string `json:"remedy"`
 }
 
@@ -119,19 +123,21 @@ type Report struct {
 	Unscanned []Unscanned `json:"unscanned,omitempty"`
 }
 
-// Group is every finding of one kind, under the single command that repairs
-// them all.
+// Group is every finding of one kind, under the commands that repair them.
 type Group struct {
-	Kind     Kind      `json:"kind"`
-	Title    string    `json:"title"`
-	Remedy   string    `json:"remedy"`
+	Kind  Kind   `json:"kind"`
+	Title string `json:"title"`
+	// Remedies is one command per skill implicated, because a repair names the
+	// skill and the agents it is missing from. It is usually one line.
+	Remedies []string  `json:"remedies"`
 	Findings []Finding `json:"findings"`
 }
 
 // IsEmpty reports whether nothing is wrong.
 func (r Report) IsEmpty() bool { return len(r.Findings) == 0 }
 
-// Groups collects the findings by kind, worst first, each under one remedy.
+// Groups collects the findings by kind, worst first, each under the commands
+// that repair them.
 func (r Report) Groups() []Group {
 	byKind := map[Kind][]Finding{}
 	for _, f := range r.Findings {
@@ -144,7 +150,36 @@ func (r Report) Groups() []Group {
 		if len(group) == 0 {
 			continue
 		}
-		out = append(out, Group{Kind: k, Title: titles[k], Remedy: remedy(k, names(group)), Findings: group})
+		out = append(out, Group{Kind: k, Title: titles[k], Remedies: remedies(group), Findings: group})
+	}
+	return out
+}
+
+// remedies is one command per skill in a group, merging the agents so that a
+// skill missing from two agents is repaired by one command rather than two.
+func remedies(group []Finding) []string {
+	type repair struct {
+		source string
+		agents []string
+	}
+	byName := map[string]*repair{}
+	var seen []string
+
+	for _, f := range group {
+		r, ok := byName[f.Name]
+		if !ok {
+			r = &repair{source: f.Source}
+			byName[f.Name] = r
+			seen = append(seen, f.Name)
+		}
+		if f.Target != "" {
+			r.agents = append(r.agents, f.Target)
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for _, name := range seen {
+		out = append(out, remedy(group[0].Kind, name, byName[name].source, byName[name].agents))
 	}
 	return out
 }
@@ -196,7 +231,7 @@ func checkReceipts(rep *Report, db *state.DB, st *store.Store) error {
 				rep.add(Finding{
 					Kind: KindMissingLink, Name: r.Name, Target: l.Target, Path: l.Path,
 					Detail: fmt.Sprintf("%s is recorded but not on disk", l.Path),
-				})
+				}, r)
 			}
 		}
 
@@ -218,7 +253,7 @@ func checkReceipts(rep *Report, db *state.DB, st *store.Store) error {
 			rep.add(Finding{
 				Kind: kind, Name: r.Name, Path: r.RevPath,
 				Detail: revisionDetail(r.RevPath, err),
-			})
+			}, r)
 			continue
 		}
 		if r.ContentHash == "" {
@@ -233,7 +268,7 @@ func checkReceipts(rep *Report, db *state.DB, st *store.Store) error {
 			rep.add(Finding{
 				Kind: KindContentDrift, Name: r.Name, Path: r.RevPath,
 				Detail: fmt.Sprintf("no longer matches what was installed from %s", short(r.Resolved)),
-			})
+			}, r)
 		}
 	}
 	return nil
@@ -294,7 +329,7 @@ func checkDirectories(rep *Report, ts []target.Target, db *state.DB, st *store.S
 		rep.add(Finding{
 			Kind: KindNameCollision, Name: name,
 			Detail: fmt.Sprintf("resolves differently in each agent: %s", destinations(group)),
-		})
+		}, db.Receipts[name])
 	}
 }
 
@@ -307,6 +342,7 @@ func checkDirectories(rep *Report, ts []target.Target, db *state.DB, st *store.S
 // the thing is on disk, then where it points, then whether a receipt claims it.
 func classify(rep *Report, t target.Target, name string, db *state.DB, st *store.Store) (string, bool) {
 	path := filepath.Join(t.Dir, name)
+	r := db.Receipts[name]
 
 	fi, err := os.Lstat(path)
 	if err != nil {
@@ -325,7 +361,7 @@ func classify(rep *Report, t target.Target, name string, db *state.DB, st *store
 			rep.add(Finding{
 				Kind: KindNotASymlink, Name: name, Target: t.Name, Path: path,
 				Detail: "a receipt records this as a link, but it is not one",
-			})
+			}, r)
 		}
 		return path, true
 	}
@@ -335,7 +371,7 @@ func classify(rep *Report, t target.Target, name string, db *state.DB, st *store
 		rep.add(Finding{
 			Kind: KindDanglingLink, Name: name, Target: t.Name, Path: path,
 			Detail: err.Error(),
-		})
+		}, r)
 		return "", false
 	}
 
@@ -343,7 +379,7 @@ func classify(rep *Report, t target.Target, name string, db *state.DB, st *store
 		rep.add(Finding{
 			Kind: KindDanglingLink, Name: name, Target: t.Name, Path: path,
 			Detail: fmt.Sprintf("points at %s, which is gone", dest),
-		})
+		}, r)
 		return dest, true
 	}
 
@@ -351,14 +387,13 @@ func classify(rep *Report, t target.Target, name string, db *state.DB, st *store
 	// the reason adopt records: everything skillsctl installs points into the
 	// store, so asking about the destination first would report every managed
 	// skill as an orphan.
-	r := db.Receipts[name]
 	switch {
 	case claims(r, path):
 		if r.RevPath != "" && dest != filepath.Clean(r.RevPath) {
 			rep.add(Finding{
 				Kind: KindWrongTarget, Name: name, Target: t.Name, Path: path,
 				Detail: fmt.Sprintf("points at %s, but the receipt records %s", dest, r.RevPath),
-			})
+			}, r)
 		}
 	case r == nil && st.Contains(dest):
 		// The slug a revision sits under does not reverse into the source it
@@ -367,7 +402,7 @@ func classify(rep *Report, t target.Target, name string, db *state.DB, st *store
 		rep.add(Finding{
 			Kind: KindOrphanLink, Name: name, Target: t.Name, Path: path,
 			Detail: fmt.Sprintf("points into the store at %s, but no receipt claims it", dest),
-		})
+		}, nil)
 	}
 	return dest, true
 }
@@ -399,7 +434,7 @@ func checkStore(rep *Report, st *store.Store, live store.Live) error {
 		rep.add(Finding{
 			Kind: KindOrphanRevision, Path: rev.Rel, Bytes: rev.Bytes,
 			Detail: "no receipt references this revision",
-		})
+		}, nil)
 	}
 	return nil
 }
@@ -449,29 +484,49 @@ func resolve(linkPath string) (string, error) {
 	return filepath.Clean(dest), nil
 }
 
-func (r *Report) add(f Finding) {
-	f.Remedy = remedy(f.Kind, []string{f.Name})
+// add records a finding, filling in where the skill came from and the command
+// that repairs this one finding on its own from the receipt it is about.
+func (r *Report) add(f Finding, rc *state.Receipt) {
+	if rc != nil {
+		f.Source = rc.Source
+	}
+	var agents []string
+	if f.Target != "" {
+		agents = []string{f.Target}
+	}
+	f.Remedy = remedy(f.Kind, f.Name, f.Source, agents)
 	r.Findings = append(r.Findings, f)
 }
 
-// remedy is the command that repairs a class of finding for the named skills.
-// It is the whole of what report-only means: doctor knows how to fix everything
-// it finds and says so, rather than deciding on the user's behalf.
-func remedy(k Kind, names []string) string {
-	list := strings.Join(names, " ")
+// remedy is the command sequence that repairs one skill's finding. It is the
+// whole of what report-only means: doctor knows how to put everything it finds
+// right and says so, rather than deciding on the user's behalf.
+//
+// Note what is not here: `skillsctl update`. Update moves a skill to the head of
+// the ref it tracks, and stops at "current" when the ref has not moved — which
+// is the usual state of a skill whose link somebody deleted. It repairs nothing
+// in that case, not even with --force, so naming it would send the user round a
+// loop that leaves doctor reporting the same thing. Relinking is `remove -a`
+// followed by `link -a`, and replacing store content is a reinstall.
+func remedy(k Kind, name, source string, agents []string) string {
+	a := agentFlag(agents)
 	switch k {
-	case KindMissingLink, KindWrongTarget, KindMissingRevision:
-		return fmt.Sprintf("skillsctl update %s", list)
-	case KindDanglingLink:
-		return fmt.Sprintf("skillsctl update %s, or skillsctl remove %s", list, list)
-	case KindMissingSource:
-		return fmt.Sprintf("put the directory back, or skillsctl remove %s", list)
+	case KindMissingLink, KindWrongTarget:
+		return fmt.Sprintf("skillsctl remove %s%s, then skillsctl link %s%s", name, a, name, a)
 	case KindNotASymlink:
-		return fmt.Sprintf("move the directory out of the way, then skillsctl update %s", list)
+		return fmt.Sprintf("move the directory aside, then skillsctl remove %s%s and skillsctl link %s%s", name, a, name, a)
+	case KindDanglingLink, KindMissingRevision:
+		return fmt.Sprintf("skillsctl remove %s, then %s", name, reinstall(source))
+	case KindMissingSource:
+		return fmt.Sprintf("put the directory back, or skillsctl remove %s", name)
 	case KindNameCollision:
-		return fmt.Sprintf("skillsctl remove %s, then install each copy under its own name with --as", list)
+		return fmt.Sprintf("skillsctl remove %s, then install each copy under its own name with --as", name)
 	case KindContentDrift:
-		return fmt.Sprintf("skillsctl update --force %s to discard the edit, or skillsctl link the directory you are editing", list)
+		// gc is the step that matters: install reuses a revision directory
+		// that is already there, edits and all, so without it the reinstall
+		// records the edited content as the truth instead of replacing it.
+		return fmt.Sprintf("skillsctl remove %s, skillsctl gc, then %s — or skillsctl link the directory if you meant to edit it",
+			name, reinstall(source))
 	case KindOrphanLink:
 		return "delete the link, then skillsctl gc"
 	case KindOrphanRevision:
@@ -480,20 +535,22 @@ func remedy(k Kind, names []string) string {
 	return ""
 }
 
-// names are the distinct skills a group of findings implicates, in the order
-// they were found, so the remedy for a group is one command rather than one per
-// finding.
-func names(fs []Finding) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(fs))
-	for _, f := range fs {
-		if f.Name == "" || seen[f.Name] {
-			continue
-		}
-		seen[f.Name] = true
-		out = append(out, f.Name)
+// agentFlag narrows a repair to the agents that need it, and says nothing when
+// there are none to name — every link of that skill is affected.
+func agentFlag(agents []string) string {
+	if len(agents) == 0 {
+		return ""
 	}
-	return out
+	return " -a " + strings.Join(agents, ",")
+}
+
+// reinstall names what to install from. A receipt without a source predates the
+// field or was written by hand, and guessing would be worse than saying so.
+func reinstall(source string) string {
+	if source == "" {
+		return "install it again from wherever it came from"
+	}
+	return fmt.Sprintf("skillsctl install %s", source)
 }
 
 // diverges reports whether the occupants of one name resolve to different

@@ -174,8 +174,8 @@ func TestALinkDeletedByHandIsAMissingLink(t *testing.T) {
 	if got.Name != "demo" || got.Target != "codex" {
 		t.Errorf("finding = %+v, want demo/codex", got)
 	}
-	if !strings.Contains(got.Remedy, "skillsctl update demo") {
-		t.Errorf("remedy = %q, should name the command that repairs it", got.Remedy)
+	if !strings.Contains(got.Remedy, "skillsctl link demo -a codex") {
+		t.Errorf("remedy = %q, should name the command that puts the link back", got.Remedy)
 	}
 }
 
@@ -306,8 +306,8 @@ func TestASkillEditedThroughTheSymlinkIsDrift(t *testing.T) {
 	if got.Name != "demo" {
 		t.Errorf("finding = %+v, want demo", got)
 	}
-	if !strings.Contains(got.Remedy, "--force") {
-		t.Errorf("remedy = %q, should say how to overwrite the edit", got.Remedy)
+	if !strings.Contains(got.Remedy, "skillsctl gc") {
+		t.Errorf("remedy = %q, should collect the edited revision before reinstalling", got.Remedy)
 	}
 }
 
@@ -474,8 +474,60 @@ func TestGroupsCollectFindingsUnderOneRemedy(t *testing.T) {
 	if groups[0].Kind != KindMissingLink || len(groups[0].Findings) != 2 {
 		t.Errorf("group = %+v, want both missing links under one kind", groups[0])
 	}
-	if groups[0].Title == "" || groups[0].Remedy == "" {
+	if groups[0].Title == "" || len(groups[0].Remedies) == 0 {
 		t.Errorf("group = %+v, want a title and a remedy", groups[0])
+	}
+}
+
+// No remedy may name `skillsctl update`. Update moves a skill to the head of
+// the ref it tracks and stops at "current" when the ref has not moved, which is
+// the usual state of a skill whose link somebody deleted — it repairs nothing
+// there, not even with --force. A remedy that named it would send the user
+// round a loop that leaves doctor reporting the same thing.
+func TestNoRemedyNamesUpdate(t *testing.T) {
+	for _, k := range order {
+		got := remedy(k, "demo", "owner/repo", []string{"claude"})
+		if got == "" {
+			t.Errorf("%s has no remedy; every finding must name how to repair it", k)
+		}
+		if strings.Contains(got, "skillsctl update") {
+			t.Errorf("%s remedy = %q, but update does nothing when the ref has not moved", k, got)
+		}
+	}
+}
+
+// A skill missing from two agents is one repair, not two.
+func TestOneRemedyPerSkillMergesTheAgents(t *testing.T) {
+	f := newFixture(t)
+	for _, agent := range []string{"claude", "codex"} {
+		if err := os.Remove(f.link(agent)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	groups := f.scan().Groups()
+	if len(groups) != 1 || len(groups[0].Remedies) != 1 {
+		t.Fatalf("groups = %+v, want one group with one command", groups)
+	}
+	if !strings.Contains(groups[0].Remedies[0], "-a claude,codex") {
+		t.Errorf("remedy = %q, want both agents in one command", groups[0].Remedies[0])
+	}
+}
+
+// A reinstall has to say what to install from, and only the receipt knows.
+func TestAReinstallRemedyNamesTheSource(t *testing.T) {
+	f := newFixture(t)
+	if err := os.RemoveAll(f.rev); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, got := range f.scan().Findings {
+		if got.Kind != KindMissingRevision && got.Kind != KindDanglingLink {
+			continue
+		}
+		if !strings.Contains(got.Remedy, "skillsctl install https://example.com/o/repo") {
+			t.Errorf("%s remedy = %q, want the receipt's source named", got.Kind, got.Remedy)
+		}
 	}
 }
 
