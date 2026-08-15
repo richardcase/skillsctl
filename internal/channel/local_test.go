@@ -78,7 +78,7 @@ func TestLocalInstallLinksInPlaceAndRecordsNothingFromTheStore(t *testing.T) {
 		t.Fatalf("candidates = %+v, want the one skill named from its frontmatter", cands)
 	}
 
-	p, receipts, err := f.ch.Install(req, cands)
+	p, receipts, _, err := f.ch.Install(req, cands)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}

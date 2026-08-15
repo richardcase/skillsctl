@@ -101,9 +101,16 @@ func (c *Plugin) installFor(ts []target.Target) ([]target.Target, error) {
 
 // Install records the plugin, having asked claude to install it first unless
 // claude already had it.
-func (c *Plugin) Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, error) {
+//
+// The skip reasons come back rather than as plan.Note ops: a Note is for
+// something the plan cannot say yet, and a skip is known now, the same way
+// Link's is. Folding it into a Note here would make the real run learn of it
+// only when relink recomputes the same fan after Settle, which is exactly the
+// dry-run/exit-code split commit 0947a06 fixed for Link.
+func (c *Plugin) Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, []string, error) {
 	var p plan.Plan
 	receipts := make([]state.Receipt, 0, len(chosen))
+	var skipped []string
 	now := time.Now().UTC()
 	id := pluginID(req.Source)
 
@@ -132,14 +139,12 @@ func (c *Plugin) Install(req Request, chosen []Candidate) (plan.Plan, []state.Re
 		// and the reconcile that follows the apply is where the links are made —
 		// which the plan says rather than leaving a third of its work unmentioned.
 		if s.Adopted {
-			ops, links, skipped, err := c.fan(receipt, req.Targets)
+			ops, links, skips, err := c.fan(receipt, req.Targets)
 			if err != nil {
-				return plan.Plan{}, nil, err
+				return plan.Plan{}, nil, nil, err
 			}
 			p.Add(ops.Ops...)
-			for _, why := range skipped {
-				p.Add(plan.Note{Text: why})
-			}
+			skipped = append(skipped, skips...)
 			receipt.Links = links
 		} else if fanTo := target.WithoutPlugins(req.Targets); len(fanTo) > 0 {
 			p.Add(plan.Note{Text: fmt.Sprintf("then link the skills %s ships into %s, once claude reports where it put them",
@@ -149,7 +154,7 @@ func (c *Plugin) Install(req Request, chosen []Candidate) (plan.Plan, []state.Re
 		p.Add(plan.Record{Receipt: receipt})
 		receipts = append(receipts, receipt)
 	}
-	return p, receipts, nil
+	return p, receipts, skipped, nil
 }
 
 // Update asks claude to move each plugin to its latest version.

@@ -119,7 +119,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		return err
 	}
 
-	p, receipts, err := ch.Install(req, wanted)
+	p, receipts, installSkips, err := ch.Install(req, wanted)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,14 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 			cmd.Println(line)
 		}
 		reportSkipped(cmd, skipped)
-		return skippedErr(skipped, chosen)
+		reportSkipped(cmd, installSkips)
+		if err := skippedErr(skipped, chosen); err != nil {
+			return err
+		}
+		if len(installSkips) > 0 {
+			return partialf("%s could not be linked", count(len(installSkips), "skill"))
+		}
+		return nil
 	}
 
 	ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
@@ -164,6 +171,13 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), where)
 	}
 	reportSkipped(cmd, skipped)
+
+	// An adopted plugin's fan-out is planned once, in Install, and then
+	// recomputed once more here, because relink runs for every channel
+	// regardless of which one already did its own linking. For that plugin the
+	// same skip comes back from both: this is the one place they are merged
+	// back into one line rather than reported twice.
+	linkSkips = dedupeSkips(installSkips, linkSkips)
 	reportSkipped(cmd, linkSkips)
 	if serr != nil {
 		return serr
@@ -178,6 +192,25 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		return partialf("%s could not be linked", count(len(linkSkips), "skill"))
 	}
 	return nil
+}
+
+// dedupeSkips merges skip reasons from sources that can describe the same
+// skip twice — an adopted plugin's fan-out runs once in Install and once more
+// when relink recomputes it after settle — keeping the first occurrence of
+// each exact line so one skip still reads as one line.
+func dedupeSkips(lists ...[]string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, l := range lists {
+		for _, s := range l {
+			if seen[s] {
+				continue
+			}
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // reportAmbiguous prints what the user could have asked for, when the channel

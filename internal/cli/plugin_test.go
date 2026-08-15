@@ -243,6 +243,63 @@ func TestInstallPluginDryRunNamesWhatItWouldRun(t *testing.T) {
 	}
 }
 
+// adoptPluginWithCollidingSkill sets up a plugin claude already has, shipping
+// one skill named alpha, with something that is not skillsctl's already
+// sitting at the path alpha would take in codex.
+func adoptPluginWithCollidingSkill(t *testing.T, h *harness) {
+	t.Helper()
+	pluginPath := h.root + "/adopted/6.3.0"
+	testrepo.Write(t, pluginPath, map[string]string{
+		"skills/alpha/SKILL.md": "---\nname: alpha\ndescription: a skill\n---\n\nBody.\n",
+	})
+	h.plugins.installed = []claudex.Installed{
+		{ID: pluginID, Version: "6.3.0", InstallPath: pluginPath},
+	}
+	if err := os.MkdirAll(filepath.Join(h.codex, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// This pins the bug commit 0947a06 fixed for `link` but left standing for
+// `install`: a plugin already adopted plans its fan-out inline, and a name
+// another skill already holds must be reported and priced into the exit code
+// exactly as a real run does, or a script driving install would see success
+// where the real run means partial.
+func TestInstallPluginReportsASkillNameAlreadyTakenAndExitsPartial(t *testing.T) {
+	h := newHarness(t)
+	adoptPluginWithCollidingSkill(t, h)
+
+	code, out := exitCode(t, "install", pluginID)
+	if code != ExitPartial {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitPartial, out)
+	}
+	if !strings.Contains(out, "could not be linked") {
+		t.Errorf("output = %q, want the skip priced into the exit code", out)
+	}
+	if !strings.Contains(out, "alpha") {
+		t.Errorf("output = %q, want the skipped skill named", out)
+	}
+}
+
+func TestInstallPluginDryRunMatchesTheRealRunsExitCodeWhenASkillIsTaken(t *testing.T) {
+	h := newHarness(t)
+	adoptPluginWithCollidingSkill(t, h)
+
+	code, out := exitCode(t, "install", pluginID, "--dry-run")
+	if code != ExitPartial {
+		t.Fatalf("dry-run exit = %d, want %d, the same as the real run\n%s", code, ExitPartial, out)
+	}
+	if !strings.Contains(out, "could not be linked") {
+		t.Errorf("dry-run output = %q, want the skip reported", out)
+	}
+	if len(h.ran) != 0 {
+		t.Errorf("commands run = %v, want none under --dry-run", h.ran)
+	}
+	if _, err := os.Lstat(filepath.Join(h.root, "state.json")); !os.IsNotExist(err) {
+		t.Error("--dry-run wrote the receipts database")
+	}
+}
+
 func TestInstallPluginRejectsFlagsThatOnlyMeanSomethingForARepository(t *testing.T) {
 	for _, tc := range []struct{ name, flag, value string }{
 		{name: "ref", flag: "--ref", value: "main"},

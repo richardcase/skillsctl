@@ -170,7 +170,13 @@ type Channel interface {
 
 	// Install turns the candidates that survived the caller's name-collision
 	// check into the plan and the receipts that plan will write.
-	Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, error)
+	//
+	// The []string is skip reasons, in the same shape Link returns them: a
+	// plugin already adopted knows its install path up front and so can plan
+	// its fan-out inline, and a name another skill already holds must skip
+	// one link rather than fail the whole install. A channel with nothing to
+	// skip returns nil.
+	Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, []string, error)
 
 	// Update decides what each of these receipts should become and returns the
 	// mutations. Every receipt given belongs to this channel.

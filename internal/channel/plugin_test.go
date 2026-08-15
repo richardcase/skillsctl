@@ -68,7 +68,7 @@ func TestPluginInstallExecsThenRecords(t *testing.T) {
 		t.Error("nothing was installed, so nothing can be adopted")
 	}
 
-	p, receipts, err := c.Install(pluginRequest(), cands)
+	p, receipts, _, err := c.Install(pluginRequest(), cands)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestPluginInstallAdoptsWithoutExecuting(t *testing.T) {
 		t.Fatalf("candidate = %+v, want it adopted at the installed version", cands[0])
 	}
 
-	p, receipts, err := c.Install(Request{Source: src, Targets: cfg.Targets}, cands)
+	p, receipts, _, err := c.Install(Request{Source: src, Targets: cfg.Targets}, cands)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestPluginInstallOfAnAdoptedPluginPlansTheLinksExactly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	p, receipts, err := c.Install(req, cands)
+	p, receipts, _, err := c.Install(req, cands)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestPluginInstallOfAFreshPluginNotesTheLinksItCannotYetName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	p, _, err := c.Install(req, cands)
+	p, _, _, err := c.Install(req, cands)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
