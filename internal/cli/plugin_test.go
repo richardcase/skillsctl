@@ -537,8 +537,12 @@ func TestLinkPluginIntoAnAgentThatWasNotThereAtInstallTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("link: %v\n%s", err, out)
 	}
-	if _, err := os.Readlink(filepath.Join(h.codex, "alpha")); err != nil {
-		t.Errorf("codex has no link for alpha: %v", err)
+	dest, err := os.Readlink(filepath.Join(h.codex, "alpha"))
+	if err != nil {
+		t.Fatalf("codex has no link for alpha: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "SKILL.md")); err != nil {
+		t.Errorf("alpha -> %s does not hold a SKILL.md", dest)
 	}
 }
 

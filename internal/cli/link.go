@@ -153,7 +153,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		}
 		reportSkipped(cmd, linkSkips)
 		reportAlreadyLinked(cmd, name, already)
-		return alreadyLinkedErr(already, asked)
+		return linkExitErr(already, asked, linkSkips)
 	}
 
 	ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
@@ -167,6 +167,13 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 	cmd.Printf("linked %s into %s\n", name, strings.Join(names(add), ", "))
 	reportSkipped(cmd, linkSkips)
 	reportAlreadyLinked(cmd, name, already)
+	return linkExitErr(already, asked, linkSkips)
+}
+
+// linkExitErr is the exit code both branches of runLinkName carry: the dry
+// run is only trustworthy if it is the same pass as the real run rather than
+// a different branch, so what it returns has to be computed the one way.
+func linkExitErr(already []string, asked int, linkSkips []string) error {
 	if err := alreadyLinkedErr(already, asked); err != nil {
 		return err
 	}
