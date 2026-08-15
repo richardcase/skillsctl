@@ -382,3 +382,16 @@ certainty is what lets `sync` compare a file against a receipt set at all.
 
 **`--project`** ([#16](https://github.com/richardcase/skillsctl/issues/16)),
 which reads this schema but changes where links go for every command at once.
+
+**Per-entry resilience at apply time.** `manifest.Plan` keeps going after an
+entry that cannot be planned — one bad source must not hide the rest of the
+report. Applying the plan it builds does not carry that property forward:
+`plan.Executor.Apply` rolls back every op on the first failure, and `sync`
+commits only after `Apply` succeeds in full. So a machine with one hand-made,
+non-symlink entry already sitting at a link path a manifest names fails the
+whole sync — every entry's links are undone and no receipt is written, even
+for entries that had nothing wrong with them. That sits in tension with the
+per-entry resilience `Plan` provides, but resolving it means teaching
+`internal/manifest` about the filesystem state `internal/target.Link` already
+refuses on, which is a decision for its own review rather than a fix folded
+into this one.

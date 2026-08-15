@@ -239,6 +239,48 @@ func TestSyncDryRunChangesNothing(t *testing.T) {
 	}
 }
 
+// sync's per-entry resilience is a plan-time property: manifest.Plan keeps
+// going after an entry that cannot be planned. Applying the plan is not
+// per-entry — plan.Executor rolls back everything on the first failed op, and
+// sync only commits after Apply succeeds — so one occupied link path aborts
+// the whole run, including the entries that would otherwise have gone in
+// cleanly. This test pins that behaviour rather than asking for it to change;
+// see the design doc's "Deliberately not in scope" section.
+func TestSyncIsAllOrNothingWhenALinkPathIsOccupied(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"a/SKILL.md": "---\nname: a\ndescription: A\n---\n",
+		"b/SKILL.md": "---\nname: b\ndescription: B\n---\n",
+	})
+	path := writeManifest(t, "version = 1\n\n"+
+		"[[skill]]\nname = 'a'\nsource = '"+url+"//a'\n\n"+
+		"[[skill]]\nname = 'b'\nsource = '"+url+"//b'\n")
+
+	// A real directory, not a symlink, at the path entry b would occupy in
+	// claude — the way something other than skillsctl might already have put
+	// something there.
+	occupied := filepath.Join(h.claude, "b")
+	if err := os.MkdirAll(occupied, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := h.run(t, "sync", path)
+	if err == nil {
+		t.Fatal("sync succeeded despite an occupied link path; want it to fail")
+	}
+
+	for _, name := range []string{"a", "b"} {
+		for _, dir := range []string{h.claude, h.codex} {
+			if _, lerr := os.Readlink(filepath.Join(dir, name)); lerr == nil {
+				t.Errorf("%s in %s is a symlink after a failed sync; want the rollback to have undone it", name, dir)
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "state.json")); !os.IsNotExist(err) {
+		t.Error("sync committed receipts despite failing: want nothing written")
+	}
+}
+
 func TestSyncOnAnUnreadableFile(t *testing.T) {
 	h := newHarness(t)
 	if _, err := h.run(t, "sync", filepath.Join(t.TempDir(), "nope.toml")); err == nil {
