@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -92,6 +94,38 @@ func TestBundleNamesTheLocalSkillsItLeftOut(t *testing.T) {
 	}
 	if len(f.Skills) != 0 {
 		t.Errorf("skills = %+v, want none", f.Skills)
+	}
+}
+
+// bundle describes receipts already on disk; it does not need anywhere to
+// link, so no agent directory being present must not stop it. e.targets(nil)
+// used to refuse for exactly this reason, which is what this pins against.
+func TestBundleWorksWithNoAgentDirectoriesPresent(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	// Remove the agent directories entirely, not just their skills
+	// subdirectory, so Present() reports none.
+	for _, dir := range []string{filepath.Dir(h.claude), filepath.Dir(h.codex)} {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stdout, _, err := h.runSplit(t, "bundle")
+	if err != nil {
+		t.Fatalf("bundle: %v", err)
+	}
+	f, derr := manifest.Decode([]byte(stdout))
+	if derr != nil {
+		t.Fatalf("bundle did not emit a decodable manifest: %v\n%s", derr, stdout)
+	}
+	if len(f.Skills) != 1 || f.Skills[0].Name != "demo-skill" {
+		t.Fatalf("skills = %+v, want demo-skill even with no agent directories present", f.Skills)
 	}
 }
 

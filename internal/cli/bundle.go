@@ -28,12 +28,10 @@ func newBundleCmd() *cobra.Command {
 			}
 			defer func() { _ = h.Close() }()
 
-			present, err := e.targets(nil)
-			if err != nil {
-				return err
-			}
-
-			f, excluded := manifest.FromReceipts(h.DB.List(), e.channels(), present)
+			// bundle wants the present set itself, not a resolution that can
+			// fail: it has receipts on disk and is perfectly able to describe
+			// them even when no agent directory exists yet on this machine.
+			f, excluded := manifest.FromReceipts(h.DB.List(), e.channels(), e.cfg.Present())
 
 			// cmd.Print and friends resolve to stderr unless a writer was set,
 			// so the manifest is written to stdout by hand. It is the command's
