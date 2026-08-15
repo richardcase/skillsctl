@@ -147,3 +147,8 @@ the reasons say why.
 with no receipt, name collisions across targets. Adding a second agent's link to
 an already-managed skill, which is `skillsctl link <name> -a <agent>`. And any
 takeover that moves a real directory into the store.
+
+**Superseded:** the second link is now in scope, and the `managed` row of the
+table above splits in two. See [the link design](2026-08-15-link-design.md),
+which specifies both the command and the condition under which `adopt` records
+such a link — that it already points at the receipt's own `RevPath`.
