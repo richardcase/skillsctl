@@ -6,7 +6,6 @@ import (
 
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
-	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
@@ -126,7 +125,10 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		return err
 	}
 
-	add, already := partitionLinked(*receipt, targets)
+	// What counts as "already has it" is the channel's answer, not the
+	// receipt's links: claude holds a plugin without a link of ours, so a
+	// receipt that records none is not an agent that has nothing.
+	add, already := partitionLinked(ch.Agents(*receipt), targets)
 	asked := len(targets)
 	if len(add) == 0 {
 		return fmt.Errorf("%s is already linked into %s", name, strings.Join(already, ", "))
@@ -140,7 +142,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		already = nil
 	}
 
-	p, _, err := ch.Link(*receipt, add)
+	p, linkSkips, err := ch.Link(*receipt, add)
 	if err != nil {
 		return err
 	}
@@ -149,6 +151,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		for _, line := range p.Describe() {
 			cmd.Println(line)
 		}
+		reportSkipped(cmd, linkSkips)
 		reportAlreadyLinked(cmd, name, already)
 		return alreadyLinkedErr(already, asked)
 	}
@@ -162,8 +165,15 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 	}
 
 	cmd.Printf("linked %s into %s\n", name, strings.Join(names(add), ", "))
+	reportSkipped(cmd, linkSkips)
 	reportAlreadyLinked(cmd, name, already)
-	return alreadyLinkedErr(already, asked)
+	if err := alreadyLinkedErr(already, asked); err != nil {
+		return err
+	}
+	if len(linkSkips) > 0 {
+		return partialf("%s could not be linked", count(len(linkSkips), "skill"))
+	}
+	return nil
 }
 
 // rejectPathFormFlags refuses the flags that only mean something when link is
@@ -183,17 +193,17 @@ func rejectPathFormFlags(o installOpts) error {
 }
 
 // partitionLinked splits the requested targets into the ones to link and the
-// ones the receipt already records, so that the caller can report the second
-// group by name. Link skips them too, but only the caller knows what was asked
-// for and so which ones are worth mentioning.
-func partitionLinked(r state.Receipt, targets []target.Target) (add []target.Target, already []string) {
-	held := make(map[string]bool, len(r.Links))
-	for _, l := range r.Links {
-		held[l.Target] = true
+// ones the channel says already have it, so that the caller can report the
+// second group by name. Link skips them too, but only the caller knows what was
+// asked for and so which ones are worth mentioning.
+func partitionLinked(held []string, targets []target.Target) (add []target.Target, already []string) {
+	has := make(map[string]bool, len(held))
+	for _, name := range held {
+		has[name] = true
 	}
 
 	for _, t := range targets {
-		if held[t.Name] {
+		if has[t.Name] {
 			already = append(already, t.Name)
 			continue
 		}

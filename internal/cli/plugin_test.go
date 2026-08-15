@@ -522,6 +522,43 @@ func TestUpdatePluginUnlinksASkillItStoppedShipping(t *testing.T) {
 	}
 }
 
+func TestLinkPluginIntoAnAgentThatWasNotThereAtInstallTime(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID, "-a", "claude"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if _, err := os.Lstat(filepath.Join(h.codex, "alpha")); !os.IsNotExist(err) {
+		t.Fatal("codex was not named, so it should hold nothing yet")
+	}
+
+	out, err := h.run(t, "link", "superpowers", "-a", "codex")
+	if err != nil {
+		t.Fatalf("link: %v\n%s", err, out)
+	}
+	if _, err := os.Readlink(filepath.Join(h.codex, "alpha")); err != nil {
+		t.Errorf("codex has no link for alpha: %v", err)
+	}
+}
+
+func TestLinkPluginIntoTheAgentThatOwnsItSaysItAlreadyHasIt(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	out, err := h.run(t, "link", "superpowers", "-a", "claude")
+	if err == nil {
+		t.Fatalf("claude can already see the plugin, so there is nothing to add\n%s", out)
+	}
+	if !strings.Contains(out+err.Error(), "already linked into claude") {
+		t.Errorf("output = %q / err = %v, want it to say claude already has it", out, err)
+	}
+}
+
 func TestInstallPluginSurfacesAMissingClaude(t *testing.T) {
 	h := newHarness(t)
 	h.plugins.listErr = claudex.ErrNotFound
