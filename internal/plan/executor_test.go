@@ -233,3 +233,20 @@ func TestApplyRollbackKeepsPreExistingLinks(t *testing.T) {
 		t.Errorf("rollback removed a symlink that existed before this apply: %v", err)
 	}
 }
+
+// A Note is the plan admitting it cannot name something yet, so applying one
+// must be a no-op rather than the executor's "unknown op" error.
+func TestApplyNoteIsANoOp(t *testing.T) {
+	db := &state.DB{Receipts: map[string]*state.Receipt{}}
+	ex := &Executor{DB: db, Out: io.Discard}
+
+	var p Plan
+	p.Add(Note{Text: "something that happens later"})
+
+	if err := ex.Apply(context.Background(), p); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if len(db.Receipts) != 0 {
+		t.Errorf("a note changed the receipts: %v", db.Receipts)
+	}
+}

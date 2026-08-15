@@ -75,6 +75,10 @@ func (e *Executor) Apply(ctx context.Context, p Plan) error {
 			delete(e.DB.Receipts, o.Name)
 		case Exec:
 			err = e.run(ctx, o.Argv)
+		case Note:
+			// A note is the plan saying something it cannot yet do; there is
+			// nothing to apply and nothing to roll back.
+			_ = o
 		default:
 			err = fmt.Errorf("unknown op %T", op)
 		}
