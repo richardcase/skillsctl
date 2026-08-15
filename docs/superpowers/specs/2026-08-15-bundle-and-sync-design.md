@@ -330,8 +330,7 @@ type Verdict struct {
 ```
 
 A skill absent from the manifest is not an entry and has no verdict, so it sits
-beside them rather than among them — the shape `adopt.Report` already uses for
-the same reason:
+beside them rather than among them, in a field of its own:
 
 ```go
 type Report struct {
