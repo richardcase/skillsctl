@@ -6,6 +6,7 @@ import (
 
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
+	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )

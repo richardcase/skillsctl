@@ -291,8 +291,14 @@ func TestInfoOnALocalSkillOmitsTheRevision(t *testing.T) {
 // see its skills, so the agents come from the config instead.
 func TestInfoOnAPluginNamesTheAgentThatOwnsIt(t *testing.T) {
 	h := newHarness(t)
+	// A real directory, because adopting a plugin now walks its skills/ to fan
+	// them out to the agents that cannot install plugins. An empty skills/ is
+	// the case this test wants: nothing to fan out, so info reports the agent
+	// that owns the plugin and nothing else.
+	pluginPath := h.root + "/superpowers/6.3.0"
+	testrepo.Write(t, pluginPath, map[string]string{"skills/.gitkeep": ""})
 	h.plugins.installed = []claudex.Installed{
-		{ID: pluginID, Version: "6.3.0", InstallPath: "/plugins/superpowers/6.3.0"},
+		{ID: pluginID, Version: "6.3.0", InstallPath: pluginPath},
 	}
 	if out, err := h.run(t, "install", pluginID); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)

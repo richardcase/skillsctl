@@ -235,10 +235,14 @@ func checkReceipts(rep *Report, db *state.DB, st *store.Store) error {
 			}
 		}
 
-		// A plugin's files belong to the agent that installed them: it records
-		// no revision and no hash, so both checks below fall away without a
-		// channel special case. A local skill records a directory of the
-		// user's own but no hash, so only the first applies to it.
+		// A plugin records the install path claude chose, and no hash. So the
+		// stat below does apply to it — an install path that has gone is real
+		// damage, and the links fanned out of it are now dangling — while the
+		// content check falls away, because the tree is the agent's and its
+		// dirtiness is not ours to judge. A local skill records a directory of
+		// the user's own, also without a hash, and reads the same way. Neither
+		// needs a channel special case; an empty RevPath means only that a
+		// plugin install never got far enough to learn one.
 		if r.RevPath == "" {
 			continue
 		}
