@@ -222,17 +222,26 @@ func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error
 	return p, nil
 }
 
-// Link refuses, because a plugin has no link of ours to duplicate: claude
-// installed the plugin's own files into its own cache and can already see the
-// skills in them.
+// Link makes the agents in add hold the skills this plugin ships.
 //
-// Fanning a plugin's skills out to other agents is a real feature and a
-// different one — it would have to link out of somebody else's cache — so the
-// error says that rather than calling it unsupported.
-func (c *Plugin) Link(r state.Receipt, _ []target.Target) (plan.Plan, []string, error) {
-	return plan.Plan{}, nil, fmt.Errorf("%s is a plugin, and a plugin's skills are already visible to %s without a symlink: "+
-		"linking one into another agent is not supported yet",
-		r.Name, strings.Join(c.Agents(r), ", "))
+// It is reconciliation rather than addition because the directory it links into
+// moves: claude installs each version of a plugin beside the last and keeps the
+// old one, so a link left alone would go on serving a version the receipt says
+// was replaced. Install, update and link all reduce to this one call.
+func (c *Plugin) Link(r state.Receipt, add []target.Target) (plan.Plan, []string, error) {
+	p, links, skipped, err := c.fan(r, add)
+	if err != nil {
+		return plan.Plan{}, nil, err
+	}
+	if p.IsEmpty() {
+		return p, skipped, nil
+	}
+
+	updated := r
+	updated.Links = links
+	updated.UpdatedAt = time.Now().UTC()
+	p.Add(plan.Record{Receipt: updated})
+	return p, skipped, nil
 }
 
 // named reports whether an agent that installs plugins was among those the
@@ -246,14 +255,25 @@ func (c *Plugin) named(drop map[string]bool) bool {
 	return false
 }
 
-// Agents answers from the config rather than from the receipt: a plugin
-// receipt records no links because the agent that installed it can already see
-// its skills.
-func (c *Plugin) Agents(state.Receipt) []string {
-	ts := target.WithPlugins(c.cfg.Targets)
-	names := make([]string, 0, len(ts))
-	for _, t := range ts {
-		names = append(names, t.Name)
+// Agents names the agents this plugin is live in: the one that installed it,
+// which only the config knows, together with the ones its skills were linked
+// into, which only the receipt knows. Neither answers alone any more — claude
+// holds the plugin without a link, and codex holds links without being able to
+// install one.
+//
+// The order is the config's, so that list's agents column does not depend on the
+// order the links happened to be made in.
+func (c *Plugin) Agents(r state.Receipt) []string {
+	linked := make(map[string]bool, len(r.Links))
+	for _, l := range r.Links {
+		linked[l.Target] = true
+	}
+
+	names := make([]string, 0, len(c.cfg.Targets))
+	for _, t := range c.cfg.Targets {
+		if t.Plugins || linked[t.Name] {
+			names = append(names, t.Name)
+		}
 	}
 	return names
 }

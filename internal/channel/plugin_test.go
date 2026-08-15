@@ -620,3 +620,67 @@ func TestFanIsIdempotentOnceItsOpsAreApplied(t *testing.T) {
 		t.Errorf("skipped (second call) = %v, want none", skipped2)
 	}
 }
+
+func TestPluginLinkPlansTheFanOutAndRecordsIt(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	p, skipped, err := c.Link(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %v, want none", skipped)
+	}
+
+	rec, ok := p.Ops[len(p.Ops)-1].(plan.Record)
+	if !ok {
+		t.Fatalf("last op = %T, want plan.Record: the links are the removal contract", p.Ops[len(p.Ops)-1])
+	}
+	if len(rec.Receipt.Links) != 2 {
+		t.Errorf("recorded links = %v, want one per skill", rec.Receipt.Links)
+	}
+}
+
+func TestPluginLinkIsANoOpWhenTheAgentsAlreadyAgree(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha")
+	linkPath := filepath.Join(cfg.Targets[1].Dir, "alpha")
+	if err := os.MkdirAll(cfg.Targets[1].Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(rev, pluginSkillsDir, "alpha"), linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev, Links: []state.Link{{Target: "codex", Path: linkPath}}}
+
+	p, _, err := c.Link(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if !p.IsEmpty() {
+		t.Errorf("ops = %v, want none: reconciling what already agrees must change nothing", p.Describe())
+	}
+}
+
+func TestPluginAgentsCombinesTheOwnerAndTheLinkedAgents(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	c := NewPlugin(&fakeClaude{}, cfg)
+
+	if got := c.Agents(state.Receipt{}); len(got) != 1 || got[0] != "claude" {
+		t.Errorf("Agents with no links = %v, want just the agent that installed it", got)
+	}
+
+	r := state.Receipt{Links: []state.Link{
+		{Target: "codex", Path: "/x/alpha"},
+		{Target: "codex", Path: "/x/beta"},
+	}}
+	got := c.Agents(r)
+	if len(got) != 2 || got[0] != "claude" || got[1] != "codex" {
+		t.Errorf("Agents = %v, want claude then codex, each once", got)
+	}
+}

@@ -159,24 +159,6 @@ func TestLinkRejectsANameThatEscapesTheSkillsDirectory(t *testing.T) {
 	}
 }
 
-// A plugin's skills are the agent's own, so there is no symlink of ours to
-// duplicate. The error has to say that rather than "unsupported", because
-// fanning a plugin out to other agents is a real feature that is merely
-// deferred.
-func TestPluginRefusesToLink(t *testing.T) {
-	c, _ := newPluginChannel()
-
-	_, _, err := c.Link(state.Receipt{Name: "demo", Channel: "plugin"}, []target.Target{{Name: "codex"}})
-	if err == nil {
-		t.Fatal("Link: nil error, want a refusal")
-	}
-	for _, want := range []string{"demo", "plugin"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %v, want it to mention %q", err, want)
-		}
-	}
-}
-
 func TestLinkPathForRejectsNamesThatLeaveTheDirectory(t *testing.T) {
 	dir := target.Target{Name: "codex", Dir: filepath.Join(t.TempDir(), "skills")}
 
