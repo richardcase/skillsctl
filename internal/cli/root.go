@@ -22,7 +22,9 @@ func NewRootCmd() *cobra.Command {
 		newLinkCmd(),
 		newListCmd(),
 		newOutdatedCmd(),
+		newPinCmd(),
 		newRemoveCmd(),
+		newUnpinCmd(),
 		newUpdateCmd(),
 		newVersionCmd(),
 	)
