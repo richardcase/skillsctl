@@ -160,7 +160,8 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 	// about the same agent in the same breath. The plan is the precise answer,
 	// so an agent it actually touched is dropped from already even though
 	// partitionLinked thought it already had everything.
-	if touched := touchedTargets(p); len(touched) > 0 {
+	touched := touchedTargets(p)
+	if len(touched) > 0 {
 		var kept []string
 		for _, a := range already {
 			if !touched[a] {
@@ -195,10 +196,24 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		return fmt.Errorf("%w\nthe links were created but the receipt was not updated; re-run this command to repair", err)
 	}
 
-	// A plan that is empty here is the collision-only case above, where
-	// nothing to its name was actually linked.
-	if !p.IsEmpty() {
-		cmd.Printf("linked %s into %s\n", name, strings.Join(names(targets), ", "))
+	// The success line names what the plan actually touched, not every target
+	// that was asked for: printing the full requested list here is what caused
+	// "linked into claude, codex" to appear next to "already linked into
+	// claude" for the very same command, about the very same agent. touched is
+	// the same map that trims already above, so the two lines cannot disagree
+	// about which agent did which — an agent can lead to at most one of them,
+	// except when a repair genuinely touches an agent partitionLinked also
+	// thought already had everything (13 of 14 skills, say): that agent
+	// correctly lands in the touched line only, having just been dropped from
+	// already by the block above.
+	var justLinked []string
+	for _, t := range targets {
+		if touched[t.Name] {
+			justLinked = append(justLinked, t.Name)
+		}
+	}
+	if len(justLinked) > 0 {
+		cmd.Printf("linked %s into %s\n", name, strings.Join(justLinked, ", "))
 	}
 	reportSkipped(cmd, linkSkips)
 	reportAlreadyLinked(cmd, name, already)
@@ -269,14 +284,6 @@ func alreadyLinkedErr(already []string, asked int) error {
 		return nil
 	}
 	return partialf("%d of %d agents named already had it", len(already), asked)
-}
-
-func names(ts []target.Target) []string {
-	out := make([]string, 0, len(ts))
-	for _, t := range ts {
-		out = append(out, t.Name)
-	}
-	return out
 }
 
 // touchedTargets names every target a plan actually changes something for.

@@ -281,6 +281,25 @@ func TestInstallPluginReportsASkillNameAlreadyTakenAndExitsPartial(t *testing.T)
 	}
 }
 
+// dedupeSkips is the sole guard against reporting one skip twice: an adopted
+// plugin's fan-out runs once inline in Install and once more when relink
+// recomputes it after settle, and without the merge both would print the
+// same "skipped alpha for codex" line. A regression here would not fail any
+// exit-code assertion — only the line count would change — so this pins the
+// count directly.
+func TestInstallPluginReportsACollidingSkillExactlyOnce(t *testing.T) {
+	h := newHarness(t)
+	adoptPluginWithCollidingSkill(t, h)
+
+	code, out := exitCode(t, "install", pluginID)
+	if code != ExitPartial {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitPartial, out)
+	}
+	if got := strings.Count(out, "skipped alpha for codex"); got != 1 {
+		t.Errorf("output = %q, want the skip reported exactly once, got %d", out, got)
+	}
+}
+
 func TestInstallPluginDryRunMatchesTheRealRunsExitCodeWhenASkillIsTaken(t *testing.T) {
 	h := newHarness(t)
 	adoptPluginWithCollidingSkill(t, h)
@@ -702,6 +721,17 @@ func TestLinkPluginRepairsAnAgentMissingOneOfItsLinks(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, "SKILL.md")); err != nil {
 		t.Errorf("beta -> %s does not hold a SKILL.md", dest)
+	}
+
+	// codex holds alpha, so partitionLinked's coarse "has it" view puts codex
+	// in already — but it genuinely needed the repair, so the success line
+	// must still name it, and the "already linked" line must not, or the two
+	// lines contradict each other about the very same agent.
+	if !strings.Contains(out, "linked superpowers into codex") {
+		t.Errorf("output = %q, want the success line to name codex: it was genuinely repaired", out)
+	}
+	if strings.Contains(out, "already linked into codex") {
+		t.Errorf("output = %q, want codex left out of the already-linked line: it was touched, not skipped", out)
 	}
 }
 
