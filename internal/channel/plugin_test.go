@@ -684,3 +684,102 @@ func TestPluginAgentsCombinesTheOwnerAndTheLinkedAgents(t *testing.T) {
 		t.Errorf("Agents = %v, want claude then codex, each once", got)
 	}
 }
+
+func fannedReceipt() state.Receipt {
+	return state.Receipt{
+		Name:    "superpowers",
+		Channel: "plugin",
+		Source:  "superpowers@claude-plugins-official",
+		Links: []state.Link{
+			{Target: "codex", Path: "/agents/codex/alpha"},
+			{Target: "codex", Path: "/agents/codex/beta"},
+		},
+	}
+}
+
+func TestPluginRemoveWithNoAgentUninstallsAndUnlinksEverything(t *testing.T) {
+	c, _ := newPluginChannel()
+
+	p, err := c.Remove(fannedReceipt(), nil)
+	if err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	var execs, unlinks, forgets int
+	for _, op := range p.Ops {
+		switch op.(type) {
+		case plan.Exec:
+			execs++
+		case plan.Unlink:
+			unlinks++
+		case plan.Forget:
+			forgets++
+		}
+	}
+	if execs != 1 || unlinks != 2 || forgets != 1 {
+		t.Errorf("plan = %v, want one uninstall, both links taken away and the receipt forgotten", p.Describe())
+	}
+}
+
+func TestPluginRemoveFromALinkedAgentKeepsTheReceipt(t *testing.T) {
+	c, _ := newPluginChannel()
+
+	p, err := c.Remove(fannedReceipt(), map[string]bool{"codex": true})
+	if err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	for _, op := range p.Ops {
+		if _, ok := op.(plan.Forget); ok {
+			t.Fatal("forgot a receipt for a plugin claude still has installed")
+		}
+		if _, ok := op.(plan.Exec); ok {
+			t.Fatal("uninstalled the plugin when only a linked agent was named")
+		}
+	}
+
+	rec, ok := p.Ops[len(p.Ops)-1].(plan.Record)
+	if !ok {
+		t.Fatalf("last op = %T, want plan.Record", p.Ops[len(p.Ops)-1])
+	}
+	if len(rec.Receipt.Links) != 0 {
+		t.Errorf("kept links = %v, want none", rec.Receipt.Links)
+	}
+}
+
+func TestPluginRemoveFromTheOwningAgentIsRefusedWhileLinksExist(t *testing.T) {
+	c, _ := newPluginChannel()
+
+	_, err := c.Remove(fannedReceipt(), map[string]bool{"claude": true})
+	if err == nil {
+		t.Fatal("uninstalling the plugin would strand codex's links, so -a claude must be refused")
+	}
+	if !strings.Contains(err.Error(), "skillsctl remove superpowers") {
+		t.Errorf("error = %q, want it to name the command that does mean everywhere", err)
+	}
+}
+
+func TestPluginRemoveFromTheOwningAgentStillWorksWithNoLinks(t *testing.T) {
+	c, _ := newPluginChannel()
+	r := fannedReceipt()
+	r.Links = nil
+
+	p, err := c.Remove(r, map[string]bool{"claude": true})
+	if err != nil {
+		t.Fatalf("with nothing to strand there is nothing to refuse: %v", err)
+	}
+	if p.IsEmpty() {
+		t.Error("plan is empty, want the uninstall")
+	}
+}
+
+func TestPluginRemoveFromAnAgentThatHasNothingPlansNothing(t *testing.T) {
+	c, _ := newPluginChannel()
+
+	p, err := c.Remove(fannedReceipt(), map[string]bool{"gemini": true})
+	if err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if !p.IsEmpty() {
+		t.Errorf("plan = %v, want none: the caller reports what the user typed", p.Describe())
+	}
+}

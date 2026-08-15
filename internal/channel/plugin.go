@@ -207,18 +207,61 @@ func (c *Plugin) Settle(ctx context.Context, rs []state.Receipt) ([]state.Receip
 	return changed, nil
 }
 
-// Remove asks claude to uninstall the plugin and forgets the receipt.
+// Remove undoes the receipt for the agents in drop. An empty drop means every
+// agent: uninstall the plugin through claude, take every link away, forget it.
 //
-// There is no partial removal to keep a receipt for: a plugin is installed once
-// for the agent that owns plugins, so removing it from that agent removes it
-// outright.
+// A subset is two contracts rather than one, so which agents were named decides
+// which applies. An agent that only holds links loses them and the receipt
+// stays, because the plugin is still installed. The agent that installed it
+// cannot be singled out while anything is linked: uninstalling deletes the
+// directory every other agent's links point into, so -a claude would have to
+// either strand them or silently do more than the user asked for. Naming the
+// command that does mean "everywhere" is better than either.
+//
+// The uninstall goes first so that a claude which refuses stops the whole plan
+// with the receipt intact. Exec cannot be rolled back, so an unlink that fails
+// after it still leaves the receipt uncommitted and the run reporting why.
 func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error) {
 	var p plan.Plan
-	if len(drop) > 0 && !c.named(drop) {
+
+	if len(drop) == 0 {
+		p.Add(plan.Exec{Argv: c.claude.UninstallArgv(r.Source)})
+		for _, l := range r.Links {
+			p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
+		}
+		p.Add(plan.Forget{Name: r.Name})
 		return p, nil
 	}
-	p.Add(plan.Exec{Argv: c.claude.UninstallArgv(r.Source)})
-	p.Add(plan.Forget{Name: r.Name})
+
+	if owner := c.owner(drop); owner != "" {
+		if len(r.Links) > 0 {
+			return plan.Plan{}, fmt.Errorf("%s owns the %s plugin, and uninstalling it would strand its skills in %s\n"+
+				"run `skillsctl remove %s` to remove it everywhere",
+				owner, r.Name, strings.Join(linkedAgents(r), ", "), r.Name)
+		}
+		p.Add(plan.Exec{Argv: c.claude.UninstallArgv(r.Source)})
+		p.Add(plan.Forget{Name: r.Name})
+		return p, nil
+	}
+
+	var keep []state.Link
+	for _, l := range r.Links {
+		if !drop[l.Target] {
+			keep = append(keep, l)
+			continue
+		}
+		p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
+	}
+	if p.IsEmpty() {
+		return p, nil
+	}
+
+	// The receipt survives however many links go, because the plugin itself is
+	// still installed for the agent that owns it.
+	updated := r
+	updated.Links = keep
+	updated.UpdatedAt = time.Now().UTC()
+	p.Add(plan.Record{Receipt: updated})
 	return p, nil
 }
 
@@ -244,15 +287,30 @@ func (c *Plugin) Link(r state.Receipt, add []target.Target) (plan.Plan, []string
 	return p, skipped, nil
 }
 
-// named reports whether an agent that installs plugins was among those the
-// user asked to remove from.
-func (c *Plugin) named(drop map[string]bool) bool {
-	for _, name := range c.Agents(state.Receipt{}) {
-		if drop[name] {
-			return true
+// owner names the plugin-installing agent among those the user asked to remove
+// from, or "" if none was named.
+func (c *Plugin) owner(drop map[string]bool) string {
+	for _, t := range target.WithPlugins(c.cfg.Targets) {
+		if drop[t.Name] {
+			return t.Name
 		}
 	}
-	return false
+	return ""
+}
+
+// linkedAgents names the agents a receipt reaches by symlink, each once and in
+// the order the links were made.
+func linkedAgents(r state.Receipt) []string {
+	seen := map[string]bool{}
+	names := make([]string, 0, len(r.Links))
+	for _, l := range r.Links {
+		if seen[l.Target] {
+			continue
+		}
+		seen[l.Target] = true
+		names = append(names, l.Target)
+	}
+	return names
 }
 
 // Agents names the agents this plugin is live in: the one that installed it,
