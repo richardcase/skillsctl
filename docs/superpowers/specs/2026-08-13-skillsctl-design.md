@@ -202,6 +202,7 @@ skillsctl list [--json]              skillsctl info <name>
 skillsctl outdated                   skillsctl update [name…] [--dry-run]
 skillsctl remove <name> [-a codex]   skillsctl link <name> -a gemini
 skillsctl link ./path                skillsctl adopt [--dry-run]
+skillsctl pin <name>…                skillsctl unpin <name>… [--ref R]
 skillsctl bundle                     skillsctl sync <file>
 skillsctl doctor                     skillsctl gc
 skillsctl version
@@ -218,6 +219,12 @@ back to `runtime/debug.ReadBuildInfo()` (module version + VCS stamp) so
   no fetch required. Pinned skills are still listed, resolved against the
   repository's default branch and marked `pinned`, so a pin never hides the fact
   that something moved.
+- `pin` freezes a skill at the revision it is already installed at and `unpin`
+  releases it, both by writing the receipt and nothing else — no fetch, no
+  re-link. A pinned receipt records no ref, so an unpinned skill tracks the
+  repository's default branch unless `--ref` names one, and that ref is resolved
+  before it is recorded. Only the git channel can be pinned; the others refuse.
+  See [the pin and unpin design](2026-08-15-pin-and-unpin-design.md).
 - `adopt` scans each target's skills dir, follows symlinks, records anything
   unmanaged as `local` (listed, never auto-updated), and promotes entries with a
   detectable git remote to the `git` channel.

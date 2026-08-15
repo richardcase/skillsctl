@@ -37,7 +37,8 @@ exact.
   you linked it into, and its pin. A skill you edited through its symlink is
   reported rather than overwritten.
 - **Pin to an immutable commit.** `--ref v1.2.0 --pin` freezes the resolved sha
-  so a later update skips it.
+  so a later update skips it. `skillsctl pin` and `skillsctl unpin` add and
+  remove a pin after the fact, without a remove and reinstall.
 - **Safe by construction.** Path-escaping skill names, subpaths and tar entries
   are rejected; an existing file is never clobbered; nothing but its own
   symlinks is ever deleted; and links created by a failed apply are rolled back.
@@ -98,6 +99,9 @@ skillsctl outdated                                 # what has moved upstream
 skillsctl update                                   # move everything to its ref's head
 skillsctl update avoid-ai-writing                  # just this one, pin or not
 skillsctl update --dry-run                         # show what would change
+skillsctl pin brainstorming                        # freeze it where it is
+skillsctl unpin brainstorming                      # let it follow its ref again
+skillsctl unpin brainstorming --ref develop        # ...this ref, from now on
 skillsctl remove avoid-ai-writing                  # unlink everywhere
 skillsctl adopt --dry-run                          # what is already in your agents
 skillsctl adopt                                    # take it over
@@ -165,6 +169,25 @@ and skipped rather than overwritten — `--force` updates it anyway, discarding
 the edit. The old revision stays on disk until `skillsctl gc`, so a failed
 update leaves the previous one linked and the receipt untouched.
 
+A pin can be added and removed after the fact, so changing your mind costs one
+command rather than a remove and a reinstall:
+
+```
+$ skillsctl pin brainstorming
+pinned brainstorming at 9f8e7d6 (it no longer tracks main)
+
+$ skillsctl unpin brainstorming
+unpinned brainstorming; it now tracks the repository's default branch
+```
+
+Neither fetches anything or moves a symlink: both write one field on the
+receipt, which is why `--dry-run` on them prints a `record` line and nothing
+else. A pinned skill tracks no ref, so `pin` says which one it dropped and
+`unpin` says what the skill follows now — `--ref` names another, and is checked
+before it is recorded so a typo fails here rather than in the next `update`.
+Only skills fetched from git can be pinned: a local skill is whatever is in its
+directory right now, and a plugin is at whichever version Claude installed.
+
 ## How it works
 
 Skills are fetched once into `~/.local/share/skillsctl` and symlinked into each
@@ -227,6 +250,8 @@ Locations can be overridden with environment variables:
 | `list` | `--json` | Show installed skills, versions and agents |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
+| `pin <name>...` | `--dry-run` | Freeze skills at the revision they are installed at |
+| `unpin <name>...` | `--ref`, `--dry-run` | Release the pin, so `update` moves them again |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `version` | | Print version, commit and build date |

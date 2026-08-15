@@ -163,6 +163,14 @@ type Channel interface {
 	// however many skills came from it.
 	Update(ctx context.Context, rs []*state.Receipt, o UpdateOptions) ([]Verdict, plan.Plan, error)
 
+	// Pin freezes a receipt at the revision it is already on, or releases it to
+	// track a ref again. A channel with no revision to freeze refuses.
+	//
+	// It changes no files, so the plan it returns is the record and nothing
+	// else. A receipt already in the state asked for comes back unchanged
+	// rather than as an error.
+	Pin(r state.Receipt, o PinOptions) (plan.Plan, PinResult, error)
+
 	// Settle completes receipt fields that are knowable only after the plan has
 	// been applied, and returns only the receipts it changed. A channel that
 	// knew everything up front returns nil.
