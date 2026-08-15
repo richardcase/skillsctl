@@ -11,19 +11,36 @@ import (
 	"github.com/richardcase/skillsctl/internal/target"
 )
 
-// registry builds a real registry. Nothing here reaches the network: the only
-// method these tests call is Agents, which reads the receipt.
+// registry builds a real registry, Plugin included. Nothing here reaches the
+// network: the only method these tests call is Agents, which for git and
+// local reads the receipt, and for a plugin reads the config — Agents never
+// touches the claude binary, so nil satisfies the interface. A nil Plugin
+// here would make TestFromReceiptsGivesAPluginNoAgents pass for the wrong
+// reason: entryFor's len(r.Links) > 0 guard would be the only thing standing
+// between a plugin entry and an agents field, with a Registry too inert ever
+// to expose a guard that had gone missing.
 func registry(t *testing.T) channel.Registry {
 	t.Helper()
 	st := store.New(t.TempDir())
 	return channel.Registry{
-		Git:   channel.NewGit(st, gitx.New()),
-		Local: channel.NewLocal(st),
+		Git:    channel.NewGit(st, gitx.New()),
+		Plugin: channel.NewPlugin(nil, pluginCfg()),
+		Local:  channel.NewLocal(st),
 	}
 }
 
+// pluginCfg is the agent config Plugin.Agents answers from, and present()
+// below is exactly its target list — a plugin entry and a git entry have to
+// agree on who is present for narrowerThan to mean the same thing for both.
+func pluginCfg() target.Config {
+	return target.Config{Targets: []target.Target{
+		{Name: "claude", Plugins: true},
+		{Name: "codex"},
+	}}
+}
+
 func present() []target.Target {
-	return []target.Target{{Name: "claude"}, {Name: "codex"}}
+	return pluginCfg().Targets
 }
 
 func gitReceipt(name string, targets ...string) *state.Receipt {
