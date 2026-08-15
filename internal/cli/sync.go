@@ -70,7 +70,7 @@ func newSyncCmd() *cobra.Command {
 				// A channel whose agent chooses the version can only be asked
 				// once it has run, so the receipts are completed before they are
 				// committed rather than after.
-				serr = settleSynced(cmd.Context(), ex, e, h.DB, rep)
+				rep, serr = settleSynced(cmd.Context(), ex, e, h.DB, rep)
 
 				if err := h.Commit(); err != nil {
 					return fmt.Errorf("%w\nthe skills were linked but the receipts were not saved; re-run this command to repair", err)
@@ -96,11 +96,13 @@ func newSyncCmd() *cobra.Command {
 }
 
 // settleSynced completes the receipts sync just wrote, for the channels that
-// cannot know a version until their agent has run.
+// cannot know a version until their agent has run, and folds the result back
+// into the report so it says what was actually recorded rather than what was
+// planned.
 //
 // It groups by channel for the reason update does: a channel is asked once, and
 // answers for everything it owns.
-func settleSynced(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, rep manifest.Report) error {
+func settleSynced(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, rep manifest.Report) (manifest.Report, error) {
 	reg := e.channels()
 	grouped := map[string][]state.Receipt{}
 	var order []string
@@ -119,17 +121,36 @@ func settleSynced(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, 
 		grouped[r.Channel] = append(grouped[r.Channel], *r)
 	}
 
+	var settled []state.Receipt
 	var firstErr error
 	for _, name := range order {
 		ch, err := reg.For(source.Channel(name))
 		if err != nil {
 			continue
 		}
-		if _, err := settle(ctx, ex, ch, grouped[name]); err != nil && firstErr == nil {
+		got, err := settle(ctx, ex, ch, grouped[name])
+		if err != nil && firstErr == nil {
 			firstErr = err
 		}
+		settled = append(settled, got...)
 	}
-	return firstErr
+
+	// Fold the settled versions back into the verdicts, so the report says what
+	// was recorded rather than what was planned. A channel whose agent chooses
+	// the version cannot answer until it has run.
+	byName := make(map[string]state.Receipt, len(settled))
+	for _, r := range settled {
+		byName[r.Name] = r
+	}
+	for i, v := range rep.Verdicts {
+		if v.Status != manifest.StatusInstalled {
+			continue
+		}
+		if r, ok := byName[v.Name]; ok {
+			rep.Verdicts[i].Version = r.Resolved
+		}
+	}
+	return rep, firstErr
 }
 
 // reportSync writes one line per entry that is not simply already satisfied,
@@ -167,9 +188,11 @@ func syncLine(v manifest.Verdict, dryRun bool) string {
 		if dryRun {
 			verb = "would install"
 		}
-		// A local skill has no revision to name, and a plugin's is unknown until
-		// its agent has run. "@" with nothing after it reads as something
-		// missing rather than something absent.
+		// A local skill has no revision at all, ever. A plugin's is unknown at
+		// this point only in the dry-run branch; by the time this line renders
+		// for a real run, settleSynced has already read it back. Either way, "@"
+		// with nothing after it reads as something missing rather than
+		// something absent.
 		if v.Version == "" {
 			return fmt.Sprintf("%s %s into %s", verb, v.Name, where)
 		}
@@ -196,26 +219,27 @@ func syncLine(v manifest.Verdict, dryRun bool) string {
 	}
 }
 
-// syncExit turns the report into an exit code. A difference and a failure are
-// both work the run was asked for and could not do, which is what ExitPartial
-// exists for; an entry already satisfied is not, and neither is a skill the
-// manifest never named.
+// syncExit turns the report into an exit code: 0 when every entry is
+// satisfied, including a run that did nothing; 2 when some entries applied,
+// or merely differ, alongside others that did not; 1 only when nothing
+// applied and something actually failed.
 //
-// A difference is never promoted to a full failure on its own, even when it is
-// the only verdict and nothing was applied: sync saw exactly what it expected
-// to see under that name and correctly declined to touch it, which is not the
-// same as trying to act and failing. Only a report with no differences and no
-// applications — every entry an outright error — is nothing the run could do.
+// A difference is a partial result on its own, even as the only verdict with
+// nothing applied: the skill under that name is installed, just not as the
+// manifest describes it, which is work done, not work refused. Only
+// StatusError — a source that could not be resolved, a skill that could not
+// be fetched — counts against the run's having accomplished something, so
+// exit 1 needs both no application and an actual failure.
 func syncExit(rep manifest.Report) error {
-	var applied, differs, skipped int
+	var applied, failed, skipped int
 	for _, v := range rep.Verdicts {
 		switch v.Status {
 		case manifest.StatusInstalled, manifest.StatusLinked:
 			applied++
 		case manifest.StatusDiffers:
-			differs++
 			skipped++
 		case manifest.StatusError:
+			failed++
 			skipped++
 		}
 	}
@@ -223,10 +247,10 @@ func syncExit(rep manifest.Report) error {
 	switch {
 	case skipped == 0:
 		return nil
-	case applied > 0 || differs > 0:
-		return partialf("%d of %d entries applied, for the reasons above", applied, len(rep.Verdicts))
-	default:
+	case applied == 0 && failed > 0:
 		return fmt.Errorf("nothing was applied: %d of %d entries could not be, for the reasons above",
 			skipped, len(rep.Verdicts))
+	default:
+		return partialf("%d of %d entries applied, for the reasons above", applied, len(rep.Verdicts))
 	}
 }

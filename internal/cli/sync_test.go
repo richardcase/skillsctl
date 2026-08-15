@@ -269,3 +269,46 @@ func TestSyncExitsErrorWhenNothingCouldBeApplied(t *testing.T) {
 		t.Fatalf("exit = %d, want %d\n%s", code, ExitError, out)
 	}
 }
+
+// A difference is not a failure to apply: the skill is installed, just not as
+// the manifest describes it. Mixed with a genuine failure and nothing else
+// applied, the run has still accomplished nothing — that combination is exit 1.
+func TestSyncExitsErrorWhenNothingAppliesAndOneEntryFails(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	path := writeManifest(t, "version = 1\n\n"+
+		"[[skill]]\nname = 'demo-skill'\nsource = '"+url+"'\nref = 'develop'\n\n"+
+		"[[skill]]\nname = 'missing'\nsource = 'file:///nonexistent/repo.git'\n")
+
+	code, out := exitCode(t, "sync", path)
+	if code != ExitError {
+		t.Fatalf("exit = %d, want %d — a difference plus a failure, and nothing applied\n%s", code, ExitError, out)
+	}
+}
+
+// The plugin channel cannot name the version it installed until claude has
+// run, so the report has to reflect what settleSynced read back rather than
+// what the plan could see before it ran.
+func TestSyncReportsAPluginVersionOnceItIsKnown(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.next = "6.3.0"
+	path := writeManifest(t, "version = 1\n\n[[skill]]\nname = 'superpowers'\nsource = '"+pluginID+"'\n")
+
+	out, err := h.run(t, "sync", path)
+	if err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "6.3.0") {
+		t.Errorf("output = %q, want the version claude settled on, not an empty one", out)
+	}
+	if strings.Contains(out, "@ into") || strings.Contains(out, "@  into") {
+		t.Errorf("output = %q, want no version-shaped gap where the version belongs", out)
+	}
+	if got := h.receipts(t)["superpowers"]["resolved"]; got != "6.3.0" {
+		t.Errorf("resolved = %v, want the version read back from claude", got)
+	}
+}
