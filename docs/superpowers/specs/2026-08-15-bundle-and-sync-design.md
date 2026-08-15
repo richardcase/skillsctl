@@ -290,8 +290,14 @@ func Decode(b []byte) (File, error)
 func FromReceipts(rs []*state.Receipt, reg channel.Registry, present []target.Target) (File, []string)
 
 // Plan says what each entry needs and returns the ops that provide it.
-func Plan(ctx context.Context, reg channel.Registry, f File, db *state.DB, cfg target.Config) (Report, plan.Plan, error)
+func Plan(ctx context.Context, reg channel.Registry, f File, db *state.DB, cfg target.Config) (Report, plan.Plan)
 ```
+
+`Plan` returns no error, which is `outdated.Check`'s shape rather than
+`update.Plan`'s. Everything that could fail the whole command — an unreadable
+file, a TOML error, a missing `name` or `source`, a version from the future — is
+`Decode`'s job and has already happened by the time `Plan` is called. What is
+left is per-entry, and every bit of it is a verdict.
 
 `Plan` takes the whole `target.Config` rather than a resolved target list,
 because an entry chooses its own agents: a named `agents` goes through `Select`
