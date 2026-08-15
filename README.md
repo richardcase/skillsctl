@@ -79,7 +79,9 @@ exact.
   claude moves the plugin to a new version.
 - **Repositories of many skills.** `--skill` takes the ones you name, `--all`
   takes every one it finds, and they share a single copy of the repository. A
-  bare `install` on such a repository lists what is there rather than guessing.
+  bare `install` on such a repository never guesses: at a terminal it lists what
+  it found and lets you tick the ones you want, and anywhere else — a pipe, a CI
+  job — it prints the same list and stops, so a script still has to say.
 - **Disk you can get back.** `skillsctl gc` deletes the revisions and mirrors no
   installed skill references, and reports what it freed. Nothing shared is
   collected while any skill still points at it.
@@ -107,7 +109,8 @@ or build from source with `go install github.com/richardcase/skillsctl/cmd/skill
 skillsctl install conorbronsdon/avoid-ai-writing   # link into every agent found
 skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
 skillsctl install owner/repo//path/to/skill        # the same, boundary spelled out
-skillsctl install owner/repo --skill web-research  # pick one (repeat for more)
+skillsctl install owner/repo                       # pick from a list of its skills
+skillsctl install owner/repo --skill web-research  # name one (repeat for more)
 skillsctl install owner/repo --all                 # every skill in the repo
 skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
@@ -184,17 +187,39 @@ A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
 subpath inside it — the only way to name one in a `.git`-suffixed or `git@host:`
 URL, where the repository boundary is otherwise the whole path.
 
-A repository holding several skills needs `--skill <name>` (repeatable, matching
-a skill's name or its path) or `--all`. Without one of them, `install` lists what
-it found and stops rather than guessing:
+A repository holding several skills can be narrowed with `--skill <name>`
+(repeatable, matching a skill's name or its path) or `--all`. Without one of
+them, `install` asks rather than guessing — at a terminal, that is a list to
+pick from:
 
 ```
 $ skillsctl install vercel-labs/agent-skills
+skills in https://github.com/vercel-labs/agent-skills.git @ 7c41bf0:
+
+  ❯ ◉ pdf-forms     Extract and fill PDF forms
+    ◯ web-research  Research a topic against primary sources
+
+  ↑/↓ move · space toggle · a all · enter install · q cancel
+```
+
+`↑`/`↓` (or `k`/`j`) move, space ticks a skill, `a` ticks every one, enter
+installs what is ticked and `q` backs out. Backing out, or confirming with
+nothing ticked, exits `1` and changes nothing. With `--as`, which renames a
+single skill, the list takes one choice instead of several.
+
+There has to be someone to ask: when stdin or stderr is not a terminal — a
+pipe, a CI job, `< /dev/null` — the same list is printed and the command stops,
+so an unattended run can never install something nobody chose:
+
+```
+$ skillsctl install vercel-labs/agent-skills < /dev/null
 skills in https://github.com/vercel-labs/agent-skills.git @ 7c41bf0:
   pdf-forms     Extract and fill PDF forms
   web-research  Research a topic against primary sources
 error: this repository holds 2 skills: pass --skill <name> (repeatable) or --all
 ```
+
+`link <path>` on a directory of several skills asks the same question.
 
 `outdated` compares each skill against its remote, reading refs only — nothing is
 fetched. It exits `3` when an update is available, so it works as a CI check:

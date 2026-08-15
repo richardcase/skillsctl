@@ -131,6 +131,7 @@ else lives in `internal/`, one narrow responsibility per package:
 | `discover` | Read `SKILL.md` and its YAML frontmatter |
 | `target` | Agent config TOML, defaults, safe `Link`/`Unlink`, `ValidateSkillName` |
 | `plan` | Mutations as inspectable `Op` values; executor with rollback |
+| `prompt` | Choosing from a list on a terminal: a pure key/render model, and a raw-mode driver over it |
 | `state` | Receipts, flocked read-modify-write, atomic commit |
 | `buildinfo` | Version/commit/date from ldflags with a `debug.ReadBuildInfo` fallback |
 | `testrepo` | Test-only `file://` git fixtures |
@@ -156,10 +157,13 @@ else lives in `internal/`, one narrow responsibility per package:
   `claudex` both exist so that no unit test runs the real thing, and both read
   only. Every *mutation* stays a `plan.Exec` op built from an argv helper, which
   is what keeps `--dry-run` printing the command that will actually run rather
-  than a description of it. The two seams are `plan.Executor.Run` and an
-  injected `output` func on the CLI type; `cli` swaps them through the
-  package-level `newRunner` and `newPlugins` vars, and the test harness swaps
-  both for every test so nothing can reach the developer's own `~/.claude`.
+  than a description of it. The same shape covers the terminal: `prompt` puts
+  raw mode and keystroke reading behind an interface `cli` names `picker`, so
+  no unit test blocks on a terminal that is not there. The three seams are the
+  package-level `newRunner`, `newPlugins` and `newPicker` vars in
+  `internal/cli/context.go`, and the test harness swaps all three for every
+  test — so nothing can reach the developer's own `~/.claude`, and nothing can
+  hang waiting to be answered.
 - **Scan/apply for store operations.** A plan holds only user-visible
   mutations, so store housekeeping is not a `plan.Op`. It gets the same
   exactness a different way: a pure scan returning a report (`store.Collect`)
@@ -188,9 +192,14 @@ else lives in `internal/`, one narrow responsibility per package:
   side effects through func fields (`plan.Executor.Run`, `buildinfo.get`). Tests
   are in-package, so unexported functions are tested directly. Name tests as
   assertions of behaviour: `TestInstallDryRunChangesNothing`.
-- **Dependencies.** Four direct deps today (cobra, flock, go-toml, yaml.v3).
-  Prefer the standard library; adding a dependency is a decision to raise, not
-  one to make silently.
+- **Dependencies.** Five direct deps today (cobra, flock, go-toml, yaml.v3,
+  `golang.org/x/term`). Prefer the standard library; adding a dependency is a
+  decision to raise, not one to make silently. `x/term` was raised and taken
+  because raw mode and terminal size are termios plus a Windows console API,
+  and it is the Go team's own version of the code we would otherwise write —
+  and because `x/sys` was already in the module graph, so it added no new
+  transitive tree. Note it pins the `go` directive to `1.25.0` rather than
+  `1.25`, which is its own go.mod's doing, not churn.
 
 ## Design of record
 
