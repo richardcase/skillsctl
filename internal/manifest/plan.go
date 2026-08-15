@@ -37,6 +37,10 @@ type Verdict struct {
 	Detail string
 	// Version is the resolved revision, when there is one to name.
 	Version string
+	// Skipped carries the reasons a channel could not do part of what it was
+	// asked — a name another skill already holds costs one link, not the entry —
+	// so they are reported beside a verdict that otherwise succeeded.
+	Skipped []string
 	Status  Status
 }
 
@@ -122,12 +126,12 @@ func planMissing(ctx context.Context, reg channel.Registry, e Entry, targets []t
 	// the same override --as applies at install time.
 	chosen[0].Name = e.Name
 
-	p, receipts, err := ch.Install(req, chosen)
+	p, receipts, skips, err := ch.Install(req, chosen)
 	if err != nil {
 		return errorVerdict(e, err), plan.Plan{}
 	}
 
-	v := Verdict{Name: e.Name, Status: StatusInstalled}
+	v := Verdict{Name: e.Name, Status: StatusInstalled, Skipped: skips}
 	if len(receipts) == 1 {
 		// The pre-narrowing targets are not who received the skill: Prepare may
 		// have narrowed further (a plugin to the agents that install plugins) and
@@ -151,26 +155,63 @@ func planInstalled(reg channel.Registry, e Entry, r *state.Receipt, targets []ta
 	if err != nil {
 		return errorVerdict(e, err), plan.Plan{}
 	}
-	// A plugin's skills reach its agent without a symlink of ours, so there is
-	// no link for an entry to be missing. Ownership is the question list, remove
-	// and gc already ask, and it is the right grain here too.
-	if ch.Ownership() == channel.AgentOwned {
-		return Verdict{Name: e.Name, Status: StatusPresent, Version: r.Resolved}, plan.Plan{}
-	}
-
+	// Only the agents with no link at all are handed to Link, and that narrowing
+	// is what keeps sync additive. Link is reconciliation now — for a plugin it
+	// re-points a link claude has moved and unlinks a skill the plugin stopped
+	// shipping — but it only ever touches the agents it is given, so an agent
+	// that already holds this receipt is never reconsidered here.
 	add := missingLinks(r, targets)
 	if len(add) == 0 {
 		return Verdict{Name: e.Name, Status: StatusPresent, Version: r.Resolved}, plan.Plan{}
 	}
 
-	p, err := ch.Link(*r, add)
+	p, skips, err := ch.Link(*r, add)
 	if err != nil {
 		return errorVerdict(e, err), plan.Plan{}
 	}
-	if p.IsEmpty() {
+	// An empty plan with nothing skipped means those agents needed nothing: a
+	// plugin's own installing agent sees its skills without a symlink, so it is
+	// always "missing" a link it must never be given.
+	if p.IsEmpty() && len(skips) == 0 {
 		return Verdict{Name: e.Name, Status: StatusPresent, Version: r.Resolved}, plan.Plan{}
 	}
-	return Verdict{Name: e.Name, Status: StatusLinked, Agents: names(add), Version: r.Resolved}, p
+	return Verdict{
+		Name:    e.Name,
+		Status:  StatusLinked,
+		Agents:  linkedTargets(p),
+		Version: r.Resolved,
+		Skipped: skips,
+	}, p
+}
+
+// linkedTargets names the agents the plan actually links into, in the order it
+// links them.
+//
+// The agents that were asked are not the answer: a plugin's installing agent is
+// always missing a link it must never be given, and a plugin fans one link per
+// skill it ships, so a target can appear many times. Reading the ops is the only
+// account that matches what the user will see on disk.
+func linkedTargets(p plan.Plan) []string {
+	var out []string
+	seen := map[string]bool{}
+
+	for _, op := range p.Ops {
+		var name string
+		switch o := op.(type) {
+		case plan.Link:
+			name = o.Target
+		case plan.Relink:
+			name = o.Target
+		default:
+			continue
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
 }
 
 // differs says how the receipt under this name disagrees with the entry, or ""
@@ -261,12 +302,4 @@ func missingLinks(r *state.Receipt, targets []target.Target) []target.Target {
 
 func errorVerdict(e Entry, err error) Verdict {
 	return Verdict{Name: e.Name, Status: StatusError, Detail: err.Error()}
-}
-
-func names(ts []target.Target) []string {
-	out := make([]string, 0, len(ts))
-	for _, t := range ts {
-		out = append(out, t.Name)
-	}
-	return out
 }

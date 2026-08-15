@@ -174,12 +174,17 @@ func settleSynced(ctx context.Context, ex *plan.Executor, reg channel.Registry, 
 func reportSync(cmd *cobra.Command, rep manifest.Report, dryRun bool) {
 	var interesting int
 	for _, v := range rep.Verdicts {
-		line := syncLine(v, dryRun)
-		if line == "" {
-			continue
+		if line := syncLine(v, dryRun); line != "" {
+			interesting++
+			cmd.Println(line)
 		}
-		interesting++
-		cmd.Println(line)
+		// A channel's own skips are reported beside the entry rather than
+		// folded into it: one link a name collision cost is not the entry
+		// failing, and the reason names the skill that took the name.
+		for _, s := range v.Skipped {
+			interesting++
+			cmd.Println(s)
+		}
 	}
 	if interesting == 0 {
 		cmd.Println("Everything the manifest names is already installed.")
