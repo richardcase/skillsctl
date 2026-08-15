@@ -135,6 +135,11 @@ func TestDecodeRejections(t *testing.T) {
 			toml: "[[skill]]\nname = 'alpha'\nsource = ''\n",
 			want: "has no source",
 		},
+		{
+			name: "escaping subpath field",
+			toml: "[[skill]]\nname = 'alpha'\nsource = 'owner/repo'\nsubpath = '../../evil'\n",
+			want: "may not contain",
+		},
 	}
 
 	for _, tc := range cases {
