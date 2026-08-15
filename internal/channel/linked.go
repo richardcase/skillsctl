@@ -18,8 +18,10 @@ import (
 //
 // Both the git and local channels embed it: they differ in where the files come
 // from, not in how they reach an agent or how they stop reaching it. The plugin
-// channel does not, because the agent installed its own files and there are no
-// links to read.
+// channel does not, because its removal contract is two things at once — the
+// agent's uninstall command for the agent that installed it, and links for
+// everyone else — and because one plugin receipt holds many links per agent
+// rather than one.
 type linked struct{}
 
 // Remove unlinks the receipt from the agents in drop, and forgets it when that

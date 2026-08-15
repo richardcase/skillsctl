@@ -26,13 +26,15 @@ import (
 type Ownership int
 
 const (
-	// StoreOwned means skillsctl extracted the files into its own store and
-	// symlinked them into each agent. The receipt's links are the removal
-	// contract, and gc counts its revision and mirror as live.
+	// StoreOwned means skillsctl extracted the files into its own store. Its
+	// revision and mirror are live roots for gc.
 	StoreOwned Ownership = iota
-	// AgentOwned means the agent installed the files and owns them. skillsctl
-	// records the install and undoes it through the agent; nothing of ours is
-	// in the store, so gc has nothing to count.
+	// AgentOwned means the agent installed the files and owns them: skillsctl
+	// records the install and undoes it through the agent, and nothing of ours
+	// is in the store, so gc has nothing to count. It may still have made
+	// symlinks — a plugin's skills are fanned out to the agents that cannot
+	// install plugins — but they point outside the store, so this answer is
+	// about what gc counts rather than about whether links exist.
 	AgentOwned
 	// UserOwned means the files are the user's own, in a directory they chose.
 	// skillsctl links to them and records where they are; it never copies them,
