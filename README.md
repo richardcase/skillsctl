@@ -410,7 +410,8 @@ adopt none of it), and `doctor` exits `2` when an agent's skills directory could
 not be read. The codes above `2` are findings rather
 than a verdict on the work:
 `3` means `outdated` ran to completion and something has moved, and `4` that
-`doctor` ran to completion and something is wrong.
+`doctor` ran to completion and something is wrong. A stale plugin does not set
+`3`: it is not an available update, and `skillsctl update` repairs it on its own.
 
 ## Configuration
 
