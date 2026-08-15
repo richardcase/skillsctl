@@ -142,6 +142,12 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	// beats one nothing recorded.
 	receipts, serr := settle(ctx, ex, ch, receipts)
 
+	// The links come last, because for a channel whose agent chooses the
+	// directory this is the first moment there is a directory to point at.
+	receipts, linkSkips, lerr := relink(ctx, ex, ch, receipts, func(state.Receipt) []target.Target {
+		return targets
+	})
+
 	if err := h.Commit(); err != nil {
 		return fmt.Errorf("%w\nthe skill was linked but the receipt was not saved; re-run this command to repair, "+
 			"or remove the symlink by hand if it now points at an older revision", err)
@@ -158,10 +164,20 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		cmd.Printf("installed %s @ %s into %s\n", r.Name, shortSha(r.Resolved), where)
 	}
 	reportSkipped(cmd, skipped)
+	reportSkipped(cmd, linkSkips)
 	if serr != nil {
 		return serr
 	}
-	return skippedErr(skipped, chosen)
+	if lerr != nil {
+		return lerr
+	}
+	if err := skippedErr(skipped, chosen); err != nil {
+		return err
+	}
+	if len(linkSkips) > 0 {
+		return partialf("%s could not be linked", count(len(linkSkips), "skill"))
+	}
+	return nil
 }
 
 // reportAmbiguous prints what the user could have asked for, when the channel

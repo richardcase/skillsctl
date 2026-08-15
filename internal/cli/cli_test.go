@@ -38,7 +38,7 @@ func newHarness(t *testing.T) *harness {
 		agents:  agents,
 		claude:  filepath.Join(agents, ".claude", "skills"),
 		codex:   filepath.Join(agents, ".codex", "skills"),
-		plugins: &fakePlugins{},
+		plugins: &fakePlugins{root: filepath.Join(root, "plugins")},
 	}
 
 	// Swapping the two seams for the whole test, restored by t.Cleanup. A test

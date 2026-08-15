@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,6 +26,12 @@ type fakePlugins struct {
 	listErr error
 	// calls counts List, so "one call for the whole batch" can be asserted.
 	calls int
+
+	// root is a real directory each install path is built under, and skills
+	// names the skills a plugin ships there. Without a tree on disk there is
+	// nothing to fan out, so the fake builds one.
+	root   string
+	skills []string
 }
 
 func (f *fakePlugins) List(context.Context) ([]claudex.Installed, error) {
@@ -59,9 +67,13 @@ func (f *fakePlugins) exec(argv []string) error {
 		if version == "" {
 			version = "1.0.0"
 		}
+		path, err := f.tree(id, version)
+		if err != nil {
+			return err
+		}
 		f.put(claudex.Installed{
 			ID: id, Version: version, Scope: "user", Enabled: true,
-			InstallPath: "/plugins/" + id + "/" + version,
+			InstallPath: path,
 		})
 	case "uninstall":
 		var out []claudex.Installed
@@ -75,6 +87,26 @@ func (f *fakePlugins) exec(argv []string) error {
 		return fmt.Errorf("unexpected verb %q", verb)
 	}
 	return nil
+}
+
+// tree writes the skills directory claude would have unpacked, so a reconcile
+// has something real to link at.
+func (f *fakePlugins) tree(id, version string) (string, error) {
+	dir := filepath.Join(f.root, strings.ReplaceAll(id, "@", "-"), version)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	for _, n := range f.skills {
+		sd := filepath.Join(dir, "skills", n)
+		if err := os.MkdirAll(sd, 0o755); err != nil {
+			return "", err
+		}
+		body := "---\nname: " + n + "\ndescription: a skill\n---\n\nBody.\n"
+		if err := os.WriteFile(filepath.Join(sd, "SKILL.md"), []byte(body), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
 }
 
 func (f *fakePlugins) put(p claudex.Installed) {
@@ -94,6 +126,37 @@ func (f *fakePlugins) has(id string) bool {
 		}
 	}
 	return false
+}
+
+func TestInstallPluginFansItsSkillsOutToCodex(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha", "beta"}
+
+	out, err := h.run(t, "install", pluginID)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	for _, name := range []string{"alpha", "beta"} {
+		dest, rerr := os.Readlink(filepath.Join(h.codex, name))
+		if rerr != nil {
+			t.Fatalf("codex has no link for %s: %v", name, rerr)
+		}
+		if _, serr := os.Stat(filepath.Join(dest, "SKILL.md")); serr != nil {
+			t.Errorf("%s -> %s does not hold a SKILL.md", name, dest)
+		}
+	}
+
+	// claude installed the plugin and can already see it, so there is nothing
+	// of ours in its skills directory.
+	if _, serr := os.Stat(filepath.Join(h.claude, "alpha")); !os.IsNotExist(serr) {
+		t.Error("linked into claude, which can already see the plugin's skills")
+	}
+
+	links := h.receipts(t)["superpowers"]["links"].([]any)
+	if len(links) != 2 {
+		t.Errorf("recorded links = %v, want one per skill: they are the removal contract", links)
+	}
 }
 
 func TestInstallPluginRecordsTheVersionClaudeChose(t *testing.T) {
@@ -118,8 +181,9 @@ func TestInstallPluginRecordsTheVersionClaudeChose(t *testing.T) {
 	if r["resolved"] != "6.3.0" {
 		t.Errorf("resolved = %v, want the version read back from claude", r["resolved"])
 	}
-	if r["revPath"] != "/plugins/"+pluginID+"/6.3.0" {
-		t.Errorf("revPath = %v, want the path claude installed into", r["revPath"])
+	wantPath := filepath.Join(h.plugins.root, strings.ReplaceAll(pluginID, "@", "-"), "6.3.0")
+	if r["revPath"] != wantPath {
+		t.Errorf("revPath = %v, want the path claude installed into (%s)", r["revPath"], wantPath)
 	}
 	if r["channel"] != "plugin" || r["source"] != pluginID {
 		t.Errorf("receipt = %v, want the plugin channel and its id", r)

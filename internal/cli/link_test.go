@@ -189,24 +189,6 @@ func TestLinkDryRunChangesNothing(t *testing.T) {
 	}
 }
 
-// A plugin has no symlink of ours to duplicate, and the error has to explain
-// that rather than report a missing skill.
-func TestLinkRefusesAPluginReceipt(t *testing.T) {
-	h := newHarness(t)
-	h.plugins.next = "6.3.0"
-	if out, err := h.run(t, "install", pluginID); err != nil {
-		t.Fatalf("install: %v\n%s", err, out)
-	}
-
-	out, err := h.run(t, "link", "superpowers", "-a", "codex")
-	if err == nil {
-		t.Fatalf("link: nil error, want a refusal\n%s", out)
-	}
-	if !strings.Contains(err.Error(), "plugin") {
-		t.Errorf("error = %v, want it to say a plugin has no link to add", err)
-	}
-}
-
 // The argument is classified by asking the receipts, so a name that is neither
 // installed nor a path has to name both readings.
 func TestLinkReportsAnArgumentThatIsNeitherASkillNorAPath(t *testing.T) {
