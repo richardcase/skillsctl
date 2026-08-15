@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.AddCommand(
 		newAdoptCmd(),
+		newBundleCmd(),
 		newDoctorCmd(),
 		newGCCmd(),
 		newInfoCmd(),
