@@ -239,9 +239,12 @@ func (c *Plugin) Settle(ctx context.Context, rs []state.Receipt) ([]state.Receip
 // either strand them or silently do more than the user asked for. Naming the
 // command that does mean "everywhere" is better than either.
 //
-// The uninstall goes first so that a claude which refuses stops the whole plan
-// with the receipt intact. Exec cannot be rolled back, so an unlink that fails
-// after it still leaves the receipt uncommitted and the run reporting why.
+// The uninstall goes first because its failure is the more likely one. If claude
+// refuses, the plan stops with the receipt intact and nothing is left dangling.
+// If the uninstall succeeds but an unlink fails later, the plugin is gone, some
+// links are removed, the rest dangle into a deleted directory, and the receipt is
+// never committed — state.json goes on claiming a plugin claude no longer has.
+// The order prevents the likely failure; the unlikely one is reported as-is.
 func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error) {
 	var p plan.Plan
 

@@ -318,7 +318,7 @@ func TestPluginRemoveUninstallsAndForgets(t *testing.T) {
 		t.Errorf("op 0 is %T, want plan.Exec", p.Ops[0])
 	}
 	if _, ok := p.Ops[1].(plan.Forget); !ok {
-		t.Errorf("op 1 is %T, want plan.Forget: there is no partial removal to keep a receipt for", p.Ops[1])
+		t.Errorf("op 1 is %T, want plan.Forget: naming no agent removes the plugin everywhere and forgets it", p.Ops[1])
 	}
 }
 
