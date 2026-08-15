@@ -469,6 +469,59 @@ func TestGCStillReclaimsMirrorsWhileAPluginIsInstalled(t *testing.T) {
 	}
 }
 
+func TestUpdatePluginRepointsCodexAtTheNewVersion(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	before, err := os.Readlink(filepath.Join(h.codex, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h.plugins.next = "2.0.0"
+	if out, err := h.run(t, "update"); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+
+	after, err := os.Readlink(filepath.Join(h.codex, "alpha"))
+	if err != nil {
+		t.Fatalf("codex lost its link across the update: %v", err)
+	}
+	if after == before {
+		t.Fatalf("link still points at %s: claude keeps the old version directory, so a stale link "+
+			"goes on serving it rather than dangling", before)
+	}
+	if !strings.Contains(after, "2.0.0") {
+		t.Errorf("link points at %q, want the 2.0.0 directory", after)
+	}
+}
+
+func TestUpdatePluginUnlinksASkillItStoppedShipping(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha", "beta"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	h.plugins.next = "2.0.0"
+	h.plugins.skills = []string{"alpha"}
+	if out, err := h.run(t, "update"); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+
+	if _, err := os.Lstat(filepath.Join(h.codex, "beta")); !os.IsNotExist(err) {
+		t.Error("beta is still linked into codex, pointing into a version directory nothing will ever collect")
+	}
+	links := h.receipts(t)["superpowers"]["links"].([]any)
+	if len(links) != 1 {
+		t.Errorf("recorded links = %v, want only alpha", links)
+	}
+}
+
 func TestInstallPluginSurfacesAMissingClaude(t *testing.T) {
 	h := newHarness(t)
 	h.plugins.listErr = claudex.ErrNotFound
