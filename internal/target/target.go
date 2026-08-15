@@ -16,7 +16,10 @@ type Target struct {
 	Name       string `toml:"name"`
 	Dir        string `toml:"dir"`
 	ProjectDir string `toml:"project_dir"`
-	Plugins    bool   `toml:"plugins"`
+	// Plugins marks an agent that installs plugins from a marketplace for
+	// itself. It gates installing a plugin, never seeing one: an agent without
+	// it is where a plugin's skills are linked, not one they are kept from.
+	Plugins bool `toml:"plugins"`
 }
 
 // Config is the set of agents skillsctl knows about.
@@ -121,6 +124,20 @@ func WithPlugins(ts []Target) []Target {
 	var out []Target
 	for _, t := range ts {
 		if t.Plugins {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// WithoutPlugins narrows targets to the agents that cannot install plugins from
+// a marketplace, which is exactly the set a plugin's skills have to be linked
+// into. It is the complement of WithPlugins rather than a second flag: an agent
+// either fetches a plugin for itself or is shown one, never both.
+func WithoutPlugins(ts []Target) []Target {
+	var out []Target
+	for _, t := range ts {
+		if !t.Plugins {
 			out = append(out, t)
 		}
 	}

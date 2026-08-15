@@ -163,3 +163,19 @@ func TestLoadRejectsTildeUser(t *testing.T) {
 		t.Fatal("Load accepted ~user syntax; want an error rather than a silently wrong path")
 	}
 }
+
+func TestWithoutPluginsIsTheAgentsToFanOutTo(t *testing.T) {
+	ts := []Target{
+		{Name: "claude", Plugins: true},
+		{Name: "codex"},
+		{Name: "gemini"},
+	}
+
+	got := WithoutPlugins(ts)
+	if len(got) != 2 || got[0].Name != "codex" || got[1].Name != "gemini" {
+		t.Fatalf("WithoutPlugins = %v, want codex then gemini in that order", got)
+	}
+	if len(WithoutPlugins(nil)) != 0 {
+		t.Error("no agents means nothing to fan out to, not a panic")
+	}
+}
