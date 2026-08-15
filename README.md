@@ -52,6 +52,11 @@ exact.
   directory you are working in, linked rather than copied, so every edit is live
   in every agent immediately. `remove` takes away the symlinks and never the
   directory.
+- **Move your skills to another machine.** `skillsctl bundle > skills.toml`
+  writes a small, human-editable manifest of what you have installed;
+  `skillsctl sync skills.toml` installs it somewhere else, pins and all. `sync`
+  only ever adds — it reports a difference or a skill the manifest does not
+  name, and never removes anything.
 - **Reach an agent you installed something before you had.**
   `skillsctl link avoid-ai-writing -a gemini` adds a link to the revision that
   skill is already on, without fetching anything or disturbing a pin. It is the
@@ -127,6 +132,9 @@ skillsctl adopt --dry-run                          # what is already in your age
 skillsctl adopt                                    # take it over
 skillsctl gc                                       # reclaim disk nothing uses
 skillsctl gc --dry-run                             # show what it would free
+skillsctl bundle > skills.toml                     # write what's installed as a manifest
+skillsctl sync skills.toml                         # install what it names, and report the rest
+skillsctl sync skills.toml --dry-run               # show what would change
 skillsctl version
 ```
 
@@ -321,6 +329,8 @@ Locations can be overridden with environment variables:
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
 | `doctor` | `--json` | Report where the receipts and the filesystem disagree |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
+| `bundle` | | Write the installed skills as a portable `skills.toml` |
+| `sync <file>` | `--dry-run` | Install the skills a manifest names, and report the rest |
 | `version` | | Print version, commit and build date |
 
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
@@ -442,11 +452,68 @@ naming only agents without it through `-a` is an error rather than a silent
 no-op — but it is precisely the agents *without* it that a plugin's skills are
 linked into.
 
+## skills.toml
+
+`skillsctl bundle` writes the skills you have installed as a manifest, and
+`skillsctl sync` installs one. It is meant to be read and edited by hand, and
+committed.
+
+```toml
+version = 1
+
+[[skill]]
+name = 'alpha'
+source = 'https://github.com/owner/repo.git'
+subpath = 'skills/alpha'
+ref = '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'
+pinned = true
+
+[[skill]]
+name = 'beta'
+source = 'https://github.com/owner/repo.git'
+ref = 'develop'
+agents = ['claude']
+```
+
+- `ref` is the branch or tag a skill tracks, or the frozen sha when `pinned` is
+  set — an `install --pin` records no ref, so the sha is the only thing that can
+  carry the pin to another machine.
+- `agents` is omitted when the skill is in every agent present on the machine,
+  which is what an omitted `-a` means to `install`. Name them only for a
+  narrower choice. For a plugin this counts the agent that installed it plus
+  the ones its skills were fanned out to, so a plugin narrowed with `-a` carries
+  its agents like anything else.
+- `subpath` locates a skill inside a repository holding several. You can write
+  it in the source instead, as `owner/repo//skills/alpha`. `sync` compares an
+  entry's subpath against what the receipt it installed actually recorded, so
+  a hand-written entry that omits `subpath` for a skill that lives at one
+  reports a difference rather than syncing — install once and `bundle` to get
+  the subpath right, rather than guessing at it by hand.
+- `local` skills — a directory you linked with `skillsctl link ./path` — are
+  left out of a bundle and named on stderr, because an absolute path on one
+  machine means nothing on another.
+
+`sync` only ever adds:
+
+```
+$ skillsctl sync skills.toml
+installed alpha @ a1b2c3d into claude, codex, gemini
+linked beta into claude
+gamma differs: the manifest tracks develop, the install tracks main; remove it and run sync again, or bring the manifest in line
+not in the manifest: epsilon (installed from https://github.com/owner/epsilon.git)
+note: 2 of 3 entries applied, for the reasons above
+```
+
+It installs what is missing and links the agents an entry names. It never
+re-points a ref, never moves a pin and never removes a skill, so a second run
+changes nothing. A difference exits 2; a skill the manifest does not name is
+reported and changes the exit code not at all.
+
 ## Status
 
 All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
 `local` (`./path`), and `link` serves both of its forms. `bundle` and `sync` are
-designed but not built, and `doctor` reports without a `--fix`.
+also implemented, and `doctor` reports without a `--fix`.
 
 One thing the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `stale` when claude has moved it since skillsctl last looked, but it

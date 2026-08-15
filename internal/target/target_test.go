@@ -85,6 +85,52 @@ func TestSelect(t *testing.T) {
 	}
 }
 
+// Resolve is the one rule install -a, sync and bundle all use to turn an
+// agent selection into targets, so its three cases are pinned here rather than
+// re-derived at each call site.
+func TestResolve(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Targets: []Target{
+		{Name: "claude", Dir: filepath.Join(root, ".claude", "skills")},
+		{Name: "codex", Dir: filepath.Join(root, ".codex", "skills")},
+	}}
+
+	t.Run("named goes through Select", func(t *testing.T) {
+		got, err := cfg.Resolve([]string{"codex"})
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if len(got) != 1 || got[0].Name != "codex" {
+			t.Fatalf("Resolve(%v) = %+v, want [codex]", []string{"codex"}, got)
+		}
+		if _, err := cfg.Resolve([]string{"emacs"}); err == nil {
+			t.Error("Resolve accepted an unknown agent name; want an error")
+		}
+	})
+
+	t.Run("empty falls back to Present", func(t *testing.T) {
+		got, err := cfg.Resolve(nil)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if len(got) != 1 || got[0].Name != "claude" {
+			t.Fatalf("Resolve(nil) = %+v, want only the present agent", got)
+		}
+	})
+
+	t.Run("empty Present is an error", func(t *testing.T) {
+		empty := Config{Targets: []Target{
+			{Name: "claude", Dir: filepath.Join(t.TempDir(), ".claude", "skills")},
+		}}
+		if _, err := empty.Resolve(nil); err == nil {
+			t.Error("Resolve accepted an empty agent selection with no agent present; want an error")
+		}
+	})
+}
+
 func TestLoadExpandsBareTilde(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")

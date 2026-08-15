@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.AddCommand(
 		newAdoptCmd(),
+		newBundleCmd(),
 		newDoctorCmd(),
 		newGCCmd(),
 		newInfoCmd(),
@@ -26,6 +27,7 @@ func NewRootCmd() *cobra.Command {
 		newOutdatedCmd(),
 		newPinCmd(),
 		newRemoveCmd(),
+		newSyncCmd(),
 		newUnpinCmd(),
 		newUpdateCmd(),
 		newVersionCmd(),

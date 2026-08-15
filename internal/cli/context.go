@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/claudex"
@@ -45,14 +44,7 @@ func newEnv() (*env, error) {
 
 // targets resolves the -a flag, defaulting to every present agent.
 func (e *env) targets(names []string) ([]target.Target, error) {
-	if len(names) > 0 {
-		return e.cfg.Select(names)
-	}
-	present := e.cfg.Present()
-	if len(present) == 0 {
-		return nil, fmt.Errorf("no agent directories found: create one (for example ~/.claude) or configure targets")
-	}
-	return present, nil
+	return e.cfg.Resolve(names)
 }
 
 // openState acquires the receipts database.
