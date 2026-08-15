@@ -179,7 +179,7 @@ func selectReceipts(receipts []*state.Receipt, names []string) ([]*state.Receipt
 	for _, name := range names {
 		r, ok := byName[name]
 		if !ok {
-			return nil, fmt.Errorf("%q is not installed: run `skillsctl list` to see what is", name)
+			return nil, state.NotInstalled(name, receipts)
 		}
 		// Naming a skill twice is one request for it, not two: planning it
 		// twice would report it twice and re-link it over itself.

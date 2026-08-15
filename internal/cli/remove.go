@@ -35,7 +35,7 @@ func newRemoveCmd() *cobra.Command {
 
 			receipt, ok := h.DB.Receipts[name]
 			if !ok {
-				return fmt.Errorf("%q is not installed", name)
+				return h.DB.NotInstalled(name)
 			}
 			ch, err := e.channels().ForReceipt(receipt)
 			if err != nil {
