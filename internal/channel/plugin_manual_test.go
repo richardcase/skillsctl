@@ -11,6 +11,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/richardcase/skillsctl/internal/claudex"
@@ -19,9 +20,10 @@ import (
 	"github.com/richardcase/skillsctl/internal/target"
 )
 
-// manualPlugin is the plugin this test installs and removes. Override it with
+// manualPlugin is the plugin this test installs and removes. It must ship
+// skills, since the fan-out stage needs something to link. Override it with
 // SKILLSCTL_MANUAL_PLUGIN to try another marketplace.
-const manualPlugin = "swift-lsp@claude-plugins-official"
+const manualPlugin = "superpowers@claude-plugins-official"
 
 // TestManualPluginInstallAndUninstall walks install, read-back and uninstall
 // against the actual binary, which is the only way to find out that the argv we
@@ -51,16 +53,39 @@ func TestManualPluginInstallAndUninstall(t *testing.T) {
 		t.Skipf("%s is already installed; this test will not touch a plugin it did not install", id)
 	}
 
-	cfg := target.Config{Targets: []target.Target{{Name: "claude", Plugins: true}}}
+	// A second agent, so the fan-out has somewhere to go. It is a temp
+	// directory, so nothing here touches the machine's real codex.
+	agents := t.TempDir()
+	cfg := target.Config{Targets: []target.Target{
+		{Name: "claude", Plugins: true},
+		{Name: "codex", Dir: filepath.Join(agents, "codex")},
+	}}
 	ch := NewPlugin(cli, cfg)
 
 	// The real runner, which is what the CLI would use.
 	ex := &plan.Executor{DB: &state.DB{Receipts: map[string]*state.Receipt{}}, Out: os.Stderr}
 
 	t.Cleanup(func() {
-		p, _ := ch.Remove(state.Receipt{Name: "manual", Source: id}, nil)
+		// Read the receipt back from the DB rather than building a bare one:
+		// by the time cleanup runs, Link may have recorded fan-out links, and
+		// those have to be in the receipt Remove sees or codex is left holding
+		// symlinks skillsctl forgot about.
+		r := state.Receipt{Name: "manual", Source: id}
+		if got, ok := ex.DB.Receipts["manual"]; ok {
+			r = *got
+		}
+		p, _ := ch.Remove(r, nil)
 		if err := ex.Apply(ctx, p); err != nil {
 			t.Errorf("cleanup uninstall failed, %s may still be installed: %v", id, err)
+			return
+		}
+		des, err := os.ReadDir(cfg.Targets[1].Dir)
+		if err != nil {
+			t.Errorf("read codex after removal: %v", err)
+			return
+		}
+		if len(des) != 0 {
+			t.Errorf("codex holds %d entries after removal, want none", len(des))
 		}
 	})
 
@@ -85,5 +110,38 @@ func TestManualPluginInstallAndUninstall(t *testing.T) {
 	}
 	if _, err := os.Stat(changed[0].RevPath); err != nil {
 		t.Errorf("install path %q does not exist: %v", changed[0].RevPath, err)
+	}
+
+	p, skipped, err := ch.Link(changed[0], cfg.Targets)
+	if err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("skipped = %v, want none in an empty codex", skipped)
+	}
+	if p.IsEmpty() {
+		t.Fatal("superpowers ships skills, so there is something to link")
+	}
+
+	if err := ex.Apply(ctx, p); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	des, err := os.ReadDir(cfg.Targets[1].Dir)
+	if err != nil {
+		t.Fatalf("read codex: %v", err)
+	}
+	if len(des) == 0 {
+		t.Fatal("codex holds nothing after the fan-out")
+	}
+	for _, de := range des {
+		dest, rerr := filepath.EvalSymlinks(filepath.Join(cfg.Targets[1].Dir, de.Name()))
+		if rerr != nil {
+			t.Errorf("%s: %v", de.Name(), rerr)
+			continue
+		}
+		if _, serr := os.Stat(filepath.Join(dest, "SKILL.md")); serr != nil {
+			t.Errorf("%s -> %s holds no SKILL.md", de.Name(), dest)
+		}
 	}
 }

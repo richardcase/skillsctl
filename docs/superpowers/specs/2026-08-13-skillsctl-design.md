@@ -183,6 +183,11 @@ to Claude only in v1 (a plugin's skills are
 already visible to Claude Code); fanning a plugin's `skills/` subdir out to other
 agents is explicitly deferred.
 
+**Superseded:** the fan-out is now in scope, and a plugin's default target set is
+every present agent like every other channel's. See
+[the plugin fan-out design](2026-08-15-plugin-fan-out-design.md), which keeps
+`plugins = true` meaning "can install a plugin" rather than "can see one".
+
 ### Scope
 
 Global by default. `--project` links into `<repo>/.claude/skills` and writes

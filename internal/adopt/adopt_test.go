@@ -343,9 +343,10 @@ func TestScanRefusesASecondLinkPointingSomewhereElse(t *testing.T) {
 	}
 }
 
-// Links is a set keyed by target: Remove builds its drop filter from the
-// target name, so a receipt with two links for one agent would plan two
-// unlinks of one path and swallow the second.
+// Links is a set keyed by the path a link sits at: Unlink treats a missing
+// link as success, so two entries naming one path would plan two unlinks of
+// it and swallow the second. A receipt for a single skill has one path per
+// agent, which is why a second link for a target already recorded is refused.
 func TestScanRefusesASecondLinkForAnAgentTheReceiptAlreadyRecords(t *testing.T) {
 	f := newFixture(t)
 	dest := f.skill("demo")
@@ -549,6 +550,35 @@ func TestScanRecognisesAManagedSkillBeforeJudgingWhereItPoints(t *testing.T) {
 	// as the orphan case.
 	if got := only(t, f.scan(db)).Class; got != ClassManaged {
 		t.Errorf("Class = %q, want managed", got)
+	}
+}
+
+// A plugin's link is named after the skill and its receipt is named after the
+// plugin, so a lookup by name misses it. What follows is worse than a miss: the
+// link resolves to a real directory holding a SKILL.md that is not in the store,
+// and a plugin's cache directory is a git checkout, so promote would offer to
+// adopt skillsctl's own link as a new git skill.
+func TestScanTreatsAFannedOutPluginLinkAsManaged(t *testing.T) {
+	f := newFixture(t)
+	dest := f.skill("brainstorming")
+	f.link("brainstorming", dest)
+
+	db := &state.DB{Receipts: map[string]*state.Receipt{
+		"superpowers": {
+			Name:    "superpowers",
+			Channel: "plugin",
+			Source:  "superpowers@claude-plugins-official",
+			Links:   []state.Link{{Target: "claude", Path: filepath.Join(f.skills, "brainstorming")}},
+		},
+	}}
+
+	rep := f.scan(db)
+
+	if got := only(t, rep).Class; got != ClassManaged {
+		t.Errorf("Class = %q, want ClassManaged: a link a receipt records is ours, whatever it is named", got)
+	}
+	if len(rep.Adoptions()) != 0 {
+		t.Error("offered skillsctl's own link for adoption")
 	}
 }
 

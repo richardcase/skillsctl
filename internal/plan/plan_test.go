@@ -48,3 +48,10 @@ func TestIsEmpty(t *testing.T) {
 		t.Error("a plan with an op must not be empty")
 	}
 }
+
+func TestNoteDescribesItselfAndChangesNothing(t *testing.T) {
+	o := Note{Text: "then link the skills it ships into codex"}
+	if got, want := o.Describe(), "note    then link the skills it ships into codex"; got != want {
+		t.Errorf("Describe() = %q, want %q", got, want)
+	}
+}

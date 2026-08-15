@@ -135,6 +135,18 @@ func TestLinkWithNoAgentFansOutToEveryPresentAgent(t *testing.T) {
 	if _, err := os.Readlink(filepath.Join(h.codex, "demo-skill")); err != nil {
 		t.Errorf("codex link missing: %v", err)
 	}
+	// The success line must name only the agent the plan actually touched.
+	// Naming claude too, which already had it, would be a lie no one asked
+	// for, since the default set folds an already-satisfied agent in
+	// silently rather than reporting it.
+	if !strings.Contains(out, "linked demo-skill into codex") {
+		t.Errorf("output = %q, want the success line to name only codex", out)
+	}
+	if strings.Contains(out, "linked demo-skill into claude") ||
+		strings.Contains(out, "linked demo-skill into codex, claude") ||
+		strings.Contains(out, "linked demo-skill into claude, codex") {
+		t.Errorf("output = %q, want claude left out of the success line: it was not touched", out)
+	}
 }
 
 // Nothing was done and the message says why, which is exit 1 rather than a
@@ -168,6 +180,17 @@ func TestLinkDoesTheRestWhenOneAgentAlreadyHasIt(t *testing.T) {
 	if _, err := os.Readlink(filepath.Join(h.codex, "demo-skill")); err != nil {
 		t.Errorf("codex link missing: %v, want the rest of the work done", err)
 	}
+	// The two lines must not contradict each other: claude is "already
+	// linked" and must not also appear in "linked into", or the output
+	// claims to have done work it did not do.
+	if !strings.Contains(out, "linked demo-skill into codex") {
+		t.Errorf("output = %q, want the success line to name only the agent actually touched", out)
+	}
+	if strings.Contains(out, "linked demo-skill into claude") ||
+		strings.Contains(out, "linked demo-skill into codex, claude") ||
+		strings.Contains(out, "linked demo-skill into claude, codex") {
+		t.Errorf("output = %q, want claude left out of the success line: it was already linked, not touched", out)
+	}
 }
 
 func TestLinkDryRunChangesNothing(t *testing.T) {
@@ -186,24 +209,6 @@ func TestLinkDryRunChangesNothing(t *testing.T) {
 	}
 	if got := linkTargets(t, h, "demo-skill"); len(got) != 1 {
 		t.Errorf("links = %v, want the receipt untouched", got)
-	}
-}
-
-// A plugin has no symlink of ours to duplicate, and the error has to explain
-// that rather than report a missing skill.
-func TestLinkRefusesAPluginReceipt(t *testing.T) {
-	h := newHarness(t)
-	h.plugins.next = "6.3.0"
-	if out, err := h.run(t, "install", pluginID); err != nil {
-		t.Fatalf("install: %v\n%s", err, out)
-	}
-
-	out, err := h.run(t, "link", "superpowers", "-a", "codex")
-	if err == nil {
-		t.Fatalf("link: nil error, want a refusal\n%s", out)
-	}
-	if !strings.Contains(err.Error(), "plugin") {
-		t.Errorf("error = %v, want it to say a plugin has no link to add", err)
 	}
 }
 

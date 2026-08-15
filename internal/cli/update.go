@@ -7,6 +7,7 @@ import (
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
+	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/richardcase/skillsctl/internal/update"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			var serr error
+			var linkSkips []string
 			if !p.IsEmpty() {
 				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
 				if err := ex.Apply(cmd.Context(), p); err != nil {
@@ -71,7 +73,7 @@ func newUpdateCmd() *cobra.Command {
 				// A channel whose agent chooses the version can only be asked
 				// once it has run, so the entries are corrected before they are
 				// reported rather than after.
-				entries, serr = settleUpdated(cmd.Context(), ex, e, h.DB, entries)
+				entries, linkSkips, serr = settleUpdated(cmd.Context(), ex, e, h.DB, entries)
 
 				if err := h.Commit(); err != nil {
 					return fmt.Errorf("%w\nthe skills were re-linked but the receipts were not saved; re-run this command to repair", err)
@@ -79,6 +81,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			reportUpdate(cmd, entries, dryRun)
+			reportSkipped(cmd, linkSkips)
 			if !p.IsEmpty() {
 				hintReclaimable(cmd, e, h.DB)
 			}
@@ -100,6 +103,27 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
+// linkedTargets is the agents a receipt already reaches, as targets, for the
+// reconcile that follows an update.
+//
+// An update re-points what is there; it does not fan out further. An agent that
+// has since been deleted from the config is passed over rather than unlinked:
+// config drift is not this command's business.
+func linkedTargets(cfg target.Config, r state.Receipt) []target.Target {
+	held := make(map[string]bool, len(r.Links))
+	for _, l := range r.Links {
+		held[l.Target] = true
+	}
+
+	var out []target.Target
+	for _, t := range cfg.Targets {
+		if held[t.Name] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // settleUpdated completes the receipts an update just wrote, for the channels
 // that cannot know a version until their agent has run, and folds the result
 // back into the entries so the report says what actually happened rather than
@@ -107,7 +131,7 @@ func newUpdateCmd() *cobra.Command {
 //
 // It groups by channel for the same reason update.Plan does: a channel is asked
 // once, and answers for everything it owns.
-func settleUpdated(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, entries []update.Entry) ([]update.Entry, error) {
+func settleUpdated(ctx context.Context, ex *plan.Executor, e *env, db *state.DB, entries []update.Entry) ([]update.Entry, []string, error) {
 	reg := e.channels()
 	grouped := map[string][]state.Receipt{}
 	var order []string
@@ -127,6 +151,7 @@ func settleUpdated(ctx context.Context, ex *plan.Executor, e *env, db *state.DB,
 	}
 
 	var settled []state.Receipt
+	var skipped []string
 	var firstErr error
 	for _, name := range order {
 		ch, err := reg.For(source.Channel(name))
@@ -137,9 +162,21 @@ func settleUpdated(ctx context.Context, ex *plan.Executor, e *env, db *state.DB,
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
+
+		// The links follow the settle for the same reason they follow an
+		// install: a channel whose agent chose the directory has only now been
+		// told where the new one is.
+		got, skips, lerr := relink(ctx, ex, ch, got, func(r state.Receipt) []target.Target {
+			return linkedTargets(e.cfg, r)
+		})
+		skipped = append(skipped, skips...)
+		if lerr != nil && firstErr == nil {
+			firstErr = lerr
+		}
+
 		settled = append(settled, got...)
 	}
-	return update.Reconcile(entries, settled), firstErr
+	return update.Reconcile(entries, settled), skipped, firstErr
 }
 
 // reportUpdate writes one line per skill that is not simply current. A run

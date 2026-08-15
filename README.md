@@ -67,9 +67,11 @@ exact.
   references. It changes nothing and names the command that repairs each finding,
   and it exits non-zero, so it works as a check in CI.
 - **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
-  installs through `claude plugin` and records a receipt, so a plugin shows up in
-  `list` and comes out with `remove` alongside everything else. A plugin Claude
-  already has is adopted rather than reinstalled.
+  installs through `claude plugin`, records a receipt, and links every skill the
+  plugin ships into the agents that cannot install plugins themselves — so a
+  plugin reaches Codex and Gemini like anything else. A plugin Claude already has
+  is adopted rather than reinstalled, and `update` re-points those links when
+  claude moves the plugin to a new version.
 - **Repositories of many skills.** `--skill` takes the ones you name, `--all`
   takes every one it finds, and they share a single copy of the repository. A
   bare `install` on such a repository lists what is there rather than guessing.
@@ -133,7 +135,7 @@ $ skillsctl list
 NAME              CHANNEL  VERSION           AGENTS
 avoid-ai-writing  git      a1b2c3d           claude,codex
 brainstorming     git      9f8e7d6 (pinned)  claude
-superpowers       plugin   6.3.0             claude
+superpowers       plugin   6.3.0             claude,codex
 my-skill          local    -                 claude
 ```
 
@@ -281,13 +283,18 @@ where that receipt already says its files are, since a receipt is what `update`
 re-points and `remove` deletes; one that leads somewhere else is reported
 instead.
 
-A plugin is the second exception, because Claude Code owns it. `skillsctl` records the
-`plugin@marketplace` id, the version and the install path claude reported, and
-nothing else: there is no revision in the store, no content hash and no symlink,
-since a plugin's skills are already visible to the agent that installed it. So
-`install`, `update` and `remove` run `claude plugin install|update|uninstall`
-and read back what claude decided, `list` shows the plugin's version, and `gc`
-leaves it alone. `claude` must be on `PATH`; nothing else needs it.
+A plugin is the second exception, because Claude Code owns it. `skillsctl` records
+the `plugin@marketplace` id, the version and the install path claude reported;
+there is no revision in the store and no content hash, since the files are the
+agent's. What it adds is the fan-out: every skill under the plugin's `skills/`
+directory is symlinked into the agents that cannot install plugins for
+themselves, and those links are recorded on the receipt like any other. So
+`install`, `update` and `remove` run `claude plugin install|update|uninstall`,
+read back what claude decided, and then make the links agree with it — which
+matters because claude installs each version beside the last, so a link left
+alone would go on serving a version that has been replaced. `gc` still leaves a
+plugin alone: nothing of it is in the store. `claude` must be on `PATH`; nothing
+else needs it.
 
 Locations can be overridden with environment variables:
 
@@ -317,8 +324,15 @@ Locations can be overridden with environment variables:
 | `version` | | Print version, commit and build date |
 
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
-the receipt; removing the last link forgets it. A plugin has no links to keep,
-so removing it uninstalls it through `claude` and forgets the receipt outright.
+the receipt; removing the last link forgets it.
+
+Removing a plugin uninstalls it through `claude` and takes away every link its
+skills had. Naming only an agent that holds links — `remove superpowers -a codex`
+— takes those away and keeps the receipt, since the plugin is still installed.
+Naming the agent that owns it is refused if that would strand a linked agent's
+skills — one holding links that was not also named in the same command; naming
+both together takes both away in one command rather than being refused. The
+error names `skillsctl remove <name>`, which does mean everywhere.
 
 `link <name> -a <agent>` is its inverse, for the agent that was not on the
 machine when something was installed: it adds a link to the revision the receipt
@@ -326,14 +340,20 @@ already has, without fetching anything. Which of the two forms you meant is
 decided by looking the argument up in the receipts, so an installed name takes
 the first and everything else takes the path. Naming an agent that already has
 the skill links the rest and says so, exiting 2; naming only agents that already
-have it does nothing and exits 1. A plugin is refused, because its skills are
-the agent's own and there is no symlink to add.
+have it does nothing and exits 1.
+
+A plugin is linked skill by skill: `link superpowers -a codex` puts every skill
+the plugin ships into codex, repairing any of them a link was missing for —
+codex holding some but not all of a plugin's skills is not "already has it".
+The agent that installed the plugin is reported as already having it, because
+it can see those skills without a symlink.
 
 `--skill`, `--all`, `--ref` and `--pin` mean nothing for a plugin — it is
 installed whole, at whichever version its marketplace publishes — and are
-refused rather than ignored. For the same reason `outdated` reports a plugin as
-`n/a`: `claude plugin` offers no way to see a newer version without installing
-it, so `skillsctl update` is what finds out.
+refused rather than ignored. `outdated` cannot ask the marketplace whether a
+newer version exists, so instead it compares the receipt against what claude
+has installed now: a plugin claude has moved since skillsctl last looked comes
+back `stale`, which `skillsctl update` repairs.
 
 Nothing in the store is deleted until you ask. `remove` unlinks a skill and
 forgets its receipt, and `update` moves it off the revision it was on, but both
@@ -393,7 +413,8 @@ adopt none of it), and `doctor` exits `2` when an agent's skills directory could
 not be read. The codes above `2` are findings rather
 than a verdict on the work:
 `3` means `outdated` ran to completion and something has moved, and `4` that
-`doctor` ran to completion and something is wrong.
+`doctor` ran to completion and something is wrong. A stale plugin does not set
+`3`: it is not an available update, and `skillsctl update` repairs it on its own.
 
 ## Configuration
 
@@ -414,10 +435,12 @@ dir = "~/.codex/skills"
 ```
 
 `dir` is the agent's user-level skills directory, `project_dir` the
-repository-relative one, and `plugins` marks an agent that also supports plugin
-marketplaces. That last one is what the plugin channel installs for: a
-`name@marketplace` source needs an agent with `plugins = true`, and naming one
-without it through `-a` is an error rather than a silent no-op.
+repository-relative one, and `plugins` marks an agent that installs plugins from
+a marketplace for itself. It gates installing a plugin, never seeing one: a
+`name@marketplace` source needs an agent with `plugins = true` in the set, and
+naming only agents without it through `-a` is an error rather than a silent
+no-op — but it is precisely the agents *without* it that a plugin's skills are
+linked into.
 
 ## Status
 
@@ -425,9 +448,9 @@ All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
 `local` (`./path`), and `link` serves both of its forms. `bundle` and `sync` are
 designed but not built, and `doctor` reports without a `--fix`.
 
-Two things the plugin channel deliberately does not do yet: `outdated` reports a
-plugin as `n/a`, and a plugin's skills are not fanned out to agents other than
-the one that installed it.
+One thing the plugin channel deliberately does not do yet: `outdated` reports a
+plugin as `stale` when claude has moved it since skillsctl last looked, but it
+cannot tell you whether the marketplace has published a newer version.
 
 See [the design spec](docs/superpowers/specs/2026-08-13-skillsctl-design.md) for
 the full intended surface.

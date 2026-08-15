@@ -160,14 +160,14 @@ func localCandidates(sels []selection, root string) ([]Candidate, error) {
 }
 
 // Install links each skill where it already is and records a receipt.
-func (c *Local) Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, error) {
+func (c *Local) Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, []string, error) {
 	var p plan.Plan
 	receipts := make([]state.Receipt, 0, len(chosen))
 	now := time.Now().UTC()
 
 	root, err := c.resolve(req)
 	if err != nil {
-		return p, nil, err
+		return p, nil, nil, err
 	}
 
 	for _, s := range chosen {
@@ -176,7 +176,7 @@ func (c *Local) Install(req Request, chosen []Candidate) (plan.Plan, []state.Rec
 		for _, t := range req.Targets {
 			linkPath, err := linkPathFor(t, s.Name)
 			if err != nil {
-				return p, nil, err
+				return p, nil, nil, err
 			}
 			p.Add(plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: s.Path})
 			receipt.Links = append(receipt.Links, state.Link{Target: t.Name, Path: linkPath})
@@ -184,7 +184,7 @@ func (c *Local) Install(req Request, chosen []Candidate) (plan.Plan, []state.Rec
 		p.Add(plan.Record{Receipt: receipt})
 		receipts = append(receipts, receipt)
 	}
-	return p, receipts, nil
+	return p, receipts, nil, nil
 }
 
 // localReceipt is the shape of every local receipt, whether it was linked or

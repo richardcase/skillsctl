@@ -156,7 +156,7 @@ func brief(sels []selection) []Candidate {
 
 // Install links each candidate into each target and records a receipt. The
 // whole install is one plan, so a failure part-way leaves nothing behind.
-func (c *Git) Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, error) {
+func (c *Git) Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, []string, error) {
 	var p plan.Plan
 	receipts := make([]state.Receipt, 0, len(chosen))
 	now := time.Now().UTC()
@@ -182,7 +182,7 @@ func (c *Git) Install(req Request, chosen []Candidate) (plan.Plan, []state.Recei
 		for _, t := range req.Targets {
 			linkPath, err := linkPathFor(t, s.Name)
 			if err != nil {
-				return p, nil, err
+				return p, nil, nil, err
 			}
 			p.Add(plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: s.Path})
 			receipt.Links = append(receipt.Links, state.Link{Target: t.Name, Path: linkPath})
@@ -190,7 +190,7 @@ func (c *Git) Install(req Request, chosen []Candidate) (plan.Plan, []state.Recei
 		p.Add(plan.Record{Receipt: receipt})
 		receipts = append(receipts, receipt)
 	}
-	return p, receipts, nil
+	return p, receipts, nil, nil
 }
 
 // resolution is one ls-remote answer, cached so that N skills installed from

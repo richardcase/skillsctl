@@ -206,3 +206,11 @@ by the parent spec. `unlink`, which does not exist and does not need to:
 it would leave the question of which one forgets the last receipt. And
 `--project`, which changes where links go for every command at once rather than
 this one.
+
+**Superseded:** the fan-out is now in scope, so the `plugin` row of *Which
+channels it can serve* is no longer "refused", and `Link` widens from "add" to
+"make these agents hold what the receipt says they should". The two constraints
+above narrow rather than break — `Links` is keyed by (target, path) instead of
+by target, for the same reason it was keyed at all, and a link may still only be
+recorded where the receipt says it points. See
+[the plugin fan-out design](2026-08-15-plugin-fan-out-design.md).

@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,6 +26,12 @@ type fakePlugins struct {
 	listErr error
 	// calls counts List, so "one call for the whole batch" can be asserted.
 	calls int
+
+	// root is a real directory each install path is built under, and skills
+	// names the skills a plugin ships there. Without a tree on disk there is
+	// nothing to fan out, so the fake builds one.
+	root   string
+	skills []string
 }
 
 func (f *fakePlugins) List(context.Context) ([]claudex.Installed, error) {
@@ -59,9 +67,13 @@ func (f *fakePlugins) exec(argv []string) error {
 		if version == "" {
 			version = "1.0.0"
 		}
+		path, err := f.tree(id, version)
+		if err != nil {
+			return err
+		}
 		f.put(claudex.Installed{
 			ID: id, Version: version, Scope: "user", Enabled: true,
-			InstallPath: "/plugins/" + id + "/" + version,
+			InstallPath: path,
 		})
 	case "uninstall":
 		var out []claudex.Installed
@@ -75,6 +87,26 @@ func (f *fakePlugins) exec(argv []string) error {
 		return fmt.Errorf("unexpected verb %q", verb)
 	}
 	return nil
+}
+
+// tree writes the skills directory claude would have unpacked, so a reconcile
+// has something real to link at.
+func (f *fakePlugins) tree(id, version string) (string, error) {
+	dir := filepath.Join(f.root, strings.ReplaceAll(id, "@", "-"), version)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	for _, n := range f.skills {
+		sd := filepath.Join(dir, "skills", n)
+		if err := os.MkdirAll(sd, 0o755); err != nil {
+			return "", err
+		}
+		body := "---\nname: " + n + "\ndescription: a skill\n---\n\nBody.\n"
+		if err := os.WriteFile(filepath.Join(sd, "SKILL.md"), []byte(body), 0o644); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
 }
 
 func (f *fakePlugins) put(p claudex.Installed) {
@@ -94,6 +126,37 @@ func (f *fakePlugins) has(id string) bool {
 		}
 	}
 	return false
+}
+
+func TestInstallPluginFansItsSkillsOutToCodex(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha", "beta"}
+
+	out, err := h.run(t, "install", pluginID)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	for _, name := range []string{"alpha", "beta"} {
+		dest, rerr := os.Readlink(filepath.Join(h.codex, name))
+		if rerr != nil {
+			t.Fatalf("codex has no link for %s: %v", name, rerr)
+		}
+		if _, serr := os.Stat(filepath.Join(dest, "SKILL.md")); serr != nil {
+			t.Errorf("%s -> %s does not hold a SKILL.md", name, dest)
+		}
+	}
+
+	// claude installed the plugin and can already see it, so there is nothing
+	// of ours in its skills directory.
+	if _, serr := os.Stat(filepath.Join(h.claude, "alpha")); !os.IsNotExist(serr) {
+		t.Error("linked into claude, which can already see the plugin's skills")
+	}
+
+	links := h.receipts(t)["superpowers"]["links"].([]any)
+	if len(links) != 2 {
+		t.Errorf("recorded links = %v, want one per skill: they are the removal contract", links)
+	}
 }
 
 func TestInstallPluginRecordsTheVersionClaudeChose(t *testing.T) {
@@ -118,8 +181,9 @@ func TestInstallPluginRecordsTheVersionClaudeChose(t *testing.T) {
 	if r["resolved"] != "6.3.0" {
 		t.Errorf("resolved = %v, want the version read back from claude", r["resolved"])
 	}
-	if r["revPath"] != "/plugins/"+pluginID+"/6.3.0" {
-		t.Errorf("revPath = %v, want the path claude installed into", r["revPath"])
+	wantPath := filepath.Join(h.plugins.root, strings.ReplaceAll(pluginID, "@", "-"), "6.3.0")
+	if r["revPath"] != wantPath {
+		t.Errorf("revPath = %v, want the path claude installed into (%s)", r["revPath"], wantPath)
 	}
 	if r["channel"] != "plugin" || r["source"] != pluginID {
 		t.Errorf("receipt = %v, want the plugin channel and its id", r)
@@ -131,8 +195,14 @@ func TestInstallPluginRecordsTheVersionClaudeChose(t *testing.T) {
 
 func TestInstallPluginAdoptsOneClaudeAlreadyHas(t *testing.T) {
 	h := newHarness(t)
+	// Create a real directory structure for the adopted plugin, with an empty
+	// skills directory so fan can walk it without error.
+	pluginPath := h.root + "/adopted/6.3.0"
+	testrepo.Write(t, pluginPath, map[string]string{
+		"skills/.gitkeep": "",
+	})
 	h.plugins.installed = []claudex.Installed{
-		{ID: pluginID, Version: "6.3.0", InstallPath: "/plugins/superpowers/6.3.0"},
+		{ID: pluginID, Version: "6.3.0", InstallPath: pluginPath},
 	}
 
 	out, err := h.run(t, "install", pluginID)
@@ -170,6 +240,82 @@ func TestInstallPluginDryRunNamesWhatItWouldRun(t *testing.T) {
 	}
 	if h.plugins.has(pluginID) {
 		t.Error("--dry-run installed the plugin")
+	}
+}
+
+// adoptPluginWithCollidingSkill sets up a plugin claude already has, shipping
+// one skill named alpha, with something that is not skillsctl's already
+// sitting at the path alpha would take in codex.
+func adoptPluginWithCollidingSkill(t *testing.T, h *harness) {
+	t.Helper()
+	pluginPath := h.root + "/adopted/6.3.0"
+	testrepo.Write(t, pluginPath, map[string]string{
+		"skills/alpha/SKILL.md": "---\nname: alpha\ndescription: a skill\n---\n\nBody.\n",
+	})
+	h.plugins.installed = []claudex.Installed{
+		{ID: pluginID, Version: "6.3.0", InstallPath: pluginPath},
+	}
+	if err := os.MkdirAll(filepath.Join(h.codex, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// This pins the bug commit 0947a06 fixed for `link` but left standing for
+// `install`: a plugin already adopted plans its fan-out inline, and a name
+// another skill already holds must be reported and priced into the exit code
+// exactly as a real run does, or a script driving install would see success
+// where the real run means partial.
+func TestInstallPluginReportsASkillNameAlreadyTakenAndExitsPartial(t *testing.T) {
+	h := newHarness(t)
+	adoptPluginWithCollidingSkill(t, h)
+
+	code, out := exitCode(t, "install", pluginID)
+	if code != ExitPartial {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitPartial, out)
+	}
+	if !strings.Contains(out, "could not be linked") {
+		t.Errorf("output = %q, want the skip priced into the exit code", out)
+	}
+	if !strings.Contains(out, "alpha") {
+		t.Errorf("output = %q, want the skipped skill named", out)
+	}
+}
+
+// dedupeSkips is the sole guard against reporting one skip twice: an adopted
+// plugin's fan-out runs once inline in Install and once more when relink
+// recomputes it after settle, and without the merge both would print the
+// same "skipped alpha for codex" line. A regression here would not fail any
+// exit-code assertion — only the line count would change — so this pins the
+// count directly.
+func TestInstallPluginReportsACollidingSkillExactlyOnce(t *testing.T) {
+	h := newHarness(t)
+	adoptPluginWithCollidingSkill(t, h)
+
+	code, out := exitCode(t, "install", pluginID)
+	if code != ExitPartial {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitPartial, out)
+	}
+	if got := strings.Count(out, "skipped alpha for codex"); got != 1 {
+		t.Errorf("output = %q, want the skip reported exactly once, got %d", out, got)
+	}
+}
+
+func TestInstallPluginDryRunMatchesTheRealRunsExitCodeWhenASkillIsTaken(t *testing.T) {
+	h := newHarness(t)
+	adoptPluginWithCollidingSkill(t, h)
+
+	code, out := exitCode(t, "install", pluginID, "--dry-run")
+	if code != ExitPartial {
+		t.Fatalf("dry-run exit = %d, want %d, the same as the real run\n%s", code, ExitPartial, out)
+	}
+	if !strings.Contains(out, "could not be linked") {
+		t.Errorf("dry-run output = %q, want the skip reported", out)
+	}
+	if len(h.ran) != 0 {
+		t.Errorf("commands run = %v, want none under --dry-run", h.ran)
+	}
+	if _, err := os.Lstat(filepath.Join(h.root, "state.json")); !os.IsNotExist(err) {
+		t.Error("--dry-run wrote the receipts database")
 	}
 }
 
@@ -343,6 +489,58 @@ func TestUpdatePluginDryRunSaysTheVersionIsNotKnowableYet(t *testing.T) {
 	}
 }
 
+// The design's dry-run table promises an update "exec, record, and a note":
+// the note is what says which agents' links the real run will reconcile,
+// since the version claude lands on is not known until after the exec.
+func TestUpdatePluginDryRunNotesTheLinksItWillReconcile(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+	h.plugins.next = "6.3.0"
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	h.ran = nil
+
+	out, err := h.run(t, "update", "--dry-run")
+	if err != nil {
+		t.Fatalf("update --dry-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "codex") {
+		t.Errorf("output = %q, want the agent whose links will be reconciled named", out)
+	}
+}
+
+// A plugin `claude plugin update` already moved outside skillsctl is the case
+// where skillsctl's own "updated X -> Y" line would otherwise read as
+// contradicting whatever claude itself just reported: both are true, but the
+// note is what keeps them from looking like they disagree.
+func TestUpdatePluginNotesWhenClaudeHadAlreadyMovedItOutsideSkillsctl(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.next = "6.3.0"
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	// What `claude plugin update` on its own would leave behind: claude moves
+	// the plugin, but skillsctl's receipt does not yet know.
+	h.plugins.next = "6.4.0"
+	if err := h.plugins.exec([]string{"claude", "plugin", "update", pluginID}); err != nil {
+		t.Fatal(err)
+	}
+	h.ran = nil
+
+	out, err := h.run(t, "update")
+	if err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "claude was already at 6.4.0") {
+		t.Errorf("output = %q, want the note explaining claude had already moved", out)
+	}
+	if !strings.Contains(out, "6.3.0") || !strings.Contains(out, "6.4.0") {
+		t.Errorf("output = %q, want skillsctl's own before-and-after version reported alongside the note", out)
+	}
+}
+
 func TestUpdateReportsAPluginClaudeNoLongerHas(t *testing.T) {
 	h := newHarness(t)
 	h.plugins.next = "6.3.0"
@@ -396,6 +594,164 @@ func TestGCStillReclaimsMirrorsWhileAPluginIsInstalled(t *testing.T) {
 	}
 	if listed, _ := h.run(t, "list"); !strings.Contains(listed, "superpowers") {
 		t.Errorf("list = %q, want the plugin receipt intact after gc", listed)
+	}
+}
+
+func TestUpdatePluginRepointsCodexAtTheNewVersion(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	before, err := os.Readlink(filepath.Join(h.codex, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h.plugins.next = "2.0.0"
+	if out, err := h.run(t, "update"); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+
+	after, err := os.Readlink(filepath.Join(h.codex, "alpha"))
+	if err != nil {
+		t.Fatalf("codex lost its link across the update: %v", err)
+	}
+	if after == before {
+		t.Fatalf("link still points at %s: claude keeps the old version directory, so a stale link "+
+			"goes on serving it rather than dangling", before)
+	}
+	if !strings.Contains(after, "2.0.0") {
+		t.Errorf("link points at %q, want the 2.0.0 directory", after)
+	}
+}
+
+func TestUpdatePluginUnlinksASkillItStoppedShipping(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha", "beta"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	h.plugins.next = "2.0.0"
+	h.plugins.skills = []string{"alpha"}
+	if out, err := h.run(t, "update"); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+
+	if _, err := os.Lstat(filepath.Join(h.codex, "beta")); !os.IsNotExist(err) {
+		t.Error("beta is still linked into codex, pointing into a version directory nothing will ever collect")
+	}
+	links := h.receipts(t)["superpowers"]["links"].([]any)
+	if len(links) != 1 {
+		t.Errorf("recorded links = %v, want only alpha", links)
+	}
+}
+
+func TestLinkPluginIntoAnAgentThatWasNotThereAtInstallTime(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID, "-a", "claude"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if _, err := os.Lstat(filepath.Join(h.codex, "alpha")); !os.IsNotExist(err) {
+		t.Fatal("codex was not named, so it should hold nothing yet")
+	}
+
+	out, err := h.run(t, "link", "superpowers", "-a", "codex")
+	if err != nil {
+		t.Fatalf("link: %v\n%s", err, out)
+	}
+	dest, err := os.Readlink(filepath.Join(h.codex, "alpha"))
+	if err != nil {
+		t.Fatalf("codex has no link for alpha: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "SKILL.md")); err != nil {
+		t.Errorf("alpha -> %s does not hold a SKILL.md", dest)
+	}
+}
+
+func TestLinkPluginIntoTheAgentThatOwnsItSaysItAlreadyHasIt(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	out, err := h.run(t, "link", "superpowers", "-a", "claude")
+	if err == nil {
+		t.Fatalf("claude can already see the plugin, so there is nothing to add\n%s", out)
+	}
+	if !strings.Contains(out+err.Error(), "already linked into claude") {
+		t.Errorf("output = %q / err = %v, want it to say claude already has it", out, err)
+	}
+}
+
+// codex holding some but not all of a plugin's links is what Agents cannot
+// tell apart from codex holding all of them, since it only asks whether an
+// agent has at least one. `link <name> -a codex` has to repair the gap rather
+// than declaring codex already linked, which is what asking Link for every
+// named target rather than pre-judging with partitionLinked buys back.
+func TestLinkPluginRepairsAnAgentMissingOneOfItsLinks(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha", "beta"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if err := os.Remove(filepath.Join(h.codex, "beta")); err != nil {
+		t.Fatalf("remove codex's beta link by hand: %v", err)
+	}
+
+	out, err := h.run(t, "link", "superpowers", "-a", "codex")
+	if err != nil {
+		t.Fatalf("link: %v\n%s", err, out)
+	}
+
+	if _, err := os.Lstat(filepath.Join(h.codex, "alpha")); err != nil {
+		t.Errorf("alpha should have been left alone: %v", err)
+	}
+	dest, err := os.Readlink(filepath.Join(h.codex, "beta"))
+	if err != nil {
+		t.Fatalf("beta was not restored: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "SKILL.md")); err != nil {
+		t.Errorf("beta -> %s does not hold a SKILL.md", dest)
+	}
+
+	// codex holds alpha, so partitionLinked's coarse "has it" view puts codex
+	// in already — but it genuinely needed the repair, so the success line
+	// must still name it, and the "already linked" line must not, or the two
+	// lines contradict each other about the very same agent.
+	if !strings.Contains(out, "linked superpowers into codex") {
+		t.Errorf("output = %q, want the success line to name codex: it was genuinely repaired", out)
+	}
+	if strings.Contains(out, "already linked into codex") {
+		t.Errorf("output = %q, want codex left out of the already-linked line: it was touched, not skipped", out)
+	}
+}
+
+func TestOutdatedReportsAPluginClaudeMovedBehindOurBack(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	// What `claude plugin update` on its own would leave behind.
+	h.plugins.next = "2.0.0"
+	if err := h.plugins.exec([]string{"claude", "plugin", "update", pluginID}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := h.run(t, "outdated")
+	if !strings.Contains(out, "stale") {
+		t.Errorf("output = %q, want the plugin reported as stale rather than n/a", out)
 	}
 }
 

@@ -149,7 +149,9 @@ else lives in `internal/`, one narrow responsibility per package:
   need three: a local skill's links are the removal contract like git's, while
   nothing of it is in the store like a plugin's. A fourth channel that shares a
   removal contract with an existing one should embed `linked` rather than
-  restate it.
+  restate it. `Ownership()` answers what gc counts, not whether links exist: the
+  plugin channel is `AgentOwned` and still records links, because its skills are
+  fanned out to the agents that cannot install plugins.
 - **A binary we shell out to gets a package and an interface.** `gitx` and
   `claudex` both exist so that no unit test runs the real thing, and both read
   only. Every *mutation* stays a `plan.Exec` op built from an argv helper, which

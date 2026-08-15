@@ -34,7 +34,7 @@ func linkFixture(t *testing.T) (state.Receipt, target.Target, target.Target) {
 func TestLinkAddsOneLinkPerTargetAndRecordsTheReceipt(t *testing.T) {
 	r, _, codex := linkFixture(t)
 
-	p, err := linked{}.Link(r, []target.Target{codex})
+	p, _, err := linked{}.Link(r, []target.Target{codex})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestLinkLeavesTheReceiptItWasGivenAlone(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	before := r.UpdatedAt
 
-	if _, err := (linked{}).Link(r, []target.Target{codex}); err != nil {
+	if _, _, err := (linked{}).Link(r, []target.Target{codex}); err != nil {
 		t.Fatalf("Link: %v", err)
 	}
 
@@ -92,13 +92,14 @@ func TestLinkLeavesTheReceiptItWasGivenAlone(t *testing.T) {
 	}
 }
 
-// Remove keys its drop filter by target name, and Unlink treats a missing link
-// as success, so a receipt holding two links for one agent would plan two
-// unlinks of one path and fail silently. Links stays a set keyed by target.
+// A receipt managed by `linked` holds one skill, so it has at most one path per
+// agent: de-duping by path and de-duping by target agree, which is why this
+// still reads as skipping a target the receipt already has rather than a
+// path it already has.
 func TestLinkSkipsATargetTheReceiptAlreadyHas(t *testing.T) {
 	r, claude, codex := linkFixture(t)
 
-	p, err := linked{}.Link(r, []target.Target{claude, codex})
+	p, _, err := linked{}.Link(r, []target.Target{claude, codex})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestLinkSkipsATargetTheReceiptAlreadyHas(t *testing.T) {
 func TestLinkPlansNothingWhenEveryTargetAlreadyHasIt(t *testing.T) {
 	r, claude, _ := linkFixture(t)
 
-	p, err := linked{}.Link(r, []target.Target{claude})
+	p, _, err := linked{}.Link(r, []target.Target{claude})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestLinkRefusesAReceiptWhoseFilesAreGone(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	r.RevPath = filepath.Join(r.RevPath, "gone")
 
-	_, err := linked{}.Link(r, []target.Target{codex})
+	_, _, err := linked{}.Link(r, []target.Target{codex})
 	if err == nil {
 		t.Fatal("Link: nil error, want a refusal")
 	}
@@ -149,30 +150,12 @@ func TestLinkRejectsANameThatEscapesTheSkillsDirectory(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	r.Name = filepath.Join("..", "evil")
 
-	_, err := linked{}.Link(r, []target.Target{codex})
+	_, _, err := linked{}.Link(r, []target.Target{codex})
 	if err == nil {
 		t.Fatal("Link: nil error, want a refusal")
 	}
 	if !strings.Contains(err.Error(), codex.Dir) {
 		t.Errorf("error = %v, want it to name the directory the link would have left", err)
-	}
-}
-
-// A plugin's skills are the agent's own, so there is no symlink of ours to
-// duplicate. The error has to say that rather than "unsupported", because
-// fanning a plugin out to other agents is a real feature that is merely
-// deferred.
-func TestPluginRefusesToLink(t *testing.T) {
-	c, _ := newPluginChannel()
-
-	_, err := c.Link(state.Receipt{Name: "demo", Channel: "plugin"}, []target.Target{{Name: "codex"}})
-	if err == nil {
-		t.Fatal("Link: nil error, want a refusal")
-	}
-	for _, want := range []string{"demo", "plugin"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %v, want it to mention %q", err, want)
-		}
 	}
 }
 
@@ -203,7 +186,7 @@ func TestLinkStampsAFreshUpdatedAt(t *testing.T) {
 	r.InstalledAt = time.Now().UTC().Add(-time.Hour)
 	r.UpdatedAt = r.InstalledAt
 
-	p, err := linked{}.Link(r, []target.Target{codex})
+	p, _, err := linked{}.Link(r, []target.Target{codex})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}

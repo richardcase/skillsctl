@@ -84,6 +84,21 @@ type Exec struct {
 // Describe renders a user-visible description of the Exec op.
 func (o Exec) Describe() string { return "exec    " + strings.Join(o.Argv, " ") }
 
+// Note is a line in the plan that changes nothing.
+//
+// It exists for the one thing this tool cannot predict. A plugin's install path
+// is decided by claude and read back afterwards, so the links that follow an
+// install or an update cannot be named in the plan that precedes them. Printing
+// nothing would leave a --dry-run silently short of what the command does, which
+// is worse than printing a sentence that admits the gap.
+type Note struct {
+	Text string
+}
+
+// Describe renders the note, padded to the same column as every other op so a
+// plan still reads as one list.
+func (o Note) Describe() string { return "note    " + o.Text }
+
 func short(sha string) string {
 	if len(sha) > 7 {
 		return sha[:7]

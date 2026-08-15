@@ -26,13 +26,15 @@ import (
 type Ownership int
 
 const (
-	// StoreOwned means skillsctl extracted the files into its own store and
-	// symlinked them into each agent. The receipt's links are the removal
-	// contract, and gc counts its revision and mirror as live.
+	// StoreOwned means skillsctl extracted the files into its own store. Its
+	// revision and mirror are live roots for gc.
 	StoreOwned Ownership = iota
-	// AgentOwned means the agent installed the files and owns them. skillsctl
-	// records the install and undoes it through the agent; nothing of ours is
-	// in the store, so gc has nothing to count.
+	// AgentOwned means the agent installed the files and owns them: skillsctl
+	// records the install and undoes it through the agent, and nothing of ours
+	// is in the store, so gc has nothing to count. It may still have made
+	// symlinks — a plugin's skills are fanned out to the agents that cannot
+	// install plugins — but they point outside the store, so this answer is
+	// about what gc counts rather than about whether links exist.
 	AgentOwned
 	// UserOwned means the files are the user's own, in a directory they chose.
 	// skillsctl links to them and records where they are; it never copies them,
@@ -168,7 +170,13 @@ type Channel interface {
 
 	// Install turns the candidates that survived the caller's name-collision
 	// check into the plan and the receipts that plan will write.
-	Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, error)
+	//
+	// The []string is skip reasons, in the same shape Link returns them: a
+	// plugin already adopted knows its install path up front and so can plan
+	// its fan-out inline, and a name another skill already holds must skip
+	// one link rather than fail the whole install. A channel with nothing to
+	// skip returns nil.
+	Install(req Request, chosen []Candidate) (plan.Plan, []state.Receipt, []string, error)
 
 	// Update decides what each of these receipts should become and returns the
 	// mutations. Every receipt given belongs to this channel.
@@ -195,13 +203,23 @@ type Channel interface {
 	// ops that undo it. An empty drop means every agent.
 	Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error)
 
-	// Link adds an installed receipt to the agents in add, and returns the ops
-	// that put it there. An empty plan means every one of them already had it.
+	// Link makes the agents in add hold what this receipt says they should: it
+	// adds the links that are missing, re-points the ones whose destination has
+	// moved, and takes away the ones whose skill the source no longer ships. An
+	// empty plan means they already agreed.
+	//
+	// It is reconciliation rather than addition because one channel's
+	// destination moves under it: claude installs each version of a plugin
+	// beside the last. Install, update and link then all reduce to this one
+	// question asked of a different set of agents.
+	//
+	// The reasons come back separately from the error because a name another
+	// skill already holds costs one link, not the command.
 	//
 	// It sits on the interface rather than behind a type assertion so that a
 	// channel which cannot serve it has to say so, and a fourth channel is told
 	// by the compiler that this is a question it must answer.
-	Link(r state.Receipt, add []target.Target) (plan.Plan, error)
+	Link(r state.Receipt, add []target.Target) (plan.Plan, []string, error)
 
 	// Agents names the agents a receipt is live in, for list. A channel that
 	// symlinks reads the receipt's links; one whose agent installs for itself

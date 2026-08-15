@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/state"
 )
@@ -44,7 +45,7 @@ func TestCheckReportsAMovedRefAsOutdated(t *testing.T) {
 		{Name: "demo", Channel: "git", Source: "https://example.com/repo", Ref: "main", Resolved: "aaaa"},
 	}
 
-	got := Check(context.Background(), g, receipts)
+	got := Check(context.Background(), g, nil, receipts)
 
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
@@ -66,7 +67,7 @@ func TestCheckReportsAnUnmovedRefAsCurrent(t *testing.T) {
 		{Name: "demo", Channel: "git", Source: "https://example.com/repo", Ref: "main", Resolved: "aaaa"},
 	}
 
-	got := Check(context.Background(), g, receipts)
+	got := Check(context.Background(), g, nil, receipts)
 
 	if got[0].Status != StatusCurrent {
 		t.Errorf("status = %q, want %q", got[0].Status, StatusCurrent)
@@ -79,7 +80,7 @@ func TestCheckSkipsNonGitChannelsWithoutResolving(t *testing.T) {
 		{Name: "mine", Channel: "local", Source: "/home/me/skills/mine"},
 	}
 
-	got := Check(context.Background(), g, receipts)
+	got := Check(context.Background(), g, nil, receipts)
 
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
@@ -99,7 +100,7 @@ func TestCheckKeepsGoingWhenOneRemoteFails(t *testing.T) {
 		{Name: "fine", Channel: "git", Source: "https://example.com/good", Ref: "main", Resolved: "aaaa"},
 	}
 
-	got := Check(context.Background(), g, receipts)
+	got := Check(context.Background(), g, nil, receipts)
 
 	if len(got) != 2 {
 		t.Fatalf("want 2 entries, got %d", len(got))
@@ -123,7 +124,7 @@ func TestCheckResolvesAPinnedReceiptAgainstTheDefaultBranch(t *testing.T) {
 		{Name: "demo", Channel: "git", Source: "https://example.com/repo", Resolved: "aaaa", Pinned: true},
 	}
 
-	got := Check(context.Background(), g, receipts)
+	got := Check(context.Background(), g, nil, receipts)
 
 	if got[0].Status != StatusOutdated {
 		t.Errorf("status = %q, want %q", got[0].Status, StatusOutdated)
@@ -147,7 +148,7 @@ func TestCheckResolvesEachSourceAndRefOnce(t *testing.T) {
 		{Name: "three", Channel: "git", Source: "https://example.com/repo", Ref: "v1", Resolved: "cccc"},
 	}
 
-	got := Check(context.Background(), g, receipts)
+	got := Check(context.Background(), g, nil, receipts)
 
 	if g.calls != 2 {
 		t.Errorf("resolved %d times, want 2 (one per source+ref)", g.calls)
@@ -161,5 +162,72 @@ func TestCheckResolvesEachSourceAndRefOnce(t *testing.T) {
 				t.Errorf("%s status = %q, want %q", want.name, e.Status, want.status)
 			}
 		}
+	}
+}
+
+// fakePlugins stands in for claude, answering List from a fixed table and
+// counting calls so laziness — no plugin receipt, no shelling out — can be
+// asserted.
+type fakePlugins struct {
+	installed []claudex.Installed
+	err       error
+	calls     int
+}
+
+func (f *fakePlugins) List(context.Context) ([]claudex.Installed, error) {
+	f.calls++
+	return f.installed, f.err
+}
+func (f *fakePlugins) InstallArgv(string) []string   { return nil }
+func (f *fakePlugins) UninstallArgv(string) []string { return nil }
+func (f *fakePlugins) UpdateArgv(string) []string    { return nil }
+
+func TestCheckReportsAPluginWhoseInstallPathMoved(t *testing.T) {
+	receipts := []*state.Receipt{{
+		Name: "superpowers", Channel: "plugin",
+		Source:   "superpowers@claude-plugins-official",
+		Resolved: "6.3.0", RevPath: "/cache/superpowers/6.3.0",
+	}}
+	p := &fakePlugins{installed: []claudex.Installed{{
+		ID: "superpowers@claude-plugins-official", Version: "6.4.0",
+		InstallPath: "/cache/superpowers/6.4.0",
+	}}}
+
+	got := Check(context.Background(), nil, p, receipts)
+	if len(got) != 1 {
+		t.Fatalf("entries = %v, want one", got)
+	}
+	if got[0].Status != StatusStale {
+		t.Errorf("status = %q, want %q: claude has moved on and the links point at the old directory",
+			got[0].Status, StatusStale)
+	}
+	if got[0].Latest != "6.4.0" {
+		t.Errorf("latest = %q, want the version claude has now", got[0].Latest)
+	}
+}
+
+func TestCheckReportsAPluginThatHasNotMovedAsCurrent(t *testing.T) {
+	receipts := []*state.Receipt{{
+		Name: "superpowers", Channel: "plugin",
+		Source:   "superpowers@claude-plugins-official",
+		Resolved: "6.3.0", RevPath: "/cache/superpowers/6.3.0",
+	}}
+	p := &fakePlugins{installed: []claudex.Installed{{
+		ID: "superpowers@claude-plugins-official", Version: "6.3.0",
+		InstallPath: "/cache/superpowers/6.3.0",
+	}}}
+
+	if got := Check(context.Background(), nil, p, receipts); got[0].Status != StatusCurrent {
+		t.Errorf("status = %q, want %q", got[0].Status, StatusCurrent)
+	}
+}
+
+func TestCheckDoesNotAskClaudeWhenNoPluginIsInstalled(t *testing.T) {
+	receipts := []*state.Receipt{{Name: "demo", Channel: "local", Source: "/x"}}
+	p := &fakePlugins{}
+
+	Check(context.Background(), nil, p, receipts)
+	if p.calls != 0 {
+		t.Errorf("List was called %d times: outdated must not shell out for a store with no plugins", p.calls)
 	}
 }

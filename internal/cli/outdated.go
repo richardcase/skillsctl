@@ -16,11 +16,15 @@ func newOutdatedCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "outdated",
-		Short: "Report skills whose tracked ref has moved",
+		Short: "Report skills whose tracked ref has moved, or a plugin claude has moved",
 		Long: "Compare each installed skill against its remote, reading refs only — nothing is fetched.\n\n" +
+			"A plugin tracks no ref, so it is compared against what claude reports as installed now:\n" +
+			"one claude has moved since skillsctl last looked comes back stale, which `skillsctl update`\n" +
+			"repairs.\n\n" +
 			"Pinned skills are listed too, resolved against the repository's default branch, so a pin\n" +
 			"never hides the fact that something moved. Exits 3 when an update is available,\n" +
-			"and 2 when a remote could not be reached.",
+			"and 2 when a remote could not be reached. A stale plugin sets neither: it is not an\n" +
+			"available update, and `skillsctl update` repairs it.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := newEnv()
@@ -39,7 +43,7 @@ func newOutdatedCmd() *cobra.Command {
 				return nil
 			}
 
-			entries := outdated.Check(cmd.Context(), gitx.New(), receipts)
+			entries := outdated.Check(cmd.Context(), gitx.New(), newPlugins(), receipts)
 
 			if asJSON {
 				blob, merr := json.MarshalIndent(entries, "", "  ")
@@ -90,6 +94,10 @@ func outdatedStatus(e outdated.Entry) string {
 // current. Pinned skills never set a code on their own — update skips them, so
 // nothing actionable follows and a deliberate pin would otherwise mean a
 // permanently failing check.
+//
+// A stale plugin is deliberately not an update: nothing here knows whether a
+// newer version exists, only that skillsctl's record of the installed one has
+// fallen behind, which `skillsctl update` repairs.
 func outdatedExit(entries []outdated.Entry) error {
 	var unreadable, updates int
 	for _, e := range entries {
