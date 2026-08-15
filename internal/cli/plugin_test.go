@@ -563,6 +563,26 @@ func TestLinkPluginIntoTheAgentThatOwnsItSaysItAlreadyHasIt(t *testing.T) {
 	}
 }
 
+func TestOutdatedReportsAPluginClaudeMovedBehindOurBack(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	// What `claude plugin update` on its own would leave behind.
+	h.plugins.next = "2.0.0"
+	if err := h.plugins.exec([]string{"claude", "plugin", "update", pluginID}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := h.run(t, "outdated")
+	if !strings.Contains(out, "stale") {
+		t.Errorf("output = %q, want the plugin reported as stale rather than n/a", out)
+	}
+}
+
 func TestInstallPluginSurfacesAMissingClaude(t *testing.T) {
 	h := newHarness(t)
 	h.plugins.listErr = claudex.ErrNotFound

@@ -39,7 +39,7 @@ func newOutdatedCmd() *cobra.Command {
 				return nil
 			}
 
-			entries := outdated.Check(cmd.Context(), gitx.New(), receipts)
+			entries := outdated.Check(cmd.Context(), gitx.New(), newPlugins(), receipts)
 
 			if asJSON {
 				blob, merr := json.MarshalIndent(entries, "", "  ")
@@ -90,6 +90,10 @@ func outdatedStatus(e outdated.Entry) string {
 // current. Pinned skills never set a code on their own — update skips them, so
 // nothing actionable follows and a deliberate pin would otherwise mean a
 // permanently failing check.
+//
+// A stale plugin is deliberately not an update: nothing here knows whether a
+// newer version exists, only that skillsctl's record of the installed one has
+// fallen behind, which `skillsctl update` repairs.
 func outdatedExit(entries []outdated.Entry) error {
 	var unreadable, updates int
 	for _, e := range entries {

@@ -5,7 +5,9 @@ package outdated
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
@@ -19,6 +21,10 @@ const (
 	StatusCurrent Status = "current"
 	// StatusOutdated means the tracked ref has moved.
 	StatusOutdated Status = "outdated"
+	// StatusStale means the agent that owns the files has moved on: the version
+	// or the install path it reports is not the one the receipt records, so the
+	// links skillsctl made point into a directory it has replaced.
+	StatusStale Status = "stale"
 	// StatusSkipped means the receipt has no upstream to compare against.
 	StatusSkipped Status = "n/a"
 	// StatusError means the remote could not be read.
@@ -45,11 +51,42 @@ type resolution struct {
 	err error
 }
 
-// Check resolves each receipt's tracked ref against its remote.
-func Check(ctx context.Context, g gitx.Git, receipts []*state.Receipt) []Entry {
+// Check resolves each receipt's tracked ref against its remote, and each
+// plugin's recorded install against what its agent has now.
+//
+// p is consulted lazily, so a store holding no plugins never shells out to
+// claude and the package keeps its promise that it fetches nothing.
+func Check(ctx context.Context, g gitx.Git, p claudex.Plugins, receipts []*state.Receipt) []Entry {
 	seen := map[string]resolution{}
 	entries := make([]Entry, 0, len(receipts))
+
+	var installed []claudex.Installed
+	var listErr error
+	var listed bool
+	plugins := func() ([]claudex.Installed, error) {
+		if !listed {
+			listed = true
+			installed, listErr = p.List(ctx)
+		}
+		return installed, listErr
+	}
+
 	for _, r := range receipts {
+		e := Entry{
+			Name:    r.Name,
+			Channel: r.Channel,
+			Source:  r.Source,
+			Current: r.Resolved,
+			Pinned:  r.Pinned,
+		}
+
+		// A plugin tracks no ref, so there is no Ref to report; what it has
+		// instead is an install its agent is free to move underneath it.
+		if r.Channel == string(source.ChannelPlugin) {
+			entries = append(entries, checkPlugin(e, r, plugins))
+			continue
+		}
+
 		// An empty ref means the repository's default branch. Install records
 		// no ref for a pinned skill, so this is also what makes a pin visible
 		// rather than silently current.
@@ -57,15 +94,7 @@ func Check(ctx context.Context, g gitx.Git, receipts []*state.Receipt) []Entry {
 		if ref == "" {
 			ref = "HEAD"
 		}
-
-		e := Entry{
-			Name:    r.Name,
-			Channel: r.Channel,
-			Source:  r.Source,
-			Ref:     ref,
-			Current: r.Resolved,
-			Pinned:  r.Pinned,
-		}
+		e.Ref = ref
 
 		// Only the git channel has a ref that can move.
 		if r.Channel != string(source.ChannelGit) {
@@ -98,4 +127,35 @@ func Check(ctx context.Context, g gitx.Git, receipts []*state.Receipt) []Entry {
 		entries = append(entries, e)
 	}
 	return entries
+}
+
+// checkPlugin compares what the receipt records against what the agent has now.
+//
+// This is not the marketplace comparison a plugin's users will eventually want —
+// nothing here asks whether a newer version has been published. It answers the
+// question the receipt's links raise: is the directory they point into still the
+// one claude calls this plugin's install path?
+func checkPlugin(e Entry, r *state.Receipt, list func() ([]claudex.Installed, error)) Entry {
+	got, err := list()
+	if err != nil {
+		e.Status = StatusError
+		e.Error = err.Error()
+		return e
+	}
+
+	for _, p := range got {
+		if p.ID != r.Source {
+			continue
+		}
+		e.Latest = p.Version
+		e.Status = StatusCurrent
+		if p.Version != r.Resolved || p.InstallPath != r.RevPath {
+			e.Status = StatusStale
+		}
+		return e
+	}
+
+	e.Status = StatusError
+	e.Error = fmt.Sprintf("claude no longer has %s installed", r.Source)
+	return e
 }
