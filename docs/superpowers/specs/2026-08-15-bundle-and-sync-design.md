@@ -118,8 +118,13 @@ The comparison is against `cfg.Present()`, not `cfg.Targets`. Against the
 configured set, a machine without Gemini would stamp `agents` onto every entry
 it ever bundled, which is the opposite of the intent.
 
-A plugin receipt has no links at all — Claude Code installed the plugin and can
-already see its skills — so a plugin entry never carries `agents`.
+This holds for a plugin too, which it did not when this was first written. A
+plugin receipt used to have no links — Claude Code installed it and could see
+its own skills — so which agents held one was never a choice and the field was
+always omitted. Now a plugin's skills are fanned out to the agents that cannot
+install plugins, and `install -a` narrows that fan, so a plugin entry carries
+`agents` on exactly the same terms as any other: omitted when the fan reaches
+every present agent, written down when it does not.
 
 **No `channel` field.** `source.Parse` infers the channel from the shape of the
 source exactly as `install` does, and a git URL, an `owner/repo` shorthand and a

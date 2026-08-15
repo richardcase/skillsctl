@@ -52,11 +52,12 @@ func entryFor(r *state.Receipt, reg channel.Registry, present []target.Target) E
 	if r.Pinned {
 		e.Ref = r.Resolved
 	}
-	// A receipt with no links is one whose agent installed the files itself, so
-	// which agents have it was never a choice to preserve.
-	if len(r.Links) > 0 {
-		e.Agents = narrowerThan(reg.Agents(r), present)
-	}
+	// Every channel now answers this as a choice the user made. A plugin used to
+	// be the exception — its agents came from the config, so there was nothing
+	// to preserve — but its skills are fanned out to the agents that cannot
+	// install plugins, and `install -a` narrows that fan. Asking the channel is
+	// the whole of it, for all three.
+	e.Agents = narrowerThan(reg.Agents(r), present)
 	return e
 }
 

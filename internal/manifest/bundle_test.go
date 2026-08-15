@@ -139,10 +139,16 @@ func TestFromReceiptsSortsByName(t *testing.T) {
 
 // A plugin's skills reach its agent without a symlink of ours, so which agents
 // have it was never a choice the user made.
-func TestFromReceiptsGivesAPluginNoAgents(t *testing.T) {
-	p := &state.Receipt{Name: "some-plugin", Channel: "plugin", Source: "some-plugin@marketplace", Resolved: "1.2.0"}
+// A plugin's skills are fanned out to the agents that cannot install plugins,
+// and `install -a` narrows that fan — so which agents hold a plugin is a choice
+// like any other, and a manifest has to carry it.
+func TestFromReceiptsCarriesAPluginsFanOut(t *testing.T) {
+	fanned := &state.Receipt{
+		Name: "some-plugin", Channel: "plugin", Source: "some-plugin@marketplace", Resolved: "1.2.0",
+		Links: []state.Link{{Target: "codex", Path: "/agents/codex/a-skill"}},
+	}
 
-	f, excluded := FromReceipts([]*state.Receipt{p}, registry(t), present())
+	f, excluded := FromReceipts([]*state.Receipt{fanned}, registry(t), present())
 
 	if len(excluded) != 0 {
 		t.Errorf("a plugin is portable and must not be excluded, got %v", excluded)
@@ -150,11 +156,28 @@ func TestFromReceiptsGivesAPluginNoAgents(t *testing.T) {
 	if len(f.Skills) != 1 {
 		t.Fatalf("got %d skills, want 1", len(f.Skills))
 	}
+	// claude installs it and codex is fanned to, which is every present agent,
+	// so the field repeats the default and is omitted.
 	if f.Skills[0].Agents != nil {
-		t.Errorf("agents = %v, want none for a plugin", f.Skills[0].Agents)
+		t.Errorf("agents = %v, want it omitted when the fan reaches every present agent", f.Skills[0].Agents)
 	}
 	if f.Skills[0].Source != "some-plugin@marketplace" {
 		t.Errorf("source = %q, want the plugin id", f.Skills[0].Source)
+	}
+}
+
+// A plugin nobody fanned out reaches only the agent that installed it, which is
+// narrower than the default and so has to be written down.
+func TestFromReceiptsNamesAnUnfannedPluginsAgent(t *testing.T) {
+	p := &state.Receipt{Name: "some-plugin", Channel: "plugin", Source: "some-plugin@marketplace", Resolved: "1.2.0"}
+
+	f, _ := FromReceipts([]*state.Receipt{p}, registry(t), present())
+
+	if len(f.Skills) != 1 {
+		t.Fatalf("got %d skills, want 1", len(f.Skills))
+	}
+	if strings.Join(f.Skills[0].Agents, ",") != "claude" {
+		t.Errorf("agents = %v, want [claude] — codex was never fanned to", f.Skills[0].Agents)
 	}
 }
 

@@ -480,7 +480,9 @@ agents = ['claude']
   carry the pin to another machine.
 - `agents` is omitted when the skill is in every agent present on the machine,
   which is what an omitted `-a` means to `install`. Name them only for a
-  narrower choice.
+  narrower choice. For a plugin this counts the agent that installed it plus
+  the ones its skills were fanned out to, so a plugin narrowed with `-a` carries
+  its agents like anything else.
 - `subpath` locates a skill inside a repository holding several. You can write
   it in the source instead, as `owner/repo//skills/alpha`. `sync` compares an
   entry's subpath against what the receipt it installed actually recorded, so
