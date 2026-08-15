@@ -226,8 +226,8 @@ func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error
 // Fanning a plugin's skills out to other agents is a real feature and a
 // different one — it would have to link out of somebody else's cache — so the
 // error says that rather than calling it unsupported.
-func (c *Plugin) Link(r state.Receipt, _ []target.Target) (plan.Plan, error) {
-	return plan.Plan{}, fmt.Errorf("%s is a plugin, and a plugin's skills are already visible to %s without a symlink: "+
+func (c *Plugin) Link(r state.Receipt, _ []target.Target) (plan.Plan, []string, error) {
+	return plan.Plan{}, nil, fmt.Errorf("%s is a plugin, and a plugin's skills are already visible to %s without a symlink: "+
 		"linking one into another agent is not supported yet",
 		r.Name, strings.Join(c.Agents(r), ", "))
 }

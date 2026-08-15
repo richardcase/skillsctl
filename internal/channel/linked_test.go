@@ -34,7 +34,7 @@ func linkFixture(t *testing.T) (state.Receipt, target.Target, target.Target) {
 func TestLinkAddsOneLinkPerTargetAndRecordsTheReceipt(t *testing.T) {
 	r, _, codex := linkFixture(t)
 
-	p, err := linked{}.Link(r, []target.Target{codex})
+	p, _, err := linked{}.Link(r, []target.Target{codex})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestLinkLeavesTheReceiptItWasGivenAlone(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	before := r.UpdatedAt
 
-	if _, err := (linked{}).Link(r, []target.Target{codex}); err != nil {
+	if _, _, err := (linked{}).Link(r, []target.Target{codex}); err != nil {
 		t.Fatalf("Link: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestLinkLeavesTheReceiptItWasGivenAlone(t *testing.T) {
 func TestLinkSkipsATargetTheReceiptAlreadyHas(t *testing.T) {
 	r, claude, codex := linkFixture(t)
 
-	p, err := linked{}.Link(r, []target.Target{claude, codex})
+	p, _, err := linked{}.Link(r, []target.Target{claude, codex})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestLinkSkipsATargetTheReceiptAlreadyHas(t *testing.T) {
 func TestLinkPlansNothingWhenEveryTargetAlreadyHasIt(t *testing.T) {
 	r, claude, _ := linkFixture(t)
 
-	p, err := linked{}.Link(r, []target.Target{claude})
+	p, _, err := linked{}.Link(r, []target.Target{claude})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestLinkRefusesAReceiptWhoseFilesAreGone(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	r.RevPath = filepath.Join(r.RevPath, "gone")
 
-	_, err := linked{}.Link(r, []target.Target{codex})
+	_, _, err := linked{}.Link(r, []target.Target{codex})
 	if err == nil {
 		t.Fatal("Link: nil error, want a refusal")
 	}
@@ -149,7 +149,7 @@ func TestLinkRejectsANameThatEscapesTheSkillsDirectory(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	r.Name = filepath.Join("..", "evil")
 
-	_, err := linked{}.Link(r, []target.Target{codex})
+	_, _, err := linked{}.Link(r, []target.Target{codex})
 	if err == nil {
 		t.Fatal("Link: nil error, want a refusal")
 	}
@@ -165,7 +165,7 @@ func TestLinkRejectsANameThatEscapesTheSkillsDirectory(t *testing.T) {
 func TestPluginRefusesToLink(t *testing.T) {
 	c, _ := newPluginChannel()
 
-	_, err := c.Link(state.Receipt{Name: "demo", Channel: "plugin"}, []target.Target{{Name: "codex"}})
+	_, _, err := c.Link(state.Receipt{Name: "demo", Channel: "plugin"}, []target.Target{{Name: "codex"}})
 	if err == nil {
 		t.Fatal("Link: nil error, want a refusal")
 	}
@@ -203,7 +203,7 @@ func TestLinkStampsAFreshUpdatedAt(t *testing.T) {
 	r.InstalledAt = time.Now().UTC().Add(-time.Hour)
 	r.UpdatedAt = r.InstalledAt
 
-	p, err := linked{}.Link(r, []target.Target{codex})
+	p, _, err := linked{}.Link(r, []target.Target{codex})
 	if err != nil {
 		t.Fatalf("Link: %v", err)
 	}

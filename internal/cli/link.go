@@ -140,7 +140,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		already = nil
 	}
 
-	p, err := ch.Link(*receipt, add)
+	p, _, err := ch.Link(*receipt, add)
 	if err != nil {
 		return err
 	}

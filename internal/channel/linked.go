@@ -56,25 +56,31 @@ func (linked) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error) {
 // Link adds the receipt to the agents in add, and is Remove read backwards: the
 // same links that are the removal contract are what this appends to.
 //
+// A channel that embeds linked has one skill at one known path, so the wider
+// reconciliation contract collapses to addition here: there is never a link to
+// re-point or take away.
+//
 // An empty plan means every target already had it, which the caller reports for
 // the same reason it reports an empty Remove — it is the one that knows what the
-// user typed.
-func (linked) Link(r state.Receipt, add []target.Target) (plan.Plan, error) {
+// user typed. Nothing is ever skipped for a reason worth printing, so the
+// reasons are always nil.
+func (linked) Link(r state.Receipt, add []target.Target) (plan.Plan, []string, error) {
 	var p plan.Plan
 
 	// target.Link would create the symlink whether or not anything is on the
 	// other end of it, and a dangling entry in a skills directory is worse than
 	// a refusal: the agent finds it, fails to load it, and says nothing useful.
 	if fi, err := os.Stat(r.RevPath); err != nil || !fi.IsDir() {
-		return p, fmt.Errorf("refusing to link %s: %s is not a directory, so every new link would dangle", r.Name, r.RevPath)
+		return p, nil, fmt.Errorf("refusing to link %s: %s is not a directory, so every new link would dangle", r.Name, r.RevPath)
 	}
 
-	// Links is a set keyed by target: Remove builds its drop filter from the
-	// target name and Unlink treats a missing link as success, so a second link
-	// for one agent would plan two unlinks of one path and swallow the second.
+	// Links is a set keyed by the path a link sits at: Unlink treats a missing
+	// link as success, so two entries naming one path would plan two unlinks of
+	// it and swallow the second. A receipt for a single skill has one path per
+	// agent, which is why this reads as one link per target.
 	held := make(map[string]bool, len(r.Links))
 	for _, l := range r.Links {
-		held[l.Target] = true
+		held[l.Path] = true
 	}
 
 	// The receipt is the caller's, and Links shares its backing array with it.
@@ -83,24 +89,24 @@ func (linked) Link(r state.Receipt, add []target.Target) (plan.Plan, error) {
 	copy(updated.Links, r.Links)
 
 	for _, t := range add {
-		if held[t.Name] {
-			continue
-		}
 		linkPath, err := linkPathFor(t, r.Name)
 		if err != nil {
-			return plan.Plan{}, err
+			return plan.Plan{}, nil, err
+		}
+		if held[linkPath] {
+			continue
 		}
 		p.Add(plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: r.RevPath})
 		updated.Links = append(updated.Links, state.Link{Target: t.Name, Path: linkPath})
-		held[t.Name] = true
+		held[linkPath] = true
 	}
 	if p.IsEmpty() {
-		return p, nil
+		return p, nil, nil
 	}
 
 	updated.UpdatedAt = time.Now().UTC()
 	p.Add(plan.Record{Receipt: updated})
-	return p, nil
+	return p, nil, nil
 }
 
 // linkPathFor is where a skill's symlink goes in one agent's skills directory.
