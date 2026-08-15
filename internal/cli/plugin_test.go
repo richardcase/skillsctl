@@ -672,6 +672,39 @@ func TestLinkPluginIntoTheAgentThatOwnsItSaysItAlreadyHasIt(t *testing.T) {
 	}
 }
 
+// codex holding some but not all of a plugin's links is what Agents cannot
+// tell apart from codex holding all of them, since it only asks whether an
+// agent has at least one. `link <name> -a codex` has to repair the gap rather
+// than declaring codex already linked, which is what asking Link for every
+// named target rather than pre-judging with partitionLinked buys back.
+func TestLinkPluginRepairsAnAgentMissingOneOfItsLinks(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha", "beta"}
+
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if err := os.Remove(filepath.Join(h.codex, "beta")); err != nil {
+		t.Fatalf("remove codex's beta link by hand: %v", err)
+	}
+
+	out, err := h.run(t, "link", "superpowers", "-a", "codex")
+	if err != nil {
+		t.Fatalf("link: %v\n%s", err, out)
+	}
+
+	if _, err := os.Lstat(filepath.Join(h.codex, "alpha")); err != nil {
+		t.Errorf("alpha should have been left alone: %v", err)
+	}
+	dest, err := os.Readlink(filepath.Join(h.codex, "beta"))
+	if err != nil {
+		t.Fatalf("beta was not restored: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "SKILL.md")); err != nil {
+		t.Errorf("beta -> %s does not hold a SKILL.md", dest)
+	}
+}
+
 func TestOutdatedReportsAPluginClaudeMovedBehindOurBack(t *testing.T) {
 	h := newHarness(t)
 	h.plugins.skills = []string{"alpha"}

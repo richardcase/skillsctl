@@ -127,11 +127,47 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 
 	// What counts as "already has it" is the channel's answer, not the
 	// receipt's links: claude holds a plugin without a link of ours, so a
-	// receipt that records none is not an agent that has nothing.
-	add, already := partitionLinked(ch.Agents(*receipt), targets)
+	// receipt that records none is not an agent that has nothing. It is only a
+	// first approximation, though: Agents reports an agent as having it once it
+	// holds at least one of a plugin's links, which is not the same as holding
+	// all of them. So the decision of whether there is anything left to do is
+	// not made here — every named target is asked for below, and it is Link's
+	// answer, not this partition, that decides it.
+	_, already := partitionLinked(ch.Agents(*receipt), targets)
 	asked := len(targets)
-	if len(add) == 0 {
+
+	// Reconciliation is idempotent and skips what already agrees, so asking
+	// for every named target rather than only the ones partitionLinked thinks
+	// are missing is harmless when they agree — and it is what lets this
+	// repair an agent that holds only some of a plugin's links, which
+	// partitionLinked would otherwise have written off as already linked.
+	p, linkSkips, err := ch.Link(*receipt, targets)
+	if err != nil {
+		return err
+	}
+	// An empty plan with nothing skipped is the only case every named target
+	// genuinely needed nothing. An empty plan that still has skips is not that
+	// case — a name collision can block every link a target was asked for
+	// without the plan having anything to show for it — so it falls through to
+	// be reported and priced in below like any other skip.
+	if p.IsEmpty() && len(linkSkips) == 0 {
 		return fmt.Errorf("%s is already linked into %s", name, strings.Join(already, ", "))
+	}
+
+	// partitionLinked's already is the first approximation above, and a named
+	// agent the plan just repaired must not also be reported as one that
+	// needed nothing: that would print "linked into X" and "X already had it"
+	// about the same agent in the same breath. The plan is the precise answer,
+	// so an agent it actually touched is dropped from already even though
+	// partitionLinked thought it already had everything.
+	if touched := touchedTargets(p); len(touched) > 0 {
+		var kept []string
+		for _, a := range already {
+			if !touched[a] {
+				kept = append(kept, a)
+			}
+		}
+		already = kept
 	}
 
 	// An agent the user named and that already had it is a request that could
@@ -140,11 +176,6 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 	// those would make the bare `link <name>` exit 2 every single time.
 	if len(o.agents) == 0 {
 		already = nil
-	}
-
-	p, linkSkips, err := ch.Link(*receipt, add)
-	if err != nil {
-		return err
 	}
 
 	if o.dryRun {
@@ -164,7 +195,11 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 		return fmt.Errorf("%w\nthe links were created but the receipt was not updated; re-run this command to repair", err)
 	}
 
-	cmd.Printf("linked %s into %s\n", name, strings.Join(names(add), ", "))
+	// A plan that is empty here is the collision-only case above, where
+	// nothing to its name was actually linked.
+	if !p.IsEmpty() {
+		cmd.Printf("linked %s into %s\n", name, strings.Join(names(targets), ", "))
+	}
 	reportSkipped(cmd, linkSkips)
 	reportAlreadyLinked(cmd, name, already)
 	return linkExitErr(already, asked, linkSkips)
@@ -240,6 +275,22 @@ func names(ts []target.Target) []string {
 	out := make([]string, 0, len(ts))
 	for _, t := range ts {
 		out = append(out, t.Name)
+	}
+	return out
+}
+
+// touchedTargets names every target a plan actually changes something for.
+func touchedTargets(p plan.Plan) map[string]bool {
+	out := make(map[string]bool, len(p.Ops))
+	for _, op := range p.Ops {
+		switch o := op.(type) {
+		case plan.Link:
+			out[o.Target] = true
+		case plan.Relink:
+			out[o.Target] = true
+		case plan.Unlink:
+			out[o.Target] = true
+		}
 	}
 	return out
 }

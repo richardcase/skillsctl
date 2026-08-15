@@ -342,8 +342,10 @@ the skill links the rest and says so, exiting 2; naming only agents that already
 have it does nothing and exits 1.
 
 A plugin is linked skill by skill: `link superpowers -a codex` puts every skill
-the plugin ships into codex. The agent that installed the plugin is reported as
-already having it, because it can see those skills without a symlink.
+the plugin ships into codex, repairing any of them a link was missing for —
+codex holding some but not all of a plugin's skills is not "already has it".
+The agent that installed the plugin is reported as already having it, because
+it can see those skills without a symlink.
 
 `--skill`, `--all`, `--ref` and `--pin` mean nothing for a plugin — it is
 installed whole, at whichever version its marketplace publishes — and are
