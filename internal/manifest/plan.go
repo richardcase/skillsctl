@@ -44,8 +44,7 @@ type Verdict struct {
 // plus the installed skills the manifest never mentioned.
 //
 // Extra sits beside the verdicts rather than among them because a skill the
-// manifest does not name is not an entry and has no verdict — the shape
-// adopt.Report uses, for the same reason.
+// manifest does not name is not an entry and has no verdict.
 type Report struct {
 	Verdicts []Verdict
 	Extra    []*state.Receipt
