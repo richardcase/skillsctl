@@ -57,6 +57,11 @@ exact.
   being invisible. One that leads into a clean git checkout is recorded with the
   sha it is at, pinned; one into a second agent for a skill already managed is
   added to its receipt. Nothing is moved, copied or deleted.
+- **Tells you when something has rotted.** `skillsctl doctor` reports links a
+  receipt records that are gone, links pointing at nothing, one name resolving
+  differently in two agents, skills edited in place, and revisions no receipt
+  references. It changes nothing and names the command that repairs each finding,
+  and it exits non-zero, so it works as a check in CI.
 - **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
   installs through `claude plugin` and records a receipt, so a plugin shows up in
   `list` and comes out with `remove` alongside everything else. A plugin Claude
@@ -267,6 +272,7 @@ Locations can be overridden with environment variables:
 | `pin <name>...` | `--dry-run` | Freeze skills at the revision they are installed at |
 | `unpin <name>...` | `--ref`, `--dry-run` | Release the pin, so `update` moves them again |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
+| `doctor` | `--json` | Report where the receipts and the filesystem disagree |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `version` | | Print version, commit and build date |
 
@@ -303,16 +309,51 @@ cache/github.com/obra/superpowers.git                                     2.7 MB
 would reclaim 1 revision and 1 mirror, 6.8 MB
 ```
 
+`doctor` checks that on-disk reality still matches the receipts: links a receipt
+records that are gone, links pointing at nothing or at something other than
+what the receipt says, one name resolving differently in two agents, revisions
+missing from the store, skills edited in place through their symlink, and
+revisions no receipt references. It changes nothing — every finding names the
+command that repairs it, and the decision stays yours. Every configured agent is
+scanned, with no way to narrow it: a health check that skipped an agent would
+report a clean bill of health for a broken one.
+
+```
+$ skillsctl doctor
+missing links
+  tdd  codex  ~/.codex/skills/tdd is recorded but not on disk
+  fix: skillsctl remove tdd -a codex, then skillsctl link tdd -a codex
+
+dangling links
+  brainstorming  claude  points at ~/.local/share/skillsctl/rev/…/9f8e7d6c, which is gone
+  brainstorming  codex   points at ~/.local/share/skillsctl/rev/…/9f8e7d6c, which is gone
+  fix: skillsctl remove brainstorming, then skillsctl install obra/superpowers
+
+orphan revisions
+  rev/github.com/obra/superpowers/9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c  4.1 MB
+  fix: skillsctl gc
+note: 4 problems in 2 skills
+```
+
+The repairs are deliberately not `skillsctl update`: update moves a skill to the
+head of the ref it tracks and stops at *current* when the ref has not moved,
+which is the usual state of a skill whose link somebody deleted. Putting a link
+back is `remove -a` followed by `link -a`, and replacing store content is a
+reinstall — with a `gc` in between when the revision was edited in place, since
+`install` reuses a revision directory that is already there.
+
 Exit codes: `0` everything asked for was done, `1` nothing was, `2` part of it
 was and the rest is reported — `install --all` where one name is already taken
 installs the others and exits `2`, `outdated` exits `2` when it could not reach
 some of the remotes, `update` exits `2` when it updated some skills and skipped
 others (and `1` when it updated none of them), `gc` exits `2` when it freed
-some of what it found but could not remove the rest, and `adopt` exits `2` when
+some of what it found but could not remove the rest, `adopt` exits `2` when
 it adopted some of what it found and skipped the rest (and `1` when it could
-adopt none of it). `3` is a finding rather
+adopt none of it), and `doctor` exits `2` when an agent's skills directory could
+not be read. The codes above `2` are findings rather
 than a verdict on the work:
-`outdated` ran to completion and something has moved.
+`3` means `outdated` ran to completion and something has moved, and `4` that
+`doctor` ran to completion and something is wrong.
 
 ## Configuration
 
@@ -341,8 +382,8 @@ without it through `-a` is an error rather than a silent no-op.
 ## Status
 
 All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
-`local` (`./path`), and `link` serves both of its forms. `bundle`, `sync` and
-`doctor` are designed but not built.
+`local` (`./path`), and `link` serves both of its forms. `bundle` and `sync` are
+designed but not built, and `doctor` reports without a `--fix`.
 
 Two things the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `n/a`, and a plugin's skills are not fanned out to agents other than

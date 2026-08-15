@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.AddCommand(
 		newAdoptCmd(),
+		newDoctorCmd(),
 		newGCCmd(),
 		newInstallCmd(),
 		newLinkCmd(),
@@ -54,6 +55,12 @@ func run(root *cobra.Command) int {
 	if errors.As(err, &finding) {
 		root.PrintErrf("note: %v\n", err)
 		return ExitOutdated
+	}
+
+	var unhealthy *UnhealthyError
+	if errors.As(err, &unhealthy) {
+		root.PrintErrf("note: %v\n", err)
+		return ExitUnhealthy
 	}
 
 	root.PrintErrf("error: %v\n", err)

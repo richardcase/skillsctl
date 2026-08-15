@@ -19,7 +19,8 @@ func newOutdatedCmd() *cobra.Command {
 		Short: "Report skills whose tracked ref has moved",
 		Long: "Compare each installed skill against its remote, reading refs only — nothing is fetched.\n\n" +
 			"Pinned skills are listed too, resolved against the repository's default branch, so a pin\n" +
-			"never hides the fact that something moved. Exits 2 when an update is available.",
+			"never hides the fact that something moved. Exits 3 when an update is available,\n" +
+			"and 2 when a remote could not be reached.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := newEnv()
