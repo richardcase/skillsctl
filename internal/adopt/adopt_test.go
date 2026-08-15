@@ -343,9 +343,10 @@ func TestScanRefusesASecondLinkPointingSomewhereElse(t *testing.T) {
 	}
 }
 
-// Links is a set keyed by target: Remove builds its drop filter from the
-// target name, so a receipt with two links for one agent would plan two
-// unlinks of one path and swallow the second.
+// Links is a set keyed by the path a link sits at: Unlink treats a missing
+// link as success, so two entries naming one path would plan two unlinks of
+// it and swallow the second. A receipt for a single skill has one path per
+// agent, which is why a second link for a target already recorded is refused.
 func TestScanRefusesASecondLinkForAnAgentTheReceiptAlreadyRecords(t *testing.T) {
 	f := newFixture(t)
 	dest := f.skill("demo")
