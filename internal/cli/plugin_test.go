@@ -470,6 +470,58 @@ func TestUpdatePluginDryRunSaysTheVersionIsNotKnowableYet(t *testing.T) {
 	}
 }
 
+// The design's dry-run table promises an update "exec, record, and a note":
+// the note is what says which agents' links the real run will reconcile,
+// since the version claude lands on is not known until after the exec.
+func TestUpdatePluginDryRunNotesTheLinksItWillReconcile(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.skills = []string{"alpha"}
+	h.plugins.next = "6.3.0"
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	h.ran = nil
+
+	out, err := h.run(t, "update", "--dry-run")
+	if err != nil {
+		t.Fatalf("update --dry-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "codex") {
+		t.Errorf("output = %q, want the agent whose links will be reconciled named", out)
+	}
+}
+
+// A plugin `claude plugin update` already moved outside skillsctl is the case
+// where skillsctl's own "updated X -> Y" line would otherwise read as
+// contradicting whatever claude itself just reported: both are true, but the
+// note is what keeps them from looking like they disagree.
+func TestUpdatePluginNotesWhenClaudeHadAlreadyMovedItOutsideSkillsctl(t *testing.T) {
+	h := newHarness(t)
+	h.plugins.next = "6.3.0"
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	// What `claude plugin update` on its own would leave behind: claude moves
+	// the plugin, but skillsctl's receipt does not yet know.
+	h.plugins.next = "6.4.0"
+	if err := h.plugins.exec([]string{"claude", "plugin", "update", pluginID}); err != nil {
+		t.Fatal(err)
+	}
+	h.ran = nil
+
+	out, err := h.run(t, "update")
+	if err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "claude was already at 6.4.0") {
+		t.Errorf("output = %q, want the note explaining claude had already moved", out)
+	}
+	if !strings.Contains(out, "6.3.0") || !strings.Contains(out, "6.4.0") {
+		t.Errorf("output = %q, want skillsctl's own before-and-after version reported alongside the note", out)
+	}
+}
+
 func TestUpdateReportsAPluginClaudeNoLongerHas(t *testing.T) {
 	h := newHarness(t)
 	h.plugins.next = "6.3.0"

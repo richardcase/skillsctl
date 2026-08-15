@@ -177,16 +177,36 @@ func (c *Plugin) Update(ctx context.Context, rs []*state.Receipt, _ UpdateOption
 	for _, r := range rs {
 		v := Verdict{Name: r.Name, Channel: r.Channel, Current: r.Resolved}
 
-		if _, ok := find(installed, r.Source); !ok {
+		got, ok := find(installed, r.Source)
+		if !ok {
 			verdicts = append(verdicts, fail(v, fmt.Errorf(
 				"claude no longer has %s installed: run `skillsctl remove %s` and install it again", r.Source, r.Name)))
 			continue
+		}
+
+		// claude reports what it has now, before this update's exec runs. When
+		// that already disagrees with the receipt — a `claude plugin update` run
+		// outside skillsctl, say — this update's own "moved from X to Y" line
+		// would otherwise read as contradicting what claude just said about
+		// itself: both are true, but only one of them is news.
+		if got.Version != "" && got.Version != r.Resolved {
+			v.Note = fmt.Sprintf("claude was already at %s; skillsctl's record had fallen behind", got.Version)
 		}
 
 		p.Add(plan.Exec{Argv: c.claude.UpdateArgv(r.Source)})
 		receipt := *r
 		receipt.UpdatedAt = now
 		p.Add(plan.Record{Receipt: receipt})
+
+		// The version claude will land on, and so the directory the links must
+		// follow, is not known until after the exec has run — the same reason
+		// Install cannot put a fresh plugin's links in its own plan. A dry run
+		// can still name who is affected: every agent this receipt already
+		// reaches by symlink is reconciled once the real version is known.
+		if agents := linkedAgents(*r); len(agents) > 0 {
+			p.Add(plan.Note{Text: fmt.Sprintf("then re-point %s's links in %s once claude reports the version it moved to",
+				r.Name, strings.Join(agents, ", "))})
+		}
 
 		v.Status = StatusUpdated
 		verdicts = append(verdicts, v)
