@@ -144,6 +144,20 @@ func WithoutPlugins(ts []Target) []Target {
 	return out
 }
 
+// Resolve returns the named targets, or every present agent when names is
+// empty — the rule install -a resolves by, and every other command that takes
+// an agent selection resolves the same way.
+func (c Config) Resolve(names []string) ([]Target, error) {
+	if len(names) > 0 {
+		return c.Select(names)
+	}
+	present := c.Present()
+	if len(present) == 0 {
+		return nil, fmt.Errorf("no agent directories found: create one (for example ~/.claude) or configure targets")
+	}
+	return present, nil
+}
+
 // Select returns the named targets, in the order given.
 func (c Config) Select(names []string) ([]Target, error) {
 	byName := make(map[string]Target, len(c.Targets))

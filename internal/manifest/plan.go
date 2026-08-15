@@ -237,16 +237,9 @@ func describeRef(ref string) string {
 }
 
 // agentsFor resolves the agents an entry names, or the default set when it
-// names none — the same pair install resolves -a with.
+// names none, by the same rule install -a resolves by.
 func agentsFor(e Entry, cfg target.Config) ([]target.Target, error) {
-	if len(e.Agents) > 0 {
-		return cfg.Select(e.Agents)
-	}
-	present := cfg.Present()
-	if len(present) == 0 {
-		return nil, fmt.Errorf("no agent directories found: create one (for example ~/.claude) or configure targets")
-	}
-	return present, nil
+	return cfg.Resolve(e.Agents)
 }
 
 // missingLinks returns the targets an entry names that the receipt does not
