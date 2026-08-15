@@ -3,10 +3,13 @@ package channel
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/richardcase/skillsctl/internal/claudex"
+	"github.com/richardcase/skillsctl/internal/discover"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
@@ -253,6 +256,171 @@ func (c *Plugin) Agents(state.Receipt) []string {
 		names = append(names, t.Name)
 	}
 	return names
+}
+
+// pluginSkillsDir is where a plugin keeps the skills it publishes. Only this
+// subdirectory is walked: a plugin's root also holds commands, hooks, agents and
+// its own tests, and a SKILL.md in any of those is not a skill the plugin
+// publishes.
+const pluginSkillsDir = "skills"
+
+// pluginSkill is one skill a plugin publishes, under the name it will take in an
+// agent's skills directory.
+type pluginSkill struct {
+	name string
+	dir  string
+}
+
+// skills reads what a plugin publishes, from the install path claude reported.
+//
+// A plugin with no skills directory publishes none, which is not an error: it
+// has nothing to fan out rather than something that failed to.
+func (c *Plugin) skills(r state.Receipt) ([]pluginSkill, error) {
+	// target.Link would create a symlink whether or not anything is on the other
+	// end of it, and a dangling entry in a skills directory is worse than a
+	// refusal: the agent finds it, fails to load it, and says nothing useful.
+	if fi, err := os.Stat(r.RevPath); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("refusing to link %s: %s is not a directory, so every link would dangle", r.Name, r.RevPath)
+	}
+
+	dir := filepath.Join(r.RevPath, pluginSkillsDir)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	found, err := discover.Walk(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read the skills %s ships: %w", r.Name, err)
+	}
+
+	out := make([]pluginSkill, 0, len(found))
+	for _, s := range found {
+		// A skill's name arrives from a third party's SKILL.md and becomes a
+		// path. A plugin shipping one that cannot be a path is malformed rather
+		// than merely inconvenient, so it stops the fan-out instead of being
+		// skipped like a name that is merely taken.
+		name := s.Name
+		if name == "" {
+			name = filepath.Base(s.Dir)
+		}
+		if err := target.ValidateSkillName(name); err != nil {
+			return nil, fmt.Errorf("%s ships a skill at %s that cannot be linked: %w", r.Name, s.Rel, err)
+		}
+		out = append(out, pluginSkill{name: name, dir: s.Dir})
+	}
+	return out, nil
+}
+
+// linkOpFor decides what to do about one intended link by looking at what is
+// already at its path.
+//
+// The receipt cannot answer this on its own: a state.Link records where a
+// symlink is, not what it points at, and by the time this runs RevPath has
+// already moved on to whatever claude last installed. So the filesystem is the
+// authority, and the receipt only says which links are ours to re-point.
+func linkOpFor(t target.Target, linkPath, dest string, ours bool) (plan.Op, string) {
+	got, err := os.Readlink(linkPath)
+	switch {
+	case os.IsNotExist(err):
+		return plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: dest}, ""
+	case err != nil:
+		return nil, fmt.Sprintf("skipped %s for %s: %s is not a symlink skillsctl can replace",
+			filepath.Base(linkPath), t.Name, linkPath)
+	case got == dest:
+		return nil, ""
+	case ours:
+		return plan.Relink{Target: t.Name, LinkPath: linkPath, RevPath: dest}, ""
+	default:
+		return nil, fmt.Sprintf("skipped %s for %s: %s already points at %s",
+			filepath.Base(linkPath), t.Name, linkPath, got)
+	}
+}
+
+// fan reconciles one receipt's links for the agents in add, and is the whole of
+// what "this plugin's skills reach that agent" means. Install and Link share it
+// so there is one definition of it; they differ only in whether the receipt is
+// one they are about to write or one that already exists.
+//
+// The links it returns are the receipt's complete new set, not only the ones for
+// add: an agent this call is not reconciling keeps what it had.
+func (c *Plugin) fan(r state.Receipt, add []target.Target) (plan.Plan, []state.Link, []string, error) {
+	var p plan.Plan
+
+	// An agent that installs plugins is never linked: it can already see the
+	// skills, so a symlink into its own cache would be a second name for
+	// something it has.
+	fanTo := target.WithoutPlugins(add)
+	if len(fanTo) == 0 {
+		return p, r.Links, nil, nil
+	}
+
+	skills, err := c.skills(r)
+	if err != nil {
+		return plan.Plan{}, nil, nil, err
+	}
+
+	touched := make(map[string]bool, len(fanTo))
+	for _, t := range fanTo {
+		touched[t.Name] = true
+	}
+	recorded := make(map[string]bool, len(r.Links))
+	for _, l := range r.Links {
+		recorded[l.Path] = true
+	}
+
+	links := make([]state.Link, 0, len(r.Links))
+	for _, l := range r.Links {
+		if !touched[l.Target] {
+			links = append(links, l)
+		}
+	}
+
+	var skipped []string
+	live := map[string]bool{}
+	for _, t := range fanTo {
+		for _, s := range skills {
+			linkPath, err := linkPathFor(t, s.name)
+			if err != nil {
+				return plan.Plan{}, nil, nil, err
+			}
+			// Two skills in one plugin claiming one name would otherwise plan
+			// two links at one path and record it twice, which Unlink would
+			// then undo once.
+			if live[linkPath] {
+				skipped = append(skipped, fmt.Sprintf("skipped %s for %s: %s ships two skills under that name",
+					s.name, t.Name, r.Name))
+				continue
+			}
+			live[linkPath] = true
+
+			op, why := linkOpFor(t, linkPath, s.dir, recorded[linkPath])
+			if why != "" {
+				skipped = append(skipped, why)
+				// A path that is not ours to take is recorded only if it
+				// already was. The receipt must not start claiming a symlink
+				// somebody else made, and must not stop claiming one it made
+				// that somebody has since replaced.
+				if recorded[linkPath] {
+					links = append(links, state.Link{Target: t.Name, Path: linkPath})
+				}
+				continue
+			}
+			if op != nil {
+				p.Add(op)
+			}
+			links = append(links, state.Link{Target: t.Name, Path: linkPath})
+		}
+	}
+
+	// A skill the plugin has stopped shipping leaves a link into a version
+	// directory claude keeps forever and the agent loads happily. It is the
+	// reason this is reconciliation rather than addition.
+	for _, l := range r.Links {
+		if touched[l.Target] && !live[l.Path] {
+			p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
+		}
+	}
+	return p, links, skipped, nil
 }
 
 func find(installed []claudex.Installed, id string) (claudex.Installed, bool) {

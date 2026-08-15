@@ -3,6 +3,8 @@ package channel
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -304,5 +306,218 @@ func TestPluginSurfacesAFailedRead(t *testing.T) {
 
 	if _, err := c.Prepare(context.Background(), pluginRequest()); !errors.Is(err, claudex.ErrNotFound) {
 		t.Errorf("error = %v, want it to wrap ErrNotFound", err)
+	}
+}
+
+// pluginTree writes a plugin install path holding the named skills, so a
+// reconcile has something real to walk and link at.
+func pluginTree(t *testing.T, root string, names ...string) string {
+	t.Helper()
+	for _, n := range names {
+		dir := filepath.Join(root, pluginSkillsDir, n)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + n + "\ndescription: a skill\n---\n\nBody.\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// fanCfg is pluginCfg with real directories, for the tests that touch disk.
+func fanCfg(t *testing.T) (target.Config, string) {
+	t.Helper()
+	agents := t.TempDir()
+	cfg := target.Config{Targets: []target.Target{
+		{Name: "claude", Dir: filepath.Join(agents, "claude"), Plugins: true},
+		{Name: "codex", Dir: filepath.Join(agents, "codex")},
+	}}
+	return cfg, agents
+}
+
+func TestFanLinksEverySkillIntoEveryAgentThatCannotInstallPlugins(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	p, links, skipped, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("nothing was in the way, but got skips: %v", skipped)
+	}
+	if len(p.Ops) != 2 {
+		t.Fatalf("ops = %v, want one link per skill for codex alone", p.Describe())
+	}
+	for _, l := range links {
+		if l.Target != "codex" {
+			t.Errorf("linked into %s: claude installed the plugin and can already see it", l.Target)
+		}
+	}
+	if len(links) != 2 {
+		t.Fatalf("links = %v, want one per skill", links)
+	}
+	want := filepath.Join(cfg.Targets[1].Dir, "alpha")
+	if links[0].Path != want {
+		t.Errorf("links[0].Path = %q, want %q", links[0].Path, want)
+	}
+}
+
+func TestFanRelinksASkillWhoseVersionDirectoryMoved(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	old := pluginTree(t, t.TempDir(), "alpha")
+	newRev := pluginTree(t, t.TempDir(), "alpha")
+
+	linkPath := filepath.Join(cfg.Targets[1].Dir, "alpha")
+	if err := os.MkdirAll(cfg.Targets[1].Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(old, pluginSkillsDir, "alpha"), linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{
+		Name:    "superpowers",
+		RevPath: newRev,
+		Links:   []state.Link{{Target: "codex", Path: linkPath}},
+	}
+
+	p, links, _, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+	if len(p.Ops) != 1 {
+		t.Fatalf("ops = %v, want one relink", p.Describe())
+	}
+	op, ok := p.Ops[0].(plan.Relink)
+	if !ok {
+		t.Fatalf("op = %T, want plan.Relink: a stale link keeps serving the old version rather than dangling", p.Ops[0])
+	}
+	if op.RevPath != filepath.Join(newRev, pluginSkillsDir, "alpha") {
+		t.Errorf("relinked to %q, want the new version directory", op.RevPath)
+	}
+	if len(links) != 1 {
+		t.Errorf("links = %v, want the one it re-pointed", links)
+	}
+}
+
+func TestFanUnlinksASkillThePluginNoLongerShips(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha")
+	gone := filepath.Join(cfg.Targets[1].Dir, "beta")
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{
+		Name:    "superpowers",
+		RevPath: rev,
+		Links: []state.Link{
+			{Target: "codex", Path: filepath.Join(cfg.Targets[1].Dir, "alpha")},
+			{Target: "codex", Path: gone},
+		},
+	}
+
+	p, links, _, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+
+	var unlinked []string
+	for _, op := range p.Ops {
+		if u, ok := op.(plan.Unlink); ok {
+			unlinked = append(unlinked, u.LinkPath)
+		}
+	}
+	if len(unlinked) != 1 || unlinked[0] != gone {
+		t.Fatalf("unlinked = %v, want just %q", unlinked, gone)
+	}
+	for _, l := range links {
+		if l.Path == gone {
+			t.Error("a skill the plugin stopped shipping stayed in the removal contract")
+		}
+	}
+}
+
+func TestFanSkipsANameSomethingElseAlreadyHolds(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+
+	if err := os.MkdirAll(cfg.Targets[1].Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	if err := os.Symlink(other, filepath.Join(cfg.Targets[1].Dir, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	p, links, skipped, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+	if len(skipped) != 1 || !strings.Contains(skipped[0], "alpha") {
+		t.Fatalf("skipped = %v, want one line naming alpha", skipped)
+	}
+	if len(p.Ops) != 1 {
+		t.Fatalf("ops = %v, want beta linked anyway: one taken name must not cost the others", p.Describe())
+	}
+	for _, l := range links {
+		if strings.HasSuffix(l.Path, "alpha") {
+			t.Error("recorded a link to a symlink somebody else made")
+		}
+	}
+}
+
+func TestFanLeavesAgentsItWasNotAskedAboutAlone(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha")
+	held := state.Link{Target: "gemini", Path: "/agents/gemini/skills/alpha"}
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev, Links: []state.Link{held}}
+
+	_, links, _, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+
+	var kept bool
+	for _, l := range links {
+		if l == held {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Error("reconciling codex dropped gemini's link: an agent not in add keeps what it had")
+	}
+}
+
+func TestFanTreatsAPluginWithNoSkillsDirectoryAsPublishingNone(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "empty", RevPath: t.TempDir()}
+
+	p, _, _, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("a plugin that ships no skills has nothing to fan out, not an error: %v", err)
+	}
+	if !p.IsEmpty() {
+		t.Errorf("ops = %v, want none", p.Describe())
+	}
+}
+
+func TestFanRefusesAnInstallPathThatIsNotThere(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: filepath.Join(t.TempDir(), "gone")}
+
+	if _, _, _, err := c.fan(r, cfg.Targets); err == nil {
+		t.Error("linking into a directory that is not there would make every link dangle")
 	}
 }
