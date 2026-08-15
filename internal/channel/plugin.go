@@ -219,6 +219,19 @@ func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error
 	return p, nil
 }
 
+// Link refuses, because a plugin has no link of ours to duplicate: claude
+// installed the plugin's own files into its own cache and can already see the
+// skills in them.
+//
+// Fanning a plugin's skills out to other agents is a real feature and a
+// different one — it would have to link out of somebody else's cache — so the
+// error says that rather than calling it unsupported.
+func (c *Plugin) Link(r state.Receipt, _ []target.Target) (plan.Plan, error) {
+	return plan.Plan{}, fmt.Errorf("%s is a plugin, and a plugin's skills are already visible to %s without a symlink: "+
+		"linking one into another agent is not supported yet",
+		r.Name, strings.Join(c.Agents(r), ", "))
+}
+
 // named reports whether an agent that installs plugins was among those the
 // user asked to remove from.
 func (c *Plugin) named(drop map[string]bool) bool {

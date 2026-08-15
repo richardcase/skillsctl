@@ -36,6 +36,11 @@ const (
 	ClassGit Class = "git"
 	// ClassManaged means a receipt already covers it, so there is nothing to do.
 	ClassManaged Class = "managed"
+	// ClassLink is a link to add to a receipt that already exists: a hand-made
+	// symlink into a second agent, pointing where that receipt says its files
+	// are. It adopts as a link rather than a receipt, because the receipt is
+	// already there and adopting the name again would overwrite it.
+	ClassLink Class = "link"
 	// ClassSkipped means it cannot be adopted; Reason says why.
 	ClassSkipped Class = "skipped"
 )
@@ -256,10 +261,16 @@ func skip(e Entry, reason string) Entry {
 
 // managed reports an entry a receipt already covers.
 //
-// A receipt that does not record *this* link is a different matter: the skill
-// is managed, but for another agent, and adding a second link to an existing
-// receipt is what skillsctl link <name> -a <agent> will be for. Adopting it
-// again under the same name would overwrite the receipt that is already there.
+// A receipt that does not record *this* link is the second-link case: the skill
+// is managed, but for another agent, and the symlink in front of us is one
+// `skillsctl link <name> -a <agent>` would have made. It is adopted as a link
+// rather than a receipt, because adopting the name again would overwrite the
+// receipt that is already there.
+//
+// The condition is that the symlink already points at the receipt's own
+// RevPath. A receipt says where its links point — update re-points every one of
+// them and remove deletes every one of them — so recording a link to anywhere
+// else would make skillsctl act on a directory the user never gave it.
 func managed(e Entry, r *state.Receipt) Entry {
 	for _, l := range r.Links {
 		if l.Path == e.Path {
@@ -272,7 +283,23 @@ func managed(e Entry, r *state.Receipt) Entry {
 	if where == "" {
 		return skip(e, fmt.Sprintf("a receipt for %q already exists", e.Name))
 	}
-	return skip(e, fmt.Sprintf("%s is already managed for %s, and a second link is not adopted", e.Name, where))
+
+	// Links is a set keyed by target: Remove builds its drop filter from the
+	// target name and Unlink treats a missing link as success, so a second link
+	// for one agent would plan two unlinks of one path and swallow the second.
+	for _, l := range r.Links {
+		if l.Target == e.Target {
+			return skip(e, fmt.Sprintf("%s is already managed for %s, at %s", e.Name, e.Target, l.Path))
+		}
+	}
+
+	if r.RevPath == "" || e.Dest != r.RevPath {
+		return skip(e, fmt.Sprintf("%s points at %s but the receipt managing it for %s points at %s",
+			e.Name, e.Dest, where, r.RevPath))
+	}
+
+	e.Class = ClassLink
+	return e
 }
 
 func agents(r *state.Receipt) string {
@@ -314,6 +341,42 @@ func (r Report) Adoptions() []Adoption {
 			a.Links = append(a.Links, state.Link{Target: e.Target, Path: e.Path})
 		}
 		out = append(out, a)
+	}
+	return out
+}
+
+// Addition is a set of links to add to a receipt that already exists.
+//
+// It is separate from Adoption because the two write different things: an
+// adoption is a whole new receipt, an addition amends one that is there. They
+// can never collide over a name — once a receipt claims a name, every entry
+// under it goes through managed, so it is classified as one or the other.
+type Addition struct {
+	Name  string
+	Links []state.Link
+}
+
+// Additions groups the second links into the receipts they amend, sorted by
+// name, for the same reason Adoptions groups: receipts are keyed by name, so
+// one skill hand-linked into two agents is one amendment carrying two links
+// rather than two that would overwrite each other.
+func (r Report) Additions() []Addition {
+	byName := map[string][]state.Link{}
+	var order []string
+	for _, e := range r.Entries {
+		if e.Class != ClassLink {
+			continue
+		}
+		if _, ok := byName[e.Name]; !ok {
+			order = append(order, e.Name)
+		}
+		byName[e.Name] = append(byName[e.Name], state.Link{Target: e.Target, Path: e.Path})
+	}
+	sort.Strings(order)
+
+	out := make([]Addition, 0, len(order))
+	for _, name := range order {
+		out = append(out, Addition{Name: name, Links: byName[name]})
 	}
 	return out
 }

@@ -277,14 +277,57 @@ func TestScanLeavesAManagedSkillAlone(t *testing.T) {
 	}
 }
 
-func TestScanRefusesToAdoptASecondLinkForAManagedSkill(t *testing.T) {
+// A hand-made link into a second agent, pointing where the receipt already
+// says its files are, is a link that receipt should have recorded. This is the
+// case `skillsctl link <name> -a <agent>` writes, found retroactively.
+func TestScanAdoptsASecondLinkForAManagedSkill(t *testing.T) {
+	f := newFixture(t)
+	dest := f.skill("demo")
+	f.link("demo", dest)
+
+	db := &state.DB{Receipts: map[string]*state.Receipt{
+		"demo": {
+			Name:    "demo",
+			RevPath: dest,
+			Links:   []state.Link{{Target: "codex", Path: "/somewhere/else/demo"}},
+		},
+	}}
+
+	rep := f.scan(db)
+	if got := only(t, rep).Class; got != ClassLink {
+		t.Fatalf("Class = %q, want link", got)
+	}
+
+	additions := rep.Additions()
+	if len(additions) != 1 {
+		t.Fatalf("want 1 addition, got %+v", additions)
+	}
+	if additions[0].Name != "demo" || len(additions[0].Links) != 1 {
+		t.Fatalf("addition = %+v, want one claude link for demo", additions[0])
+	}
+	if l := additions[0].Links[0]; l.Target != "claude" || l.Path != filepath.Join(f.skills, "demo") {
+		t.Errorf("link = %+v, want the symlink that is already on disk", l)
+	}
+	if len(rep.Adoptions()) != 0 {
+		t.Errorf("adoptions = %+v, want none: the receipt already exists", rep.Adoptions())
+	}
+	if len(rep.Skipped()) != 0 {
+		t.Errorf("skipped = %+v, want none", rep.Skipped())
+	}
+}
+
+// A receipt says where its links point. Recording one that points elsewhere
+// would make update re-point a directory the user never named and remove
+// delete a symlink skillsctl did not create.
+func TestScanRefusesASecondLinkPointingSomewhereElse(t *testing.T) {
 	f := newFixture(t)
 	f.link("demo", f.skill("demo"))
 
 	db := &state.DB{Receipts: map[string]*state.Receipt{
 		"demo": {
-			Name:  "demo",
-			Links: []state.Link{{Target: "codex", Path: "/somewhere/else/demo"}},
+			Name:    "demo",
+			RevPath: filepath.Join(f.src, "somewhere-else"),
+			Links:   []state.Link{{Target: "codex", Path: "/somewhere/else/demo"}},
 		},
 	}}
 
@@ -293,8 +336,75 @@ func TestScanRefusesToAdoptASecondLinkForAManagedSkill(t *testing.T) {
 	if got.Class != ClassSkipped {
 		t.Fatalf("Class = %q, want skipped", got.Class)
 	}
-	if !strings.Contains(got.Reason, "codex") {
-		t.Errorf("Reason = %q, want it to name the agent that already has it", got.Reason)
+	for _, want := range []string{filepath.Join(f.src, "demo"), filepath.Join(f.src, "somewhere-else")} {
+		if !strings.Contains(got.Reason, want) {
+			t.Errorf("Reason = %q, want it to name %s", got.Reason, want)
+		}
+	}
+}
+
+// Links is a set keyed by target: Remove builds its drop filter from the
+// target name, so a receipt with two links for one agent would plan two
+// unlinks of one path and swallow the second.
+func TestScanRefusesASecondLinkForAnAgentTheReceiptAlreadyRecords(t *testing.T) {
+	f := newFixture(t)
+	dest := f.skill("demo")
+	f.link("demo", dest)
+
+	db := &state.DB{Receipts: map[string]*state.Receipt{
+		"demo": {
+			Name:    "demo",
+			RevPath: dest,
+			Links:   []state.Link{{Target: "claude", Path: "/a/different/path/demo"}},
+		},
+	}}
+
+	got := only(t, f.scan(db))
+
+	if got.Class != ClassSkipped {
+		t.Fatalf("Class = %q, want skipped", got.Class)
+	}
+	if !strings.Contains(got.Reason, "claude") {
+		t.Errorf("Reason = %q, want it to name the agent already recorded", got.Reason)
+	}
+}
+
+// Receipts are keyed by name, so two agents hand-linked to one managed skill
+// are one addition carrying two links rather than two that would overwrite
+// each other — the same reason Adoptions groups.
+func TestAdditionsMergeTwoAgentsHandLinkedToOneManagedSkill(t *testing.T) {
+	f := newFixture(t)
+	dest := f.skill("demo")
+	f.link("demo", dest)
+
+	codex := filepath.Join(filepath.Dir(filepath.Dir(f.skills)), ".codex", "skills")
+	if err := os.MkdirAll(codex, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(dest, filepath.Join(codex, "demo")); err != nil {
+		t.Fatal(err)
+	}
+
+	db := &state.DB{Receipts: map[string]*state.Receipt{
+		"demo": {
+			Name:    "demo",
+			RevPath: dest,
+			Links:   []state.Link{{Target: "gemini", Path: "/elsewhere/demo"}},
+		},
+	}}
+
+	ts := []target.Target{{Name: "claude", Dir: f.skills}, {Name: "codex", Dir: codex}}
+	rep, err := Scan(context.Background(), ts, db, f.git, f.store)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	additions := rep.Additions()
+	if len(additions) != 1 {
+		t.Fatalf("want 1 addition, got %+v", additions)
+	}
+	if len(additions[0].Links) != 2 {
+		t.Errorf("links = %+v, want one per agent", additions[0].Links)
 	}
 }
 
