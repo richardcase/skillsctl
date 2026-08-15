@@ -227,3 +227,10 @@ it; CI does not.
 - **The `local` channel** and `--from git|plugin|local`.
 - **`--scope project|local`**, which pairs with the unbuilt `--project` flag.
   Installs use the CLI's default `user` scope.
+
+**Superseded:** the first two bullets are now in scope, and the `Links` and
+`outdated` rows of the tables above change with them — a plugin receipt records
+one link per skill per fanned-out agent, and a plugin whose install path has
+moved reports `stale` rather than `n/a`. `Ownership` is unaffected: the files are
+still the agent's. See
+[the plugin fan-out design](2026-08-15-plugin-fan-out-design.md).
