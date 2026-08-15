@@ -128,8 +128,14 @@ func planMissing(ctx context.Context, reg channel.Registry, e Entry, targets []t
 		return errorVerdict(e, err), plan.Plan{}
 	}
 
-	v := Verdict{Name: e.Name, Status: StatusInstalled, Agents: names(targets)}
+	v := Verdict{Name: e.Name, Status: StatusInstalled}
 	if len(receipts) == 1 {
+		// The pre-narrowing targets are not who received the skill: Prepare may
+		// have narrowed further (a plugin to the agents that install plugins) and
+		// Install may have linked nothing at all (a plugin links none). The
+		// receipt's own channel is what actually knows who has it, exactly as
+		// install.go asks per receipt rather than trusting the request.
+		v.Agents = ch.Agents(receipts[0])
 		v.Version = receipts[0].Resolved
 	}
 	return v, p

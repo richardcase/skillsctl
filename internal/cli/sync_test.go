@@ -311,4 +311,9 @@ func TestSyncReportsAPluginVersionOnceItIsKnown(t *testing.T) {
 	if got := h.receipts(t)["superpowers"]["resolved"]; got != "6.3.0" {
 		t.Errorf("resolved = %v, want the version read back from claude", got)
 	}
+	// codex does not install plugins in this harness's config, so it never
+	// received the skill. Naming it would claim a link that does not exist.
+	if strings.Contains(out, "codex") {
+		t.Errorf("output = %q, want only the agents that actually received the plugin", out)
+	}
 }
