@@ -92,9 +92,10 @@ func TestLinkLeavesTheReceiptItWasGivenAlone(t *testing.T) {
 	}
 }
 
-// Remove keys its drop filter by target name, and Unlink treats a missing link
-// as success, so a receipt holding two links for one agent would plan two
-// unlinks of one path and fail silently. Links stays a set keyed by target.
+// A receipt linked manages holds one skill, so it has at most one path per
+// agent: de-duping by path and de-duping by target agree, which is why this
+// still reads as skipping a target the receipt already has rather than a
+// path it already has.
 func TestLinkSkipsATargetTheReceiptAlreadyHas(t *testing.T) {
 	r, claude, codex := linkFixture(t)
 
