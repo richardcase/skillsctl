@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"os"
 
 	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/gitx"
+	"github.com/richardcase/skillsctl/internal/prompt"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
 	"github.com/richardcase/skillsctl/internal/target"
@@ -19,6 +21,24 @@ var newRunner = func() func(context.Context, []string) error { return nil }
 // newPlugins builds the wrapper around the claude binary. Tests replace it, so
 // that no test installs a plugin into the developer's own ~/.claude.
 var newPlugins = func() claudex.Plugins { return claudex.New() }
+
+// newPicker builds the chooser an install falls back to when it cannot tell
+// which skill was meant. Tests replace it, so that no test blocks reading a
+// terminal that is not there.
+//
+// It draws on stderr rather than stdout for the same reason cobra's Println
+// does: `skillsctl install repo > log` is still a question worth asking, and
+// stdout belongs to whatever the command was piped into.
+var newPicker = func() picker { return prompt.Terminal{In: os.Stdin, Out: os.Stderr} }
+
+// picker asks the user to choose from a list of rows. It is an interface here
+// rather than a concrete type so a test can answer without a terminal.
+type picker interface {
+	// Interactive reports whether there is anyone to ask.
+	Interactive() bool
+	// Select returns the indices chosen, or prompt.ErrCancelled.
+	Select(prompt.Options) ([]int, error)
+}
 
 // env is the resolved environment a command runs against.
 type env struct {

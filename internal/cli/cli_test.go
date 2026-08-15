@@ -11,6 +11,7 @@ import (
 
 	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/outdated"
+	"github.com/richardcase/skillsctl/internal/prompt"
 	"github.com/richardcase/skillsctl/internal/testrepo"
 )
 
@@ -26,6 +27,34 @@ type harness struct {
 	// test can reach the real binary or the developer's own ~/.claude.
 	plugins *fakePlugins
 	ran     [][]string
+
+	// picker answers an ambiguous install. It reports itself non-interactive
+	// until a test says otherwise, so the listing-and-exit behaviour is what
+	// every test that is not about selection still sees.
+	picker *fakePicker
+}
+
+// fakePicker stands in for a terminal. choose is what the user would have
+// done; asked records what they would have been shown.
+type fakePicker struct {
+	on     bool
+	choose func(prompt.Options) ([]int, error)
+	asked  prompt.Options
+}
+
+func (p *fakePicker) Interactive() bool { return p.on }
+
+func (p *fakePicker) Select(opts prompt.Options) ([]int, error) {
+	p.asked = opts
+	if p.choose == nil {
+		return nil, prompt.ErrCancelled
+	}
+	return p.choose(opts)
+}
+
+// picks makes a fakePicker that ticks the rows at these indices.
+func picks(idx ...int) func(prompt.Options) ([]int, error) {
+	return func(prompt.Options) ([]int, error) { return idx, nil }
 }
 
 func newHarness(t *testing.T) *harness {
@@ -39,20 +68,24 @@ func newHarness(t *testing.T) *harness {
 		claude:  filepath.Join(agents, ".claude", "skills"),
 		codex:   filepath.Join(agents, ".codex", "skills"),
 		plugins: &fakePlugins{root: filepath.Join(root, "plugins")},
+		picker:  &fakePicker{},
 	}
 
-	// Swapping the two seams for the whole test, restored by t.Cleanup. A test
-	// that means to exercise the plugin channel populates h.plugins; one that
-	// does not still cannot shell out.
-	realPlugins, realRunner := newPlugins, newRunner
+	// Swapping the three seams for the whole test, restored by t.Cleanup. A
+	// test that means to exercise the plugin channel populates h.plugins; one
+	// that does not still cannot shell out. The picker is the same bargain: a
+	// test that means to choose sets h.picker.on, and one that does not cannot
+	// block on a terminal.
+	realPlugins, realRunner, realPicker := newPlugins, newRunner, newPicker
 	newPlugins = func() claudex.Plugins { return h.plugins }
+	newPicker = func() picker { return h.picker }
 	newRunner = func() func(context.Context, []string) error {
 		return func(_ context.Context, argv []string) error {
 			h.ran = append(h.ran, argv)
 			return h.plugins.exec(argv)
 		}
 	}
-	t.Cleanup(func() { newPlugins, newRunner = realPlugins, realRunner })
+	t.Cleanup(func() { newPlugins, newRunner, newPicker = realPlugins, realRunner, realPicker })
 
 	// Both agent parent directories exist, so both are "present".
 	for _, d := range []string{filepath.Join(agents, ".claude"), filepath.Join(agents, ".codex")} {

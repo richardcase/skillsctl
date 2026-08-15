@@ -106,6 +106,12 @@ type Ambiguous struct {
 	Meta      discover.Metadata
 	Available []Candidate
 	Reason    string
+	// Resolved is the revision the listing describes. A caller that answers
+	// the ambiguity by asking the user can put it back in Request.Ref to
+	// narrow against the same tree it showed them, rather than resolving the
+	// ref a second time and possibly getting one that has moved since. Empty
+	// for a channel with no revision to name.
+	Resolved string
 }
 
 // Error renders the reason the request could not be narrowed.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -102,6 +103,9 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	}
 
 	chosen, err := ch.Prepare(ctx, req)
+	if err != nil {
+		chosen, err = resolveAmbiguity(ctx, cmd, ch, &req, o, err)
+	}
 	if err != nil {
 		reportAmbiguous(cmd, err)
 		return err
@@ -211,6 +215,61 @@ func dedupeSkips(lists ...[]string) []string {
 		}
 	}
 	return out
+}
+
+// resolveAmbiguity answers a repository holding several skills by asking which
+// of them to install, and returns what Prepare would have returned had the
+// answer been passed as --skill. It hands back the error it was given when
+// there is nobody to ask, which is what leaves the non-interactive behaviour —
+// the listing, and an exit code — exactly as it was.
+func resolveAmbiguity(
+	ctx context.Context, cmd *cobra.Command, ch channel.Channel,
+	req *channel.Request, o installOpts, cause error,
+) ([]channel.Candidate, error) {
+	var amb *channel.Ambiguous
+	if !errors.As(cause, &amb) {
+		return nil, cause
+	}
+	// narrow also reports an ambiguity for a --skill that names nothing in the
+	// repository. That is a typo rather than an unanswered question, and a
+	// picker is no answer to it.
+	if len(o.skills) > 0 || o.all {
+		return nil, cause
+	}
+	p := newPicker()
+	if !p.Interactive() {
+		return nil, cause
+	}
+
+	names, err := selectSkills(p, amb, o.as != "")
+	if err != nil {
+		return nil, err
+	}
+
+	// A second request, for the re-read only. Install must still see the ref
+	// the user asked for: it records req.Ref as the ref to track, so pinning
+	// the real request to the sha would freeze the skill against every future
+	// update. Pinning this one is what makes the second pass offline — Resolve
+	// passes a full sha straight through — and what stops a branch that moved
+	// in between from installing a tree the listing never showed.
+	lookup := *req
+	lookup.Skills = names
+	if amb.Resolved != "" {
+		// A channel with no revision to name leaves this empty, and re-reading
+		// a local directory costs another walk of it and nothing more.
+		lookup.Ref = amb.Resolved
+	}
+
+	chosen, err := ch.Prepare(ctx, lookup)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Skills = names
+	for _, line := range pickedListing(amb, names) {
+		cmd.Println(line)
+	}
+	return chosen, nil
 }
 
 // reportAmbiguous prints what the user could have asked for, when the channel
