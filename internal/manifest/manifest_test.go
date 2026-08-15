@@ -131,9 +131,12 @@ func TestDecodeRejections(t *testing.T) {
 			want: "must agree",
 		},
 		{
+			// A non-empty source that source.Parse itself rejects, so this
+			// exercises validate's "%q: %w" wrapping of source.Parse's error
+			// rather than re-testing the earlier empty-source check above.
 			name: "unparseable source",
-			toml: "[[skill]]\nname = 'alpha'\nsource = ''\n",
-			want: "has no source",
+			toml: "[[skill]]\nname = 'alpha'\nsource = '!!!'\n",
+			want: "unrecognised source",
 		},
 		{
 			name: "escaping subpath field",
