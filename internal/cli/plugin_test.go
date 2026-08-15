@@ -131,8 +131,14 @@ func TestInstallPluginRecordsTheVersionClaudeChose(t *testing.T) {
 
 func TestInstallPluginAdoptsOneClaudeAlreadyHas(t *testing.T) {
 	h := newHarness(t)
+	// Create a real directory structure for the adopted plugin, with an empty
+	// skills directory so fan can walk it without error.
+	pluginPath := h.root + "/adopted/6.3.0"
+	testrepo.Write(t, pluginPath, map[string]string{
+		"skills/.gitkeep": "",
+	})
 	h.plugins.installed = []claudex.Installed{
-		{ID: pluginID, Version: "6.3.0", InstallPath: "/plugins/superpowers/6.3.0"},
+		{ID: pluginID, Version: "6.3.0", InstallPath: pluginPath},
 	}
 
 	out, err := h.run(t, "install", pluginID)

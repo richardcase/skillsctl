@@ -72,11 +72,15 @@ func TestPluginInstallExecsThenRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	if len(p.Ops) != 2 {
-		t.Fatalf("plan = %v, want an exec and a record", p.Describe())
+	// Fresh install: plan has exec, note (about future links), and record
+	if len(p.Ops) != 3 {
+		t.Fatalf("plan = %v, want an exec, a note about links, and a record", p.Describe())
 	}
 	if _, ok := p.Ops[0].(plan.Exec); !ok {
 		t.Errorf("op 0 is %T, want plan.Exec", p.Ops[0])
+	}
+	if _, ok := p.Ops[1].(plan.Note); !ok {
+		t.Errorf("op 1 is %T, want plan.Note about future links", p.Ops[1])
 	}
 
 	r := receipts[0]
@@ -95,11 +99,17 @@ func TestPluginInstallExecsThenRecords(t *testing.T) {
 }
 
 func TestPluginInstallAdoptsWithoutExecuting(t *testing.T) {
-	c, _ := newPluginChannel(claudex.Installed{
-		ID: "superpowers@claude-plugins-official", Version: "6.3.0", InstallPath: "/p/6.3.0",
-	})
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+	src, err := source.Parse("superpowers@claude-plugins-official")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := NewPlugin(&fakeClaude{installed: []claudex.Installed{{
+		ID: "superpowers@claude-plugins-official", Version: "6.3.0", InstallPath: rev,
+	}}}, cfg)
 
-	cands, err := c.Prepare(context.Background(), pluginRequest())
+	cands, err := c.Prepare(context.Background(), Request{Source: src, Targets: cfg.Targets})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -107,7 +117,7 @@ func TestPluginInstallAdoptsWithoutExecuting(t *testing.T) {
 		t.Fatalf("candidate = %+v, want it adopted at the installed version", cands[0])
 	}
 
-	p, receipts, err := c.Install(pluginRequest(), cands)
+	p, receipts, err := c.Install(Request{Source: src, Targets: cfg.Targets}, cands)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -118,6 +128,76 @@ func TestPluginInstallAdoptsWithoutExecuting(t *testing.T) {
 	}
 	if receipts[0].Resolved != "6.3.0" {
 		t.Errorf("resolved = %q, want the version already installed, so the dry-run is exact", receipts[0].Resolved)
+	}
+}
+
+func TestPluginInstallOfAnAdoptedPluginPlansTheLinksExactly(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+	src, err := source.Parse("superpowers@claude-plugins-official")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := NewPlugin(&fakeClaude{installed: []claudex.Installed{{
+		ID: "superpowers@claude-plugins-official", Version: "6.3.0", InstallPath: rev,
+	}}}, cfg)
+	req := Request{Source: src, Targets: cfg.Targets}
+
+	cands, err := c.Prepare(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	p, receipts, err := c.Install(req, cands)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	var links, notes int
+	for _, op := range p.Ops {
+		switch op.(type) {
+		case plan.Link:
+			links++
+		case plan.Note:
+			notes++
+		}
+	}
+	if links != 2 {
+		t.Errorf("plan = %v, want a link per skill: the install path is known, so the dry run is exact", p.Describe())
+	}
+	if notes != 0 {
+		t.Error("a note admits something unknown, and nothing here is unknown")
+	}
+	if len(receipts[0].Links) != 2 {
+		t.Errorf("receipt links = %v, want one per skill", receipts[0].Links)
+	}
+}
+
+func TestPluginInstallOfAFreshPluginNotesTheLinksItCannotYetName(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	c := NewPlugin(&fakeClaude{}, cfg)
+	src, err := source.Parse("superpowers@claude-plugins-official")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{Source: src, Targets: cfg.Targets}
+
+	cands, err := c.Prepare(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	p, _, err := c.Install(req, cands)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	var note string
+	for _, op := range p.Ops {
+		if n, ok := op.(plan.Note); ok {
+			note = n.Text
+		}
+	}
+	if !strings.Contains(note, "codex") {
+		t.Errorf("note = %q, want it to name the agent the links are coming for", note)
 	}
 }
 

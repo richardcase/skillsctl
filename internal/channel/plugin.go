@@ -112,10 +112,10 @@ func (c *Plugin) Install(req Request, chosen []Candidate) (plan.Plan, []state.Re
 			p.Add(plan.Exec{Argv: c.claude.InstallArgv(id)})
 		}
 
-		// No links, no slug and no content hash: nothing of ours is on disk.
-		// Resolved and RevPath stay empty until Settle unless the plugin was
-		// already installed, in which case they are known now and the plan
-		// describes itself exactly.
+		// No slug and no content hash: nothing of ours is in the store. Resolved
+		// and RevPath stay empty until Settle unless the plugin was already
+		// installed, in which case they are known now and the plan describes
+		// itself exactly.
 		receipt := state.Receipt{
 			Name:        s.Name,
 			Channel:     string(source.ChannelPlugin),
@@ -125,6 +125,27 @@ func (c *Plugin) Install(req Request, chosen []Candidate) (plan.Plan, []state.Re
 			InstalledAt: now,
 			UpdatedAt:   now,
 		}
+
+		// A plugin claude already has is the one case where the install path is
+		// known before the plan runs, so its links go in the plan and the dry run
+		// is exact. Otherwise claude decides the path and Settle reads it back,
+		// and the reconcile that follows the apply is where the links are made —
+		// which the plan says rather than leaving a third of its work unmentioned.
+		if s.Adopted {
+			ops, links, skipped, err := c.fan(receipt, req.Targets)
+			if err != nil {
+				return plan.Plan{}, nil, err
+			}
+			p.Add(ops.Ops...)
+			for _, why := range skipped {
+				p.Add(plan.Note{Text: why})
+			}
+			receipt.Links = links
+		} else if fanTo := target.WithoutPlugins(req.Targets); len(fanTo) > 0 {
+			p.Add(plan.Note{Text: fmt.Sprintf("then link the skills %s ships into %s, once claude reports where it put them",
+				s.Name, strings.Join(targetNames(fanTo), ", "))})
+		}
+
 		p.Add(plan.Record{Receipt: receipt})
 		receipts = append(receipts, receipt)
 	}
@@ -309,6 +330,15 @@ func linkedAgents(r state.Receipt) []string {
 		}
 		seen[l.Target] = true
 		names = append(names, l.Target)
+	}
+	return names
+}
+
+// targetNames is the agents' names, for a message.
+func targetNames(ts []target.Target) []string {
+	names := make([]string, 0, len(ts))
+	for _, t := range ts {
+		names = append(names, t.Name)
 	}
 	return names
 }
