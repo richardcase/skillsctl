@@ -84,6 +84,7 @@ func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 			amb.Header = fmt.Sprintf("skills in %s @ %s:", src.RepoURL, shortSha(sha))
 			amb.Meta = discover.PluginMeta(revPath)
 			amb.Available = brief(available)
+			amb.Resolved = sha
 		}
 		return nil, err
 	}
