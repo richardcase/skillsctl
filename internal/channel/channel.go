@@ -42,6 +42,21 @@ const (
 	UserOwned
 )
 
+// String names an ownership for a report. The words are short because they are
+// a field value, not a sentence: how each reads to a user is the caller's
+// business.
+func (o Ownership) String() string {
+	switch o {
+	case StoreOwned:
+		return "store"
+	case AgentOwned:
+		return "agent"
+	case UserOwned:
+		return "user"
+	}
+	return "unknown"
+}
+
 // Request is one install invocation, already parsed.
 type Request struct {
 	Source  source.Source

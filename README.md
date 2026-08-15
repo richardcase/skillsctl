@@ -30,6 +30,10 @@ exact.
 - **A receipt for every install.** `skillsctl list` shows what is installed, at
   which commit, and in which agents. `remove` unlinks exactly what was created —
   it never guesses.
+- **The whole receipt, when you need it.** `skillsctl info <name>` prints what a
+  skill is for, where it came from, which revision is installed and where its
+  files are — and checks each symlink against the disk, so one that has been
+  deleted, broken or re-pointed is named rather than assumed to work.
 - **`--dry-run` that is exact.** Commands build a plan of the mutations and
   print it. What you see is what runs; the dry run is not a separate code path.
 - **Updates that keep your choices.** `skillsctl update` moves a skill to the
@@ -67,8 +71,9 @@ exact.
 - **Disk you can get back.** `skillsctl gc` deletes the revisions and mirrors no
   installed skill references, and reports what it freed. Nothing shared is
   collected while any skill still points at it.
-- **Scriptable.** `skillsctl list --json` emits the raw receipts, and a partial
-  install exits `2` so a script can tell it from having installed nothing.
+- **Scriptable.** `skillsctl list --json` emits the raw receipts, `info --json`
+  emits one of them with everything derived from it, and a partial install exits
+  `2` so a script can tell it from having installed nothing.
 - **One static binary.** No runtime dependency beyond `git`, and `claude` only
   if you install plugins.
 
@@ -101,6 +106,8 @@ skillsctl install ./my-skill                       # the same thing
 skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
+skillsctl info brainstorming                       # one skill's receipt in full
+skillsctl info brainstorming --json                # the same, for a script
 skillsctl outdated                                 # what has moved upstream
 skillsctl update                                   # move everything to its ref's head
 skillsctl update avoid-ai-writing                  # just this one, pin or not
@@ -123,6 +130,38 @@ avoid-ai-writing  git      a1b2c3d           claude,codex
 brainstorming     git      9f8e7d6 (pinned)  claude
 superpowers       plugin   6.3.0             claude
 my-skill          local    -                 claude
+```
+
+`info` prints everything the receipt records, together with the description from
+the skill's `SKILL.md`. Each link is checked against the disk, so a symlink that
+has been deleted, broken or re-pointed is named as such — nothing is fetched and
+nothing is repaired:
+
+```
+$ skillsctl info brainstorming
+brainstorming
+Explores user intent, requirements and design before implementation.
+
+channel    git
+source     https://github.com/obra/superpowers.git
+subpath    skills/brainstorming
+ref        the repository's default branch
+revision   b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+files      ~/.local/share/skillsctl/rev/github.com/obra/superpowers/b36e082…/skills/brainstorming
+           (skillsctl's store)
+installed  2026-08-15 08:50:14 UTC
+updated    2026-08-15 08:50:14 UTC
+
+links
+  claude   ~/.claude/skills/brainstorming
+  codex    ~/.codex/skills/brainstorming  (missing)
+```
+
+A name that is not installed is an error naming the closest ones that are:
+
+```
+$ skillsctl info brainstorm
+error: "brainstorm" is not installed; did you mean brainstorming?
 ```
 
 A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
@@ -262,6 +301,7 @@ Locations can be overridden with environment variables:
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
 | `list` | `--json` | Show installed skills, versions and agents |
+| `info <name>` | `--json` | Show one skill's receipt in full, and whether its links are live |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
 | `pin <name>...` | `--dry-run` | Freeze skills at the revision they are installed at |

@@ -75,11 +75,21 @@ as `none — a pin tracks no ref`. Reusing `tracked()` unconditionally would hav
 made `info` the only command that lies about a pin.
 
 **Ownership is a rendered fact, not a branch.** `ch.Ownership()` already answers
-"who owns these files" in three values, which is precisely the line `info` wants
-under the revision path. A receipt whose channel is not registered still prints,
-minus that line — the degradation `Registry.Agents` already makes, for the
-reason its comment gives: what is on disk is a fact, and a command that reports
-facts should not refuse to describe one.
+"who owns these files" in three values, and those three are exactly the three
+ways this report differs: a store-owned skill has a ref and a revision, an
+agent-owned one has a version the agent chose and no ref behind it, and a
+user-owned one has neither — whatever is in the directory right now is the
+version. `list`, `remove` and `gc` ask `Ownership()` and nothing finer, and so
+does this. A receipt whose channel is not registered still prints, falling back
+to whatever the receipt recorded — the degradation `Registry.Agents` already
+makes, for the reason its comment gives: what is on disk is a fact, and a
+command that reports facts should not refuse to describe one.
+
+One qualification on the owner line: `adopt` records a git skill whose `RevPath`
+is the user's own working copy, and printing "skillsctl's store" above a path
+that plainly is not in it would be a lie the line above contradicts.
+`store.Contains` is the test, the same one `pin` uses to decide whether to warn
+about the same receipts.
 
 **A plugin has no links, so it names agents instead.** `Plugin.Agents` answers
 from the config because the agent that installed a plugin can already see its
@@ -122,6 +132,13 @@ and a multi-line error would break that frame:
 "zzz" is not installed; run `skillsctl list` to see what is
 ```
 
+A second method, `Hint`, drops the name for a caller whose own frame already
+says which skill this is about — `skipped brainstorm: not installed; did you
+mean brainstorming?` rather than the name twice in one sentence. `link` uses it
+too, in the branch reached when the argument is neither a receipt's name nor
+anything `source.Parse` recognises, which is where a bare mistyped word lands
+and so the message where near-misses matter most.
+
 Levenshtein distance was the alternative. It catches `brainstroming` and misses
 `brain`; containment catches `brain` and misses `brainstroming`. Containment is
 fifteen lines against twenty-five, and the truncated guess is the mistake people
@@ -159,6 +176,10 @@ there is no batch of them a user wants to act on at once. A line per field, with
 `subpath` and `revision` omitted when the receipt holds neither — a `local`
 skill has no revision, and an empty cell would read as a missing one rather than
 an absent one, which is the reason `list` prints a dash.
+
+`updated` is printed even when it matches `installed`. "Never updated" and
+"updated back to where it started" are different facts about a skill, and only
+the two timestamps side by side tell them apart.
 
 ## Structure
 

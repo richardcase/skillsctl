@@ -37,19 +37,21 @@ func newLinkCmd() *cobra.Command {
 			"Which form you meant is decided by looking the argument up in the receipts.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			known, err := isInstalled(args[0])
+			miss, err := lookup(args[0])
 			if err != nil {
 				return err
 			}
-			if known {
+			if miss == nil {
 				return runLinkName(cmd, args[0], o)
 			}
 
 			src, perr := source.Parse(args[0])
 			if perr != nil {
-				return fmt.Errorf("%q is not installed, and is not a path to a directory on this machine: "+
-					"`skillsctl list` shows what is installed, and `skillsctl install %s` fetches something new",
-					args[0], args[0])
+				// A bare word is the common typo here — it is neither a
+				// receipt's name nor anything source.Parse recognises — so the
+				// near-misses matter more in this message than in any other.
+				return fmt.Errorf("%q is %s\nit is not a path to a directory on this machine either: `skillsctl install %s` fetches something new",
+					args[0], miss.Hint(), args[0])
 			}
 			if src.Channel != source.ChannelLocal {
 				return fmt.Errorf("link takes a path to a directory on this machine, and %q is a %s source: install it with `skillsctl install %s`",
@@ -67,7 +69,8 @@ func newLinkCmd() *cobra.Command {
 	return cmd
 }
 
-// isInstalled reports whether arg names a skill in the receipts.
+// lookup reports whether arg names a skill in the receipts, returning nil when
+// it does and the miss — carrying any near-misses — when it does not.
 //
 // It opens and closes state on its own rather than handing back a live handle:
 // state.Open blocks on an exclusive flock, which is held per open file
@@ -75,19 +78,21 @@ func newLinkCmd() *cobra.Command {
 // forever. The path form takes its own handle a moment later, and the name form
 // looks the receipt up again under the handle it keeps — that second lookup is
 // the one that decides, so nothing rests on what this saw.
-func isInstalled(arg string) (bool, error) {
+func lookup(arg string) (*state.NotInstalledError, error) {
 	e, err := newEnv()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	h, err := e.openState()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer func() { _ = h.Close() }()
 
-	_, ok := h.DB.Receipts[arg]
-	return ok, nil
+	if _, ok := h.DB.Receipts[arg]; ok {
+		return nil, nil
+	}
+	return &state.NotInstalledError{Name: arg, Suggestions: h.DB.NearMisses(arg)}, nil
 }
 
 // runLinkName adds a link to a receipt that already exists. The only state
@@ -110,7 +115,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 
 	receipt, ok := h.DB.Receipts[name]
 	if !ok {
-		return fmt.Errorf("%q is not installed", name)
+		return h.DB.NotInstalled(name)
 	}
 	ch, err := e.channels().ForReceipt(receipt)
 	if err != nil {

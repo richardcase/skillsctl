@@ -18,6 +18,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(
 		newAdoptCmd(),
 		newGCCmd(),
+		newInfoCmd(),
 		newInstallCmd(),
 		newLinkCmd(),
 		newListCmd(),

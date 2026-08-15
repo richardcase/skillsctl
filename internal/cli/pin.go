@@ -138,7 +138,7 @@ func pinOne(ctx context.Context, reg channel.Registry, db *state.DB, name string
 
 	r, ok := db.Receipts[name]
 	if !ok {
-		en.err = errors.New("not installed; run `skillsctl list` to see what is")
+		en.err = db.NotInstalled(name)
 		return en, plan.Plan{}
 	}
 	en.before = *r
@@ -176,7 +176,7 @@ func reportPin(cmd *cobra.Command, entries []pinEntry, o pinOpts, dryRun bool) {
 	for _, en := range entries {
 		switch {
 		case en.err != nil:
-			cmd.Printf("skipped %s: %v\n", en.name, en.err)
+			cmd.Printf("skipped %s: %s\n", en.name, reason(en.err))
 		case !en.res.Changed:
 			cmd.Println(unchangedPinLine(en, o))
 		case dryRun:
@@ -187,6 +187,17 @@ func reportPin(cmd *cobra.Command, entries []pinEntry, o pinOpts, dryRun bool) {
 			}
 		}
 	}
+}
+
+// reason renders an error for a line that already names the skill. A
+// NotInstalledError names it too, so its name-less form is used instead of
+// saying "brainstorm" twice in one sentence.
+func reason(err error) string {
+	var missing *state.NotInstalledError
+	if errors.As(err, &missing) {
+		return missing.Hint()
+	}
+	return err.Error()
 }
 
 // pinLine renders a skill that moved. A pin names the ref it dropped, because
