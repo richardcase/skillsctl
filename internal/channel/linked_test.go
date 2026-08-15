@@ -92,7 +92,7 @@ func TestLinkLeavesTheReceiptItWasGivenAlone(t *testing.T) {
 	}
 }
 
-// A receipt that linked manages holds one skill, so it has at most one path per
+// A receipt managed by `linked` holds one skill, so it has at most one path per
 // agent: de-duping by path and de-duping by target agree, which is why this
 // still reads as skipping a target the receipt already has rather than a
 // path it already has.

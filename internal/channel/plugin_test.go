@@ -555,6 +555,34 @@ func TestFanSkipsANameSomethingElseAlreadyHolds(t *testing.T) {
 	}
 }
 
+// Two targets configured to point at the same directory is an unusual config,
+// but it is two agents wanting the same skill, not one plugin naming a skill
+// twice. Before this, live was keyed by path alone across every target in the
+// fan, so the second target's identical link path read as the duplicate-name
+// case and produced "ships two skills under that name", which is not what
+// happened.
+func TestFanDoesNotMistakeTwoTargetsSharingADirectoryForADuplicateSkillName(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha")
+	cfg.Targets = append(cfg.Targets, target.Target{Name: "gemini", Dir: cfg.Targets[1].Dir})
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	p, _, skipped, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+	for _, s := range skipped {
+		if strings.Contains(s, "ships two skills") {
+			t.Errorf("skipped = %v, want no false duplicate-name skip", skipped)
+		}
+	}
+	if len(p.Ops) != 2 {
+		t.Fatalf("ops = %v, want one link per target sharing the directory", p.Describe())
+	}
+}
+
 func TestFanLeavesAgentsItWasNotAskedAboutAlone(t *testing.T) {
 	cfg, _ := fanCfg(t)
 	rev := pluginTree(t, t.TempDir(), "alpha")
@@ -600,6 +628,23 @@ func TestFanRefusesAnInstallPathThatIsNotThere(t *testing.T) {
 
 	if _, _, _, err := c.fan(r, cfg.Targets); err == nil {
 		t.Error("linking into a directory that is not there would make every link dangle")
+	}
+}
+
+// An empty RevPath is not merely a wrong directory, it is Settle never having
+// read one back from claude, which needs its own message: "" is not a
+// directory would leave the user guessing why.
+func TestFanRefusesAReceiptWithNoRecordedInstallPath(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: ""}
+
+	_, _, _, err := c.fan(r, cfg.Targets)
+	if err == nil {
+		t.Fatal("a receipt with no recorded install path must refuse rather than stat an empty string")
+	}
+	if !strings.Contains(err.Error(), "never learned where claude installed it") {
+		t.Errorf("error = %v, want it to say skillsctl never learned the install path, not that \"\" is not a directory", err)
 	}
 }
 
@@ -835,6 +880,33 @@ func TestPluginRemoveFromTheOwningAgentIsRefusedWhileLinksExist(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "skillsctl remove superpowers") {
 		t.Errorf("error = %q, want it to name the command that does mean everywhere", err)
+	}
+}
+
+// codex is named alongside claude in the same command, so its links are not
+// stranded by the uninstall: they are taken away in the same breath. Naming
+// both must not be refused the way `-a claude` alone would be.
+func TestPluginRemoveFromTheOwningAgentSucceedsWhenTheLinkedAgentIsAlsoNamed(t *testing.T) {
+	c, _ := newPluginChannel()
+
+	p, err := c.Remove(fannedReceipt(), map[string]bool{"claude": true, "codex": true})
+	if err != nil {
+		t.Fatalf("codex was named too, so its links are not stranded: %v", err)
+	}
+
+	var execs, unlinks, forgets int
+	for _, op := range p.Ops {
+		switch op.(type) {
+		case plan.Exec:
+			execs++
+		case plan.Unlink:
+			unlinks++
+		case plan.Forget:
+			forgets++
+		}
+	}
+	if execs != 1 || unlinks != 2 || forgets != 1 {
+		t.Errorf("plan = %v, want one uninstall, both of codex's links taken away and the receipt forgotten", p.Describe())
 	}
 }
 

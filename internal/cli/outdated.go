@@ -16,11 +16,15 @@ func newOutdatedCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "outdated",
-		Short: "Report skills whose tracked ref has moved",
+		Short: "Report skills whose tracked ref has moved, or a plugin claude has moved",
 		Long: "Compare each installed skill against its remote, reading refs only — nothing is fetched.\n\n" +
+			"A plugin tracks no ref, so it is compared against what claude reports as installed now:\n" +
+			"one claude has moved since skillsctl last looked comes back stale, which `skillsctl update`\n" +
+			"repairs.\n\n" +
 			"Pinned skills are listed too, resolved against the repository's default branch, so a pin\n" +
 			"never hides the fact that something moved. Exits 3 when an update is available,\n" +
-			"and 2 when a remote could not be reached.",
+			"and 2 when a remote could not be reached. A stale plugin sets neither: it is not an\n" +
+			"available update, and `skillsctl update` repairs it.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := newEnv()

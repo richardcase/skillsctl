@@ -329,9 +329,10 @@ the receipt; removing the last link forgets it.
 Removing a plugin uninstalls it through `claude` and takes away every link its
 skills had. Naming only an agent that holds links — `remove superpowers -a codex`
 — takes those away and keeps the receipt, since the plugin is still installed.
-Naming the agent that owns it is refused while anything is linked, because
-uninstalling would strand those links; the error names `skillsctl remove <name>`,
-which does mean everywhere.
+Naming the agent that owns it is refused if that would strand a linked agent's
+skills — one holding links that was not also named in the same command; naming
+both together takes both away in one command rather than being refused. The
+error names `skillsctl remove <name>`, which does mean everywhere.
 
 `link <name> -a <agent>` is its inverse, for the agent that was not on the
 machine when something was installed: it adds a link to the revision the receipt

@@ -259,17 +259,21 @@ func (c *Plugin) Settle(ctx context.Context, rs []state.Receipt) ([]state.Receip
 // A subset is two contracts rather than one, so which agents were named decides
 // which applies. An agent that only holds links loses them and the receipt
 // stays, because the plugin is still installed. The agent that installed it
-// cannot be singled out while anything is linked: uninstalling deletes the
-// directory every other agent's links point into, so -a claude would have to
-// either strand them or silently do more than the user asked for. Naming the
-// command that does mean "everywhere" is better than either.
+// cannot be singled out while a link would be left stranded: uninstalling
+// deletes the directory every other agent's links point into, so -a claude
+// would have to either strand them or silently do more than the user asked
+// for. An agent named alongside claude in the same command is not stranded —
+// it is unlinked in the same breath — so only the agents left out of the
+// command can be stranded by it. Naming the command that does mean
+// "everywhere" is better than refusing over links the caller is about to take
+// away anyway.
 //
 // The uninstall goes first because its failure is the more likely one. If claude
 // refuses, the plan stops with the receipt intact and nothing is left dangling.
 // If the uninstall succeeds but an unlink fails later, the plugin is gone, some
 // links are removed, the rest dangle into a deleted directory, and the receipt is
-// never committed — state.json goes on claiming a plugin claude no longer has.
-// The order prevents the likely failure; the unlikely one is reported as-is.
+// never committed — state.json goes on claiming a plugin that claude no longer
+// has. The order prevents the likely failure; the unlikely one is reported as-is.
 func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error) {
 	var p plan.Plan
 
@@ -283,12 +287,15 @@ func (c *Plugin) Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error
 	}
 
 	if owner := c.owner(drop); owner != "" {
-		if len(r.Links) > 0 {
+		if stranded := strandedAgents(r, drop); len(stranded) > 0 {
 			return plan.Plan{}, fmt.Errorf("%s owns the %s plugin, and uninstalling it would strand its skills in %s\n"+
 				"run `skillsctl remove %s` to remove it everywhere",
-				owner, r.Name, strings.Join(linkedAgents(r), ", "), r.Name)
+				owner, r.Name, strings.Join(stranded, ", "), r.Name)
 		}
 		p.Add(plan.Exec{Argv: c.claude.UninstallArgv(r.Source)})
+		for _, l := range r.Links {
+			p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
+		}
 		p.Add(plan.Forget{Name: r.Name})
 		return p, nil
 	}
@@ -362,6 +369,20 @@ func linkedAgents(r state.Receipt) []string {
 	return names
 }
 
+// strandedAgents names the agents a receipt's links reach that were not named
+// in drop. An agent that was named is not stranded by uninstalling through
+// the owner in the same command — it loses its links in the same breath — so
+// only the ones the caller left out are what an uninstall would orphan.
+func strandedAgents(r state.Receipt, drop map[string]bool) []string {
+	var stranded []string
+	for _, name := range linkedAgents(r) {
+		if !drop[name] {
+			stranded = append(stranded, name)
+		}
+	}
+	return stranded
+}
+
 // targetNames is the agents' names, for a message.
 func targetNames(ts []target.Target) []string {
 	names := make([]string, 0, len(ts))
@@ -407,11 +428,29 @@ type pluginSkill struct {
 	dir  string
 }
 
+// linkKey identifies one intended link by the target it is for and the path
+// it sits at. Two different targets can legitimately resolve to the same
+// path if their config points at one shared directory, so a duplicate-name
+// guard keyed by path alone would call that a plugin naming one skill twice
+// when it is really two agents wanting the same skill.
+type linkKey struct {
+	target string
+	path   string
+}
+
 // skills reads what a plugin publishes, from the install path claude reported.
 //
 // A plugin with no skills directory publishes none, which is not an error: it
 // has nothing to fan out rather than something that failed to.
 func (c *Plugin) skills(r state.Receipt) ([]pluginSkill, error) {
+	// An empty RevPath is not a directory that happens to be wrong, it is the
+	// absence of an answer: Settle never read one back from claude, so there is
+	// nothing on disk to name and "" is not a directory would just be
+	// confusing about why.
+	if r.RevPath == "" {
+		return nil, fmt.Errorf("refusing to link %s: skillsctl never learned where claude installed it; "+
+			"run `skillsctl update %s` once claude reports it", r.Name, r.Name)
+	}
 	// target.Link would create a symlink whether or not anything is on the other
 	// end of it, and a dangling entry in a skills directory is worse than a
 	// refusal: the agent finds it, fails to load it, and says nothing useful.
@@ -512,22 +551,26 @@ func (c *Plugin) fan(r state.Receipt, add []target.Target) (plan.Plan, []state.L
 	}
 
 	var skipped []string
-	live := map[string]bool{}
+	live := map[linkKey]bool{}
 	for _, t := range fanTo {
 		for _, s := range skills {
 			linkPath, err := linkPathFor(t, s.name)
 			if err != nil {
 				return plan.Plan{}, nil, nil, err
 			}
+			key := linkKey{target: t.Name, path: linkPath}
 			// Two skills in one plugin claiming one name would otherwise plan
 			// two links at one path and record it twice, which Unlink would
-			// then undo once.
-			if live[linkPath] {
+			// then undo once. Keyed by target as well as path, so two targets
+			// that happen to share a directory in the config do not read as
+			// the plugin naming one skill twice — that is a different agent
+			// getting the same skill, not a collision.
+			if live[key] {
 				skipped = append(skipped, fmt.Sprintf("skipped %s for %s: %s ships two skills under that name",
 					s.name, t.Name, r.Name))
 				continue
 			}
-			live[linkPath] = true
+			live[key] = true
 
 			op, why := linkOpFor(t, linkPath, s.dir, recorded[linkPath])
 			if why != "" {
@@ -552,7 +595,7 @@ func (c *Plugin) fan(r state.Receipt, add []target.Target) (plan.Plan, []state.L
 	// directory claude keeps forever and the agent loads happily. It is the
 	// reason this is reconciliation rather than addition.
 	for _, l := range r.Links {
-		if touched[l.Target] && !live[l.Path] {
+		if touched[l.Target] && !live[linkKey{target: l.Target, path: l.Path}] {
 			p.Add(plan.Unlink{Target: l.Target, LinkPath: l.Path})
 		}
 	}

@@ -1,6 +1,9 @@
 // Package outdated answers one question about installed skills: has the ref
-// each one tracks moved since it was installed? It reads remotes with
-// ls-remote only, so nothing is fetched, mirrored or extracted.
+// each one tracks moved since it was installed — or, for a plugin, has the
+// agent that owns it moved its install out from under the receipt? It
+// performs no network fetch: a git receipt is checked with ls-remote alone,
+// nothing is mirrored or extracted, and claude is asked only when a plugin
+// receipt is present.
 package outdated
 
 import (
