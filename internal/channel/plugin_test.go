@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -519,5 +520,103 @@ func TestFanRefusesAnInstallPathThatIsNotThere(t *testing.T) {
 
 	if _, _, _, err := c.fan(r, cfg.Targets); err == nil {
 		t.Error("linking into a directory that is not there would make every link dangle")
+	}
+}
+
+// TestFanRefusesASkillNameThatWouldEscapeTheSkillsDirectory pins the
+// path-safety rule AGENTS.md requires of anything that turns third-party data
+// into a path: a plugin's SKILL.md is somebody else's file, and its frontmatter
+// name is what fan joins onto an agent's skills directory. pluginTree always
+// writes a frontmatter name matching the directory, so this writes one by hand
+// with a mismatched, escaping name instead.
+func TestFanRefusesASkillNameThatWouldEscapeTheSkillsDirectory(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := t.TempDir()
+	dir := filepath.Join(rev, pluginSkillsDir, "alpha")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: ../evil\ndescription: a skill\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	if _, _, _, err := c.fan(r, cfg.Targets); err == nil {
+		t.Error("a frontmatter name that would escape the skills directory must not become a link path")
+	}
+}
+
+// TestFanRefusesToReplaceARealDirectoryAtTheLinkPath pins the other arm of
+// linkOpFor's os.Readlink switch: a path that exists but is not a symlink
+// returns EINVAL, not an os.IsNotExist error, and that distinction is the only
+// thing stopping fan from planning over a directory the user made themselves.
+// The existing collision test puts a symlink in the way, which takes the
+// default arm instead; this one puts a real directory there to take the EINVAL
+// arm.
+func TestFanRefusesToReplaceARealDirectoryAtTheLinkPath(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+
+	linkPath := filepath.Join(cfg.Targets[1].Dir, "alpha")
+	if err := os.MkdirAll(linkPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	p, links, skipped, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+	if len(skipped) != 1 || !strings.Contains(skipped[0], "alpha") {
+		t.Fatalf("skipped = %v, want one line naming alpha", skipped)
+	}
+	if len(p.Ops) != 1 {
+		t.Fatalf("ops = %v, want beta linked anyway: a directory in the way must not block the other skill", p.Describe())
+	}
+	for _, l := range links {
+		if strings.HasSuffix(l.Path, "alpha") {
+			t.Error("recorded a link to a path that is a real directory, not a symlink skillsctl made")
+		}
+	}
+}
+
+// TestFanIsIdempotentOnceItsOpsAreApplied pins the property later tasks rely
+// on: install and update both call fan after every run, so a second call with
+// unchanged inputs and the first call's ops actually applied must plan
+// nothing.
+func TestFanIsIdempotentOnceItsOpsAreApplied(t *testing.T) {
+	cfg, _ := fanCfg(t)
+	rev := pluginTree(t, t.TempDir(), "alpha", "beta")
+	c := NewPlugin(&fakeClaude{}, cfg)
+	r := state.Receipt{Name: "superpowers", RevPath: rev}
+
+	p, links, skipped, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("skipped = %v, want none", skipped)
+	}
+
+	e := &plan.Executor{DB: &state.DB{Receipts: map[string]*state.Receipt{}}, Out: io.Discard}
+	if err := e.Apply(context.Background(), p); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	r.Links = links
+	p2, _, skipped2, err := c.fan(r, cfg.Targets)
+	if err != nil {
+		t.Fatalf("fan (second call): %v", err)
+	}
+	if !p2.IsEmpty() {
+		t.Errorf("second plan = %v, want none: fan must be idempotent once its ops are applied", p2.Describe())
+	}
+	if len(skipped2) != 0 {
+		t.Errorf("skipped (second call) = %v, want none", skipped2)
 	}
 }
