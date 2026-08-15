@@ -172,6 +172,14 @@ type Channel interface {
 	// ops that undo it. An empty drop means every agent.
 	Remove(r state.Receipt, drop map[string]bool) (plan.Plan, error)
 
+	// Link adds an installed receipt to the agents in add, and returns the ops
+	// that put it there. An empty plan means every one of them already had it.
+	//
+	// It sits on the interface rather than behind a type assertion so that a
+	// channel which cannot serve it has to say so, and a fourth channel is told
+	// by the compiler that this is a question it must answer.
+	Link(r state.Receipt, add []target.Target) (plan.Plan, error)
+
 	// Agents names the agents a receipt is live in, for list. A channel that
 	// symlinks reads the receipt's links; one whose agent installs for itself
 	// answers from the config.

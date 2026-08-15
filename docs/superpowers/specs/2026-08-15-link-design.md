@@ -125,6 +125,13 @@ where claude already has it must be distinguishable from having linked nothing,
 and the work stands, so it is a `note:` rather than an `error:`. Nothing done
 and the reasons on screen is 1, which is the same shape `adopt` settled on.
 
+An agent counts as skipped only when the user named it. Every receipt has at
+least one link, so an agent that already has the skill is the ordinary content
+of the default set rather than a request that could not be met — counting those
+would make the bare `link <name>` exit 2 every time anybody ran it, which is the
+same permanent-code-2 trap the dot-entry rule avoids in `adopt`. So `-a claude`
+against an agent that has it is a partial result, and no `-a` at all is not.
+
 A `--dry-run` prints the plan and the skipped lines and carries the same code
 the real run would, as `install --dry-run` already does. The dry run is exact
 because it is the same pass, not a different branch.

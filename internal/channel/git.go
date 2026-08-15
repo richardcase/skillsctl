@@ -180,9 +180,9 @@ func (c *Git) Install(req Request, chosen []Candidate) (plan.Plan, []state.Recei
 		}
 
 		for _, t := range req.Targets {
-			linkPath := filepath.Join(t.Dir, s.Name)
-			if filepath.Dir(linkPath) != filepath.Clean(t.Dir) {
-				return p, nil, fmt.Errorf("refusing to install %q: it would resolve outside %s", s.Name, t.Dir)
+			linkPath, err := linkPathFor(t, s.Name)
+			if err != nil {
+				return p, nil, err
 			}
 			p.Add(plan.Link{Target: t.Name, LinkPath: linkPath, RevPath: s.Path})
 			receipt.Links = append(receipt.Links, state.Link{Target: t.Name, Path: linkPath})

@@ -47,6 +47,10 @@ exact.
   directory you are working in, linked rather than copied, so every edit is live
   in every agent immediately. `remove` takes away the symlinks and never the
   directory.
+- **Reach an agent you installed something before you had.**
+  `skillsctl link avoid-ai-writing -a gemini` adds a link to the revision that
+  skill is already on, without fetching anything or disturbing a pin. It is the
+  exact inverse of `remove -a`.
 - **Takes over what is already there.** `skillsctl adopt` records the skills
   already sitting in each agent's skills directory, so hand-made symlinks stop
   being invisible. One that leads into a clean git checkout is recorded with the
@@ -92,6 +96,7 @@ skillsctl install owner/repo --dry-run             # show what would change
 skillsctl install superpowers@claude-plugins-official  # a Claude Code plugin
 skillsctl link ./my-skill                          # a skill you are writing
 skillsctl install ./my-skill                       # the same thing
+skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
 skillsctl outdated                                 # what has moved upstream
@@ -222,6 +227,7 @@ Locations can be overridden with environment variables:
 | --- | --- | --- |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
+| `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
 | `list` | `--json` | Show installed skills, versions and agents |
@@ -234,6 +240,15 @@ Locations can be overridden with environment variables:
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
 the receipt; removing the last link forgets it. A plugin has no links to keep,
 so removing it uninstalls it through `claude` and forgets the receipt outright.
+
+`link <name> -a <agent>` is its inverse, for the agent that was not on the
+machine when something was installed: it adds a link to the revision the receipt
+already has, without fetching anything. Which of the two forms you meant is
+decided by looking the argument up in the receipts, so an installed name takes
+the first and everything else takes the path. Naming an agent that already has
+the skill links the rest and says so, exiting 2; naming only agents that already
+have it does nothing and exits 1. A plugin is refused, because its skills are
+the agent's own and there is no symlink to add.
 
 `--skill`, `--all`, `--ref` and `--pin` mean nothing for a plugin — it is
 installed whole, at whichever version its marketplace publishes — and are
@@ -293,10 +308,10 @@ without it through `-a` is an error rather than a silent no-op.
 ## Status
 
 All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
-`local` (`./path`). `bundle`, `sync` and `doctor` are designed but not built,
-and `link` currently takes a path — linking an already-installed skill into
-another agent is not built yet, which is also why `adopt` reports a hand-made
-link whose name is already managed rather than adding it as a second link.
+`local` (`./path`), and `link` serves both of its forms. `bundle`, `sync` and
+`doctor` are designed but not built. `adopt` still reports a hand-made link
+whose name is already managed rather than adding it as a second link;
+`skillsctl link <name> -a <agent>` is how to add it by hand.
 
 Two things the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `n/a`, and a plugin's skills are not fanned out to agents other than
