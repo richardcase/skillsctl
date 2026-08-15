@@ -552,6 +552,35 @@ func TestScanRecognisesAManagedSkillBeforeJudgingWhereItPoints(t *testing.T) {
 	}
 }
 
+// A plugin's link is named after the skill and its receipt is named after the
+// plugin, so a lookup by name misses it. What follows is worse than a miss: the
+// link resolves to a real directory holding a SKILL.md that is not in the store,
+// and a plugin's cache directory is a git checkout, so promote would offer to
+// adopt skillsctl's own link as a new git skill.
+func TestScanTreatsAFannedOutPluginLinkAsManaged(t *testing.T) {
+	f := newFixture(t)
+	dest := f.skill("brainstorming")
+	f.link("brainstorming", dest)
+
+	db := &state.DB{Receipts: map[string]*state.Receipt{
+		"superpowers": {
+			Name:    "superpowers",
+			Channel: "plugin",
+			Source:  "superpowers@claude-plugins-official",
+			Links:   []state.Link{{Target: "claude", Path: filepath.Join(f.skills, "brainstorming")}},
+		},
+	}}
+
+	rep := f.scan(db)
+
+	if got := only(t, rep).Class; got != ClassManaged {
+		t.Errorf("Class = %q, want ClassManaged: a link a receipt records is ours, whatever it is named", got)
+	}
+	if len(rep.Adoptions()) != 0 {
+		t.Error("offered skillsctl's own link for adoption")
+	}
+}
+
 func TestScanIgnoresTheAgentsOwnDotDirectories(t *testing.T) {
 	f := newFixture(t)
 	// codex keeps one of these in its skills directory.

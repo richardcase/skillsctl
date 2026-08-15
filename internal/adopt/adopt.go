@@ -169,10 +169,16 @@ func classify(ctx context.Context, t target.Target, name string, db *state.DB, g
 		return skip(e, fmt.Sprintf("%s is not a directory", dest))
 	}
 
-	// Whether a receipt claims this name is asked before anything else about
-	// the link, because it is the stronger fact: every skill skillsctl
-	// installed itself points into the store, and a managed one must not be
-	// mistaken for the orphan below.
+	// A link is identified by the path it sits at, not by the name of the
+	// directory it sits in. One receipt can hold many links under many names —
+	// a plugin puts one per skill it ships into each agent — so the question is
+	// whether any receipt records this exact path. Asking whether one is named
+	// after it is only the common case of that, and asking it first would let a
+	// fanned-out plugin link fall through to the git and local checks below and
+	// be offered back to the user as something new.
+	if r, ok := claiming(db, e.Path); ok {
+		return managed(e, r)
+	}
 	if r, ok := db.Receipts[name]; ok {
 		return managed(e, r)
 	}
@@ -284,9 +290,10 @@ func managed(e Entry, r *state.Receipt) Entry {
 		return skip(e, fmt.Sprintf("a receipt for %q already exists", e.Name))
 	}
 
-	// Links is a set keyed by target: Remove builds its drop filter from the
-	// target name and Unlink treats a missing link as success, so a second link
-	// for one agent would plan two unlinks of one path and swallow the second.
+	// Links is a set keyed by the path a link sits at: Unlink treats a missing
+	// link as success, so two entries naming one path would plan two unlinks of
+	// it and swallow the second. A receipt this entry reached by name has one
+	// link per agent, so a target already there is that same collision.
 	for _, l := range r.Links {
 		if l.Target == e.Target {
 			return skip(e, fmt.Sprintf("%s is already managed for %s, at %s", e.Name, e.Target, l.Path))
@@ -300,6 +307,22 @@ func managed(e Entry, r *state.Receipt) Entry {
 
 	e.Class = ClassLink
 	return e
+}
+
+// claiming finds the receipt that records a link at this path.
+//
+// It scans rather than consulting an index: the receipts are a map held in
+// memory and a skills directory has tens of entries, so the cost is not worth a
+// second structure that could disagree with the first.
+func claiming(db *state.DB, path string) (*state.Receipt, bool) {
+	for _, r := range db.Receipts {
+		for _, l := range r.Links {
+			if l.Path == path {
+				return r, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func agents(r *state.Receipt) string {
