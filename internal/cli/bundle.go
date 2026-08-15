@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/richardcase/skillsctl/internal/manifest"
@@ -44,8 +43,8 @@ func newBundleCmd() *cobra.Command {
 			}
 
 			if len(excluded) > 0 {
-				cmd.PrintErr(fmt.Sprintf("warning: %s left out of the manifest: %s",
-					count(len(excluded), "local skill"), strings.Join(excluded, ", ")))
+				cmd.PrintErrf("warning: %s left out of the manifest: %s\n",
+					count(len(excluded), "local skill"), strings.Join(excluded, ", "))
 			}
 			return nil
 		},
