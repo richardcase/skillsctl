@@ -482,7 +482,11 @@ agents = ['claude']
   which is what an omitted `-a` means to `install`. Name them only for a
   narrower choice.
 - `subpath` locates a skill inside a repository holding several. You can write
-  it in the source instead, as `owner/repo//skills/alpha`.
+  it in the source instead, as `owner/repo//skills/alpha`. `sync` compares an
+  entry's subpath against what the receipt it installed actually recorded, so
+  a hand-written entry that omits `subpath` for a skill that lives at one
+  reports a difference rather than syncing — install once and `bundle` to get
+  the subpath right, rather than guessing at it by hand.
 - `local` skills — a directory you linked with `skillsctl link ./path` — are
   left out of a bundle and named on stderr, because an absolute path on one
   machine means nothing on another.
