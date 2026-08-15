@@ -27,6 +27,7 @@ func NewRootCmd() *cobra.Command {
 		newOutdatedCmd(),
 		newPinCmd(),
 		newRemoveCmd(),
+		newSyncCmd(),
 		newUnpinCmd(),
 		newUpdateCmd(),
 		newVersionCmd(),
