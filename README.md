@@ -54,7 +54,8 @@ exact.
 - **Takes over what is already there.** `skillsctl adopt` records the skills
   already sitting in each agent's skills directory, so hand-made symlinks stop
   being invisible. One that leads into a clean git checkout is recorded with the
-  sha it is at, pinned. Nothing is moved, copied or deleted.
+  sha it is at, pinned; one into a second agent for a skill already managed is
+  added to its receipt. Nothing is moved, copied or deleted.
 - **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
   installs through `claude plugin` and records a receipt, so a plugin shows up in
   `list` and comes out with `remove` alongside everything else. A plugin Claude
@@ -206,6 +207,13 @@ than adopted: there is no symlink to record as the removal contract, and adopt
 moves nothing. Nor does it touch anything already managed, anything dangling, or
 anything without a `SKILL.md` — it says what it found and why.
 
+A hand-made link into a second agent, for a skill that is already managed, is
+added to the receipt that manages it — the same amendment
+`skillsctl link <name> -a <agent>` makes, found after the fact. It has to point
+where that receipt already says its files are, since a receipt is what `update`
+re-points and `remove` deletes; one that leads somewhere else is reported
+instead.
+
 A plugin is the second exception, because Claude Code owns it. `skillsctl` records the
 `plugin@marketplace` id, the version and the install path claude reported, and
 nothing else: there is no revision in the store, no content hash and no symlink,
@@ -309,9 +317,7 @@ without it through `-a` is an error rather than a silent no-op.
 
 All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
 `local` (`./path`), and `link` serves both of its forms. `bundle`, `sync` and
-`doctor` are designed but not built. `adopt` still reports a hand-made link
-whose name is already managed rather than adding it as a second link;
-`skillsctl link <name> -a <agent>` is how to add it by hand.
+`doctor` are designed but not built.
 
 Two things the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `n/a`, and a plugin's skills are not fanned out to agents other than

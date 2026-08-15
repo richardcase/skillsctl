@@ -72,8 +72,8 @@ func runAdopt(cmd *cobra.Command, agents []string, dryRun, asJSON bool) error {
 		return err
 	}
 
-	adoptions := rep.Adoptions()
-	p, err := adoptPlan(e.store, adoptions)
+	adoptions, additions := rep.Adoptions(), rep.Additions()
+	p, err := adoptPlan(e.store, h.DB, adoptions, additions)
 	if err != nil {
 		return err
 	}
@@ -88,18 +88,20 @@ func runAdopt(cmd *cobra.Command, agents []string, dryRun, asJSON bool) error {
 		}
 	}
 
-	if err := reportAdopt(cmd, rep, adoptions, p, dryRun, asJSON); err != nil {
+	if err := reportAdopt(cmd, rep, adoptions, additions, p, dryRun, asJSON); err != nil {
 		return err
 	}
-	return adoptErr(rep, adoptions)
+	return adoptErr(rep, adoptions, additions)
 }
 
-// adoptPlan turns each adoption into the one op it needs.
+// adoptPlan turns each adoption into the one op it needs, and each addition
+// into an amended copy of the receipt it belongs to.
 //
-// There is no Link op and there never can be: the symlink is already on disk
-// and already points where the receipt says. That is what makes it impossible
-// for adopt to plan something destructive, rather than merely unlikely to.
-func adoptPlan(st *store.Store, adoptions []adopt.Adoption) (plan.Plan, error) {
+// There is no Link op and there never can be: every symlink involved is already
+// on disk and already points where its receipt says. That is what makes it
+// impossible for adopt to plan something destructive, rather than merely
+// unlikely to — an addition is held to the same standard as an adoption.
+func adoptPlan(st *store.Store, db *state.DB, adoptions []adopt.Adoption, additions []adopt.Addition) (plan.Plan, error) {
 	var p plan.Plan
 	now := time.Now().UTC()
 
@@ -118,12 +120,27 @@ func adoptPlan(st *store.Store, adoptions []adopt.Adoption) (plan.Plan, error) {
 		}
 		p.Add(plan.Record{Receipt: r})
 	}
+
+	for _, a := range additions {
+		existing, ok := db.Receipts[a.Name]
+		if !ok {
+			return plan.Plan{}, fmt.Errorf("adopt %s: a link was classified against a receipt that is not there", a.Name)
+		}
+
+		// Links shares its backing array with the receipt in the DB, and the
+		// executor is what decides whether any of this is written.
+		updated := *existing
+		updated.Links = make([]state.Link, 0, len(existing.Links)+len(a.Links))
+		updated.Links = append(append(updated.Links, existing.Links...), a.Links...)
+		updated.UpdatedAt = now
+		p.Add(plan.Record{Receipt: updated})
+	}
 	return p, nil
 }
 
 // reportAdopt writes the whole report to stdout, since cmd.Print resolves to
 // stderr and `adopt --json` has to be capturable.
-func reportAdopt(cmd *cobra.Command, rep adopt.Report, adoptions []adopt.Adoption, p plan.Plan, dryRun, asJSON bool) error {
+func reportAdopt(cmd *cobra.Command, rep adopt.Report, adoptions []adopt.Adoption, additions []adopt.Addition, p plan.Plan, dryRun, asJSON bool) error {
 	out := cmd.OutOrStdout()
 
 	if asJSON {
@@ -144,19 +161,28 @@ func reportAdopt(cmd *cobra.Command, rep adopt.Report, adoptions []adopt.Adoptio
 				return err
 			}
 		}
-	} else if len(adoptions) > 0 {
-		w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS\tSOURCE")
-		for _, a := range adoptions {
-			version, src := "-", a.Dest
-			if a.Repo != nil {
-				version = shortSha(a.Repo.SHA) + " (pinned)"
-				src = a.Repo.Repo.RepoURL
+	} else {
+		if len(adoptions) > 0 {
+			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS\tSOURCE")
+			for _, a := range adoptions {
+				version, src := "-", a.Dest
+				if a.Repo != nil {
+					version = shortSha(a.Repo.SHA) + " (pinned)"
+					src = a.Repo.Repo.RepoURL
+				}
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", a.Name, a.Class, version, linkAgents(a), src)
 			}
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", a.Name, a.Class, version, linkAgents(a), src)
+			if err := w.Flush(); err != nil {
+				return err
+			}
 		}
-		if err := w.Flush(); err != nil {
-			return err
+		// An addition amends a receipt the table has already described, so it
+		// reports as the one thing that changed: where the skill now reaches.
+		for _, a := range additions {
+			if _, err := fmt.Fprintf(out, "linked %s into %s\n", a.Name, additionAgents(a)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -166,17 +192,20 @@ func reportAdopt(cmd *cobra.Command, rep adopt.Report, adoptions []adopt.Adoptio
 		}
 	}
 
-	_, err := fmt.Fprintln(out, adoptSummary(rep, adoptions, dryRun))
+	_, err := fmt.Fprintln(out, adoptSummary(rep, adoptions, additions, dryRun))
 	return err
 }
 
-func adoptSummary(rep adopt.Report, adoptions []adopt.Adoption, dryRun bool) string {
+func adoptSummary(rep adopt.Report, adoptions []adopt.Adoption, additions []adopt.Addition, dryRun bool) string {
 	verb := "adopted"
 	if dryRun {
 		verb = "would adopt"
 	}
 
 	summary := fmt.Sprintf("%s %s", verb, plural(len(adoptions), "skill"))
+	if n := len(additions); n > 0 {
+		summary += fmt.Sprintf(", linked %s into another agent", plural(n, "skill"))
+	}
 	if n := rep.Managed(); n > 0 {
 		summary += fmt.Sprintf(", %d already managed", n)
 	}
@@ -194,6 +223,14 @@ func linkAgents(a adopt.Adoption) string {
 	return strings.Join(names, ",")
 }
 
+func additionAgents(a adopt.Addition) string {
+	names := make([]string, 0, len(a.Links))
+	for _, l := range a.Links {
+		names = append(names, l.Target)
+	}
+	return strings.Join(names, ",")
+}
+
 func entries(n int) string {
 	if n == 1 {
 		return "1 entry"
@@ -203,12 +240,14 @@ func entries(n int) string {
 
 // adoptErr sets the exit code once the report has been printed: the reasons are
 // already on screen, so this only has to say how much of the job was done.
-func adoptErr(rep adopt.Report, adoptions []adopt.Adoption) error {
+func adoptErr(rep adopt.Report, adoptions []adopt.Adoption, additions []adopt.Addition) error {
 	skipped := len(rep.Skipped())
 	if skipped == 0 {
 		return nil
 	}
-	if len(adoptions) == 0 {
+	// A link added to an existing receipt is work done, the same as a receipt
+	// written: something on this machine is managed now that was not before.
+	if len(adoptions)+len(additions) == 0 {
 		return fmt.Errorf("nothing could be adopted: %s skipped, for the reasons above", entries(skipped))
 	}
 	return partialf("%s skipped", entries(skipped))

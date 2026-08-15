@@ -377,3 +377,104 @@ func TestAdoptLeavesAnInstalledSkillAlone(t *testing.T) {
 		t.Errorf("adopt rewrote an installed skill's receipt: %v -> %v", before, after)
 	}
 }
+
+// A hand-made symlink into a second agent, pointing at the revision the receipt
+// is already on, is the link `skillsctl link <name> -a <agent>` would have
+// written. adopt records it rather than reporting it as unadoptable.
+func TestAdoptAddsAHandMadeSecondLinkToAManagedSkill(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+	if out, err := h.run(t, "install", url, "-a", "claude"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	rev, err := os.Readlink(filepath.Join(h.claude, "demo-skill"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := handLink(t, h.codex, "demo-skill", rev)
+
+	code, out := exitCode(t, "adopt")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitOK, out)
+	}
+	if !strings.Contains(out, "linked demo-skill into codex") {
+		t.Errorf("output = %q, want it to name the link it added", out)
+	}
+
+	links, _ := h.receipts(t)["demo-skill"]["links"].([]any)
+	if len(links) != 2 {
+		t.Fatalf("links = %v, want claude's and the hand-made codex one", links)
+	}
+	got, _ := links[1].(map[string]any)
+	if got["target"] != "codex" || got["path"] != link {
+		t.Errorf("added link = %v, want %s in codex", got, link)
+	}
+
+	// The symlink is recorded, not remade: adopt still plans nothing but Records.
+	if dest, rerr := os.Readlink(link); rerr != nil || dest != rev {
+		t.Errorf("readlink = %q, %v; want %s untouched", dest, rerr, rev)
+	}
+
+	// And it is now a link like any other, so remove -a takes it away.
+	if out, rerr := h.run(t, "remove", "demo-skill", "-a", "codex"); rerr != nil {
+		t.Fatalf("remove: %v\n%s", rerr, out)
+	}
+	if _, serr := os.Lstat(link); !os.IsNotExist(serr) {
+		t.Errorf("codex link still there (%v), want the adopted link removable", serr)
+	}
+}
+
+// A receipt says where its links point, so a symlink that leads somewhere else
+// is not one of its links however much the name matches.
+func TestAdoptSkipsASecondLinkPointingSomewhereElse(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+	if out, err := h.run(t, "install", url, "-a", "claude"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	handLink(t, h.codex, "demo-skill", localDir(t, nil))
+
+	code, out := exitCode(t, "adopt")
+	if code != ExitError {
+		t.Fatalf("exit = %d, want %d\n%s", code, ExitError, out)
+	}
+	if !strings.Contains(out, "skipped demo-skill") {
+		t.Errorf("output = %q, want the entry reported as skipped", out)
+	}
+
+	links, _ := h.receipts(t)["demo-skill"]["links"].([]any)
+	if len(links) != 1 {
+		t.Errorf("links = %v, want the receipt left with claude's alone", links)
+	}
+}
+
+// The classifier and the plan agree: a dry run that would add a link records
+// nothing, and the ops it prints are Records and nothing else.
+func TestAdoptDryRunDoesNotAddASecondLink(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+	if out, err := h.run(t, "install", url, "-a", "claude"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	rev, err := os.Readlink(filepath.Join(h.claude, "demo-skill"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handLink(t, h.codex, "demo-skill", rev)
+
+	out, err := h.run(t, "adopt", "--dry-run")
+	if err != nil {
+		t.Fatalf("adopt --dry-run: %v\n%s", err, out)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.HasPrefix(line, "link ") || strings.HasPrefix(line, "unlink") {
+			t.Errorf("planned %q, want adopt to plan nothing but records", line)
+		}
+	}
+
+	links, _ := h.receipts(t)["demo-skill"]["links"].([]any)
+	if len(links) != 1 {
+		t.Errorf("links = %v, want the receipt untouched by a dry run", links)
+	}
+}

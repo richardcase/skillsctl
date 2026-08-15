@@ -168,12 +168,14 @@ destination it already points at equals that receipt's `RevPath`. A mismatch
 keeps today's skip, now with both destinations in the reason, and so does a
 target the receipt already records under a different path.
 
-Additions group by name beside `Adoptions()`, so one skill hand-linked into two
-agents is one addition carrying two links rather than two that would overwrite
-each other — the same reason `Adoptions` groups. There is no interaction with
-the name-collision logic: once a receipt claims a name, every entry under that
-name goes through the managed path, so an addition and an adoption can never be
-proposed for the same name.
+`Report.Additions()` groups by name beside `Adoptions()`, returning
+`Addition{Name, Links}`, so one skill hand-linked into two agents is one
+addition carrying two links rather than two that would overwrite each other —
+the same reason `Adoptions` groups. There is no interaction with the
+name-collision logic: once a receipt claims a name, every entry under that name
+goes through the managed path, so an addition and an adoption can never be
+proposed for the same name, and `Additions` needs no `conflicted` check because
+every entry in a group points at the same `RevPath` by construction.
 
 The plan stays `Record` alone. The symlink is already on disk and already points
 where the receipt will say, so there is nothing to link — the property that
