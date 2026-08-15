@@ -233,6 +233,12 @@ back to `runtime/debug.ReadBuildInfo()` (module version + VCS stamp) so
 - `adopt` scans each target's skills dir, follows symlinks, records anything
   unmanaged as `local` (listed, never auto-updated), and promotes entries with a
   detectable git remote to the `git` channel.
+- `bundle` writes the `skills.toml` schema to stdout from the current receipts,
+  leaving out `local` skills, whose source is a path that means nothing on
+  another machine. `sync` installs what the manifest names and this machine
+  lacks, adds the agent links an entry names, and reports everything else —
+  a difference, or a skill absent from the manifest — rather than converging on
+  it. See [the bundle and sync design](2026-08-15-bundle-and-sync-design.md).
 - `doctor` reports dangling symlinks, receipts whose links are missing, rev dirs
   with no receipt, and name collisions across targets.
 - `gc` deletes rev dirs and bare mirrors that no receipt references.
