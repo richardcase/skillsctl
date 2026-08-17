@@ -226,11 +226,15 @@ func parseURL(raw string) (Source, error) {
 func parseOCI(raw string) (Source, error) {
 	s := Source{Raw: raw, Channel: ChannelOCI}
 
+	// The tag separator is the last colon, not the first: a registry host may
+	// itself carry a port (127.0.0.1:5000), and only the final colon is ever
+	// the tag's.
 	rest := strings.TrimPrefix(raw, "oci://")
-	repoPart, tag, ok := strings.Cut(rest, ":")
-	if !ok || tag == "" {
+	i := strings.LastIndex(rest, ":")
+	if i < 0 || i == len(rest)-1 {
 		return s, fmt.Errorf("oci source %q has no :tag", raw)
 	}
+	repoPart, tag := rest[:i], rest[i+1:]
 
 	parts := strings.SplitN(repoPart, "/", 2)
 	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {

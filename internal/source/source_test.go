@@ -348,6 +348,25 @@ func TestParseOCIReference(t *testing.T) {
 	}
 }
 
+// A registry host may itself carry a port, as the in-process test registry's
+// 127.0.0.1:PORT does. The tag separator must be the last colon in the
+// reference, not the first, or a host:port registry is unparseable.
+func TestParseOCIReferenceWithARegistryPort(t *testing.T) {
+	s, err := Parse("oci://127.0.0.1:5000/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Registry != "127.0.0.1:5000" {
+		t.Errorf("Registry = %q, want 127.0.0.1:5000", s.Registry)
+	}
+	if s.Repository != "skills" {
+		t.Errorf("Repository = %q, want skills", s.Repository)
+	}
+	if s.Tag != "v1" {
+		t.Errorf("Tag = %q, want v1", s.Tag)
+	}
+}
+
 func TestParseOCIReferenceRequiresATag(t *testing.T) {
 	if _, err := Parse("oci://ghcr.io/richardcase/skills"); err == nil {
 		t.Fatal("expected an error for an OCI reference with no tag")
