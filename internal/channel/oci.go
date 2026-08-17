@@ -31,8 +31,16 @@ func NewOCI(st *store.Store, o ocix.OCI) *OCI { return &OCI{store: st, oci: o} }
 // Ownership reports that the store holds the files and the links undo them.
 func (c *OCI) Ownership() Ownership { return StoreOwned }
 
-func ociRef(src source.Source, tag string) string {
-	return fmt.Sprintf("%s/%s:%s", src.Registry, src.Repository, tag)
+// ociSourceOf re-reads the source a receipt was installed from. A receipt
+// records the oci:// form precisely so this round trip exists: the bare
+// registry/repository:tag a registry client wants is derived from it, never the
+// other way about.
+func ociSourceOf(r *state.Receipt) (source.Source, error) {
+	src, err := source.Parse(r.Source)
+	if err != nil {
+		return source.Source{}, fmt.Errorf("this receipt records %q, which cannot be parsed as an oci source: %w", r.Source, err)
+	}
+	return src, nil
 }
 
 // Prepare resolves the tag to a digest, extracts the revision, and narrows
@@ -40,11 +48,7 @@ func ociRef(src source.Source, tag string) string {
 func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 	src := req.Source
 
-	tag := req.Ref
-	if tag == "" {
-		tag = src.Tag
-	}
-	ref := ociRef(src, tag)
+	ref := src.OCIRef(req.Ref)
 
 	digest, err := c.oci.Resolve(ctx, ref)
 	if err != nil {
@@ -55,13 +59,20 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 	if err != nil {
 		return nil, err
 	}
+	// An artifact holds a tree of skills exactly as a repository does, so a
+	// subpath narrows it the same way — which is also what lets a manifest
+	// name one skill out of an artifact that ships several.
+	revPath, err := store.Join(revRoot, src.Subpath)
+	if err != nil {
+		return nil, fmt.Errorf("refusing to install: %w", err)
+	}
 
-	found, err := discover.Walk(revRoot)
+	found, err := discover.Walk(revPath)
 	if err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {
-		return nil, fmt.Errorf("%s: %w", revRoot, discover.ErrNoSkill)
+		return nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
 	}
 
 	available, err := resolveNames(found, src.DefaultName())
@@ -73,8 +84,8 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 	if err != nil {
 		var amb *Ambiguous
 		if errors.As(err, &amb) {
-			amb.Header = fmt.Sprintf("skills in %s:", ref)
-			amb.Meta = discover.PluginMeta(revRoot)
+			amb.Header = fmt.Sprintf("skills in %s:", src.OCISource(req.Ref))
+			amb.Meta = discover.PluginMeta(revPath)
 			amb.Available = brief(available)
 			amb.Resolved = digest
 		}
@@ -120,13 +131,16 @@ func (c *OCI) Install(req Request, chosen []Candidate) (plan.Plan, []state.Recei
 	if tag == "" {
 		tag = req.Source.Tag
 	}
-	ref := ociRef(req.Source, tag)
+	// The receipt records the oci:// form, not the bare ref a registry client
+	// takes: it is the string source.Parse round-trips, which is what lets
+	// bundle write it into a manifest and sync install from it.
+	src := req.Source.OCISource(tag)
 
 	for _, s := range chosen {
 		receipt := state.Receipt{
 			Name:        s.Name,
 			Channel:     string(source.ChannelOCI),
-			Source:      ref,
+			Source:      src,
 			Slug:        req.Source.Slug(),
 			Subpath:     s.Subpath,
 			Resolved:    s.Version,
@@ -171,10 +185,19 @@ func (c *OCI) Update(ctx context.Context, rs []*state.Receipt, o UpdateOptions) 
 			continue
 		}
 
-		got, ok := seen[r.Source]
+		// The tag to resolve against is the one the receipt tracks, which unpin
+		// --ref can have moved away from the tag its source was installed at.
+		src, err := ociSourceOf(r)
+		if err != nil {
+			verdicts = append(verdicts, fail(v, err))
+			continue
+		}
+		ref := src.OCIRef(r.Ref)
+
+		got, ok := seen[ref]
 		if !ok {
-			got.sha, got.err = c.oci.Resolve(ctx, r.Source)
-			seen[r.Source] = got
+			got.sha, got.err = c.oci.Resolve(ctx, ref)
+			seen[ref] = got
 		}
 		if got.err != nil {
 			verdicts = append(verdicts, fail(v, got.err))
@@ -200,7 +223,7 @@ func (c *OCI) Update(ctx context.Context, rs []*state.Receipt, o UpdateOptions) 
 		}
 		v.Note = note
 
-		ops, receipt, err := c.relink(ctx, r, got.sha, now)
+		ops, receipt, err := c.relink(ctx, r, src, ref, got.sha, now)
 		if err != nil {
 			verdicts = append(verdicts, fail(v, err))
 			continue
@@ -221,17 +244,13 @@ func (c *OCI) Settle(context.Context, []state.Receipt) ([]state.Receipt, error) 
 	return nil, nil
 }
 
-func (c *OCI) relink(ctx context.Context, r *state.Receipt, digest string, now time.Time) ([]plan.Op, state.Receipt, error) {
+func (c *OCI) relink(ctx context.Context, r *state.Receipt, src source.Source, ref, digest string, now time.Time) ([]plan.Op, state.Receipt, error) {
 	slug := r.Slug
 	if slug == "" {
-		src, err := source.Parse(r.Source)
-		if err != nil {
-			return nil, state.Receipt{}, fmt.Errorf("this receipt records no store location and %q cannot be parsed: %w", r.Source, err)
-		}
 		slug = src.Slug()
 	}
 
-	revRoot, err := c.store.EnsureOCI(ctx, c.oci, slug, r.Source, digest)
+	revRoot, err := c.store.EnsureOCI(ctx, c.oci, slug, ref, digest)
 	if err != nil {
 		return nil, state.Receipt{}, err
 	}

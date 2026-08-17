@@ -14,14 +14,21 @@ import (
 )
 
 // fakeOCI is a fixed single-skill image at one digest, with a call counter
-// so a test can assert Resolve is cheap.
+// so a test can assert Resolve is cheap. byRef answers per reference, for the
+// tests about which reference was asked for; asked records them all.
 type fakeOCI struct {
 	digest      string
+	byRef       map[string]string
+	asked       []string
 	resolveHits int
 }
 
-func (f *fakeOCI) Resolve(context.Context, string) (string, error) {
+func (f *fakeOCI) Resolve(_ context.Context, ref string) (string, error) {
 	f.resolveHits++
+	f.asked = append(f.asked, ref)
+	if d, ok := f.byRef[ref]; ok {
+		return d, nil
+	}
 	return f.digest, nil
 }
 
@@ -87,6 +94,19 @@ func TestOCIInstallRecordsAReceiptTrackingTheTag(t *testing.T) {
 	if r.Resolved != "sha256:aaa" {
 		t.Errorf("Resolved = %q, want the digest", r.Resolved)
 	}
+	// The scheme is the whole point: a bare registry/repo:tag parses back as
+	// the owner/repo git shorthand, so bundle would write a manifest sync
+	// installs from github.
+	if r.Source != "oci://ghcr.io/owner/skills:v1" {
+		t.Errorf("Source = %q, want the oci:// form the user typed", r.Source)
+	}
+	back, err := source.Parse(r.Source)
+	if err != nil {
+		t.Fatalf("a receipt's Source must round-trip through Parse: %v", err)
+	}
+	if back.Channel != source.ChannelOCI {
+		t.Errorf("Source %q parses back as the %s channel", r.Source, back.Channel)
+	}
 }
 
 func TestOCIUpdateRelinksWhenTheDigestMoved(t *testing.T) {
@@ -95,7 +115,7 @@ func TestOCIUpdateRelinksWhenTheDigestMoved(t *testing.T) {
 	c := NewOCI(st, o)
 
 	r := &state.Receipt{
-		Name: "alpha", Channel: "oci", Source: "ghcr.io/owner/skills:v1",
+		Name: "alpha", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1",
 		Slug: "oci/ghcr.io/owner/skills", Ref: "v1", Resolved: "sha256:old",
 		Subpath: "alpha",
 		RevPath: filepath.Join(t.TempDir(), "gone"),
@@ -110,6 +130,36 @@ func TestOCIUpdateRelinksWhenTheDigestMoved(t *testing.T) {
 	}
 	if p.IsEmpty() {
 		t.Error("expected a non-empty plan for a moved digest")
+	}
+}
+
+func TestOCIUpdateResolvesTheTagTheReceiptTracks(t *testing.T) {
+	// unpin --ref moves the tag a receipt follows, and the tag baked into its
+	// source is not that tag. Reading the source's tag instead would silently
+	// ignore the ref the user chose.
+	st := store.New(t.TempDir())
+	o := &fakeOCI{
+		digest: "sha256:wrong",
+		byRef:  map[string]string{"ghcr.io/owner/skills:v2": "sha256:right"},
+	}
+	c := NewOCI(st, o)
+
+	r := &state.Receipt{
+		Name: "alpha", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1",
+		Slug: "oci/ghcr.io/owner/skills", Ref: "v2", Resolved: "sha256:old",
+		Subpath: "alpha",
+		RevPath: filepath.Join(t.TempDir(), "gone"),
+	}
+
+	verdicts, _, err := c.Update(context.Background(), []*state.Receipt{r}, UpdateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(o.asked) != 1 || o.asked[0] != "ghcr.io/owner/skills:v2" {
+		t.Fatalf("resolved %v, want the bare ref at the tracked tag v2", o.asked)
+	}
+	if len(verdicts) != 1 || verdicts[0].Latest != "sha256:right" {
+		t.Errorf("verdicts = %+v, want the digest of v2", verdicts)
 	}
 }
 

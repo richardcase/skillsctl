@@ -112,8 +112,10 @@ func parse(raw string) (Source, error) {
 		return s, err
 	}
 	if subpath != "" {
-		if s.Channel != ChannelGit {
-			return s, fmt.Errorf("source %q: %s names a subpath within a git repository, which the %s channel has no use for",
+		// A git repository and an OCI artifact are both trees a skill sits
+		// somewhere inside; a plugin and a local path are not.
+		if s.Channel != ChannelGit && s.Channel != ChannelOCI {
+			return s, fmt.Errorf("source %q: %s names a subpath within a repository or artifact, which the %s channel has no use for",
 				raw, SubpathSep, s.Channel)
 		}
 		// An explicit subpath is a statement, so it wins over the one the
@@ -246,6 +248,32 @@ func parseOCI(raw string) (Source, error) {
 	s.Tag = tag
 	return s, nil
 }
+
+// OCIScheme prefixes every OCI source string. It is required rather than
+// inferred, so it is also what a receipt must record: without it the bare
+// registry/repository:tag is caught by the owner/repo git shorthand and parses
+// back as a github source.
+const OCIScheme = "oci://"
+
+// BareRef strips the oci:// scheme, yielding the registry/repository:tag form
+// a registry client expects. A registry has never heard of the scheme, so
+// every call into ocix goes through this rather than passing a source string
+// or a receipt's Source straight down.
+func BareRef(ref string) string { return strings.TrimPrefix(ref, OCIScheme) }
+
+// OCIRef renders this source's bare registry/repository:tag reference at tag,
+// or at the tag the source itself names when tag is empty.
+func (s Source) OCIRef(tag string) string {
+	if tag == "" {
+		tag = s.Tag
+	}
+	return fmt.Sprintf("%s/%s:%s", s.Registry, s.Repository, tag)
+}
+
+// OCISource renders the canonical source string a receipt installed from this
+// source at tag records — the same oci:// form the user typed, so bundle can
+// write it into a manifest and sync can parse it back.
+func (s Source) OCISource(tag string) string { return OCIScheme + s.OCIRef(tag) }
 
 func splitOwnerRepo(p string) (owner, repo string) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")

@@ -92,15 +92,23 @@ func Check(ctx context.Context, g gitx.Git, p claudex.Plugins, o ocix.OCI, recei
 			continue
 		}
 
-		// An OCI receipt's Source is already the complete registry/repo:tag
-		// ref, so unlike a git remote it needs no separate ref suffix in the
-		// seen key: two receipts sharing a tag share a key outright.
+		// An OCI receipt's Source already names the tag, so unlike a git remote
+		// it needs no separate ref suffix in the seen key: two receipts sharing
+		// a tag share a key outright. The scheme comes off first — a registry
+		// has never heard of oci://.
 		if r.Channel == string(source.ChannelOCI) {
 			e.Ref = r.Ref
-			got, ok := seen[r.Source]
+			// The tag checked is the one the receipt tracks, which unpin --ref
+			// can have moved; the source's own tag stands in only when the
+			// source will not parse, so a stale receipt still gets an answer.
+			ref := source.BareRef(r.Source)
+			if src, perr := source.Parse(r.Source); perr == nil {
+				ref = src.OCIRef(r.Ref)
+			}
+			got, ok := seen[ref]
 			if !ok {
-				got.sha, got.err = o.Resolve(ctx, r.Source)
-				seen[r.Source] = got
+				got.sha, got.err = o.Resolve(ctx, ref)
+				seen[ref] = got
 			}
 			if got.err != nil {
 				e.Status = StatusError

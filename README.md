@@ -191,9 +191,11 @@ error: "brainstorm" is not installed; did you mean brainstorming?
 
 A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
 (https, ssh or scp-style), a local path, or `oci://registry/repository:tag` for
-a skill packaged with `skillsctl package`. `//` separates a repository from a
-subpath inside it — the only way to name one in a `.git`-suffixed or `git@host:`
-URL, where the repository boundary is otherwise the whole path.
+a skill packaged with `skillsctl package`. `//` separates a repository or an
+artifact from a subpath inside it — the only way to name one in a
+`.git`-suffixed or `git@host:` URL, where the repository boundary is otherwise
+the whole path, and in an `oci://` reference, where the tag ends it:
+`oci://ghcr.io/owner/skills:v1//pdf-forms`.
 
 A repository holding several skills can be narrowed with `--skill <name>`
 (repeatable, matching a skill's name or its path) or `--all`. Without one of

@@ -8,6 +8,7 @@ import (
 	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/plan"
+	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -159,7 +160,7 @@ func pinOne(ctx context.Context, reg channel.Registry, db *state.DB, name string
 	// is what keeps the one network call in this command away from the channels
 	// that have no repository to make it against.
 	if res.Changed && !o.on && o.ref != "" {
-		if _, err := gitx.New().Resolve(ctx, r.Source, o.ref); err != nil {
+		if err := verifyRef(ctx, *r, o.ref); err != nil {
 			en.err = err
 			return en, plan.Plan{}
 		}
@@ -167,6 +168,29 @@ func pinOne(ctx context.Context, reg channel.Registry, db *state.DB, name string
 
 	en.res = res
 	return en, p
+}
+
+// verifyRef checks that the ref an unpin is about to record resolves, against
+// whatever the receipt's channel resolves against. Only the two channels that
+// track a moving ref can be here: Local and Plugin refuse the unpin outright,
+// so their receipts never reach this.
+//
+// The dispatch is on the receipt's channel rather than inside Pin because Pin
+// is a receipt-only mutation with no context and no network — the one call this
+// command makes stays here, where it can be seen.
+func verifyRef(ctx context.Context, r state.Receipt, ref string) error {
+	if r.Channel == string(source.ChannelOCI) {
+		// A registry takes registry/repository:tag; the oci:// scheme the
+		// receipt records means nothing to it.
+		src, err := source.Parse(r.Source)
+		if err != nil {
+			return fmt.Errorf("this receipt records %q, which cannot be parsed as an oci source: %w", r.Source, err)
+		}
+		_, err = newOCI().Resolve(ctx, src.OCIRef(ref))
+		return err
+	}
+	_, err := gitx.New().Resolve(ctx, r.Source, ref)
+	return err
 }
 
 // reportPin writes one line per name. A dry run has already printed the plan,
