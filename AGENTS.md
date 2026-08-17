@@ -127,6 +127,9 @@ else lives in `internal/`, one narrow responsibility per package:
 | `doctor` | Compare the receipts against the filesystem and the store, and report every disagreement with the command that repairs it |
 | `gitx` | The `git` binary behind a `Git` interface: `Resolve`, `Mirror`, `Extract` (+ safe untar) |
 | `claudex` | The `claude` binary behind a `Plugins` interface: `List` plus the argv a `plan.Exec` runs |
+| `ocix` | The OCI registry client behind an `OCI` interface: `Resolve`, `Pull`, `Push` |
+| `pack` | Builds a `.gitignore`-aware, `.git`-excluding tar stream for packaging |
+| `testregistry` | Test-only in-process OCI registry fixture |
 | `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, collection (`Collect`/`Delete`), containment checks, tree hashing |
 | `discover` | Read `SKILL.md` and its YAML frontmatter |
 | `target` | Agent config TOML, defaults, safe `Link`/`Unlink`, `ValidateSkillName` |
@@ -192,14 +195,36 @@ else lives in `internal/`, one narrow responsibility per package:
   side effects through func fields (`plan.Executor.Run`, `buildinfo.get`). Tests
   are in-package, so unexported functions are tested directly. Name tests as
   assertions of behaviour: `TestInstallDryRunChangesNothing`.
-- **Dependencies.** Five direct deps today (cobra, flock, go-toml, yaml.v3,
-  `golang.org/x/term`). Prefer the standard library; adding a dependency is a
+- **Dependencies.** Seven direct deps today (cobra, flock, go-toml, yaml.v3,
+  `golang.org/x/term`, go-containerregistry, go-gitignore). Prefer the standard
+  library; adding a dependency is a
   decision to raise, not one to make silently. `x/term` was raised and taken
   because raw mode and terminal size are termios plus a Windows console API,
   and it is the Go team's own version of the code we would otherwise write —
   and because `x/sys` was already in the module graph, so it added no new
   transitive tree. Note it pins the `go` directive to `1.25.0` rather than
   `1.25`, which is its own go.mod's doing, not churn.
+
+  `github.com/google/go-containerregistry` came in with the OCI channel. It is
+  the de facto standard registry client for Go — `crane` and `ko` are built on
+  it — and it reads Docker's own config file and credential helpers, so
+  skillsctl reimplements no part of `docker login`. That makes it the one
+  deliberate exception to "a binary we shell out to gets a package and an
+  interface": `gitx` and `claudex` wrap a binary, while `ocix` wraps a library
+  that reads the binary's configuration, because there is no registry CLI every
+  user is assumed to have and the pull/push paths are typed rather than
+  argv-shaped. It is by far the largest dependency here, and it is the reason
+  the module graph is no longer small.
+
+  `github.com/sabhiram/go-gitignore` came in with `package`, which honours a
+  `.gitignore` when it tars a directory. It is a single-purpose pattern matcher
+  with no dependencies of its own, chosen over go-git's gitignore subpackage
+  specifically to avoid pulling `go-billy`'s filesystem abstractions into a
+  build that has no other use for them. The honest tradeoff: its pseudo-version
+  is from 2021 and it looks unmaintained. It was taken anyway because the
+  surface used is one function over a stable file format, and the alternative
+  — writing the matcher — is a well-known source of subtle bugs. If it ever
+  needs a fix, vendoring the matcher is a smaller job than the dependency was.
 
 ## Design of record
 

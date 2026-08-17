@@ -3,6 +3,7 @@ package outdated
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/richardcase/skillsctl/internal/claudex"
@@ -45,7 +46,7 @@ func TestCheckReportsAMovedRefAsOutdated(t *testing.T) {
 		{Name: "demo", Channel: "git", Source: "https://example.com/repo", Ref: "main", Resolved: "aaaa"},
 	}
 
-	got := Check(context.Background(), g, nil, receipts)
+	got := Check(context.Background(), g, nil, nil, receipts)
 
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
@@ -67,7 +68,7 @@ func TestCheckReportsAnUnmovedRefAsCurrent(t *testing.T) {
 		{Name: "demo", Channel: "git", Source: "https://example.com/repo", Ref: "main", Resolved: "aaaa"},
 	}
 
-	got := Check(context.Background(), g, nil, receipts)
+	got := Check(context.Background(), g, nil, nil, receipts)
 
 	if got[0].Status != StatusCurrent {
 		t.Errorf("status = %q, want %q", got[0].Status, StatusCurrent)
@@ -80,7 +81,7 @@ func TestCheckSkipsNonGitChannelsWithoutResolving(t *testing.T) {
 		{Name: "mine", Channel: "local", Source: "/home/me/skills/mine"},
 	}
 
-	got := Check(context.Background(), g, nil, receipts)
+	got := Check(context.Background(), g, nil, nil, receipts)
 
 	if len(got) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(got))
@@ -100,7 +101,7 @@ func TestCheckKeepsGoingWhenOneRemoteFails(t *testing.T) {
 		{Name: "fine", Channel: "git", Source: "https://example.com/good", Ref: "main", Resolved: "aaaa"},
 	}
 
-	got := Check(context.Background(), g, nil, receipts)
+	got := Check(context.Background(), g, nil, nil, receipts)
 
 	if len(got) != 2 {
 		t.Fatalf("want 2 entries, got %d", len(got))
@@ -124,7 +125,7 @@ func TestCheckResolvesAPinnedReceiptAgainstTheDefaultBranch(t *testing.T) {
 		{Name: "demo", Channel: "git", Source: "https://example.com/repo", Resolved: "aaaa", Pinned: true},
 	}
 
-	got := Check(context.Background(), g, nil, receipts)
+	got := Check(context.Background(), g, nil, nil, receipts)
 
 	if got[0].Status != StatusOutdated {
 		t.Errorf("status = %q, want %q", got[0].Status, StatusOutdated)
@@ -148,7 +149,7 @@ func TestCheckResolvesEachSourceAndRefOnce(t *testing.T) {
 		{Name: "three", Channel: "git", Source: "https://example.com/repo", Ref: "v1", Resolved: "cccc"},
 	}
 
-	got := Check(context.Background(), g, nil, receipts)
+	got := Check(context.Background(), g, nil, nil, receipts)
 
 	if g.calls != 2 {
 		t.Errorf("resolved %d times, want 2 (one per source+ref)", g.calls)
@@ -193,7 +194,7 @@ func TestCheckReportsAPluginWhoseInstallPathMoved(t *testing.T) {
 		InstallPath: "/cache/superpowers/6.4.0",
 	}}}
 
-	got := Check(context.Background(), nil, p, receipts)
+	got := Check(context.Background(), nil, p, nil, receipts)
 	if len(got) != 1 {
 		t.Fatalf("entries = %v, want one", got)
 	}
@@ -217,7 +218,7 @@ func TestCheckReportsAPluginThatHasNotMovedAsCurrent(t *testing.T) {
 		InstallPath: "/cache/superpowers/6.3.0",
 	}}}
 
-	if got := Check(context.Background(), nil, p, receipts); got[0].Status != StatusCurrent {
+	if got := Check(context.Background(), nil, p, nil, receipts); got[0].Status != StatusCurrent {
 		t.Errorf("status = %q, want %q", got[0].Status, StatusCurrent)
 	}
 }
@@ -226,8 +227,27 @@ func TestCheckDoesNotAskClaudeWhenNoPluginIsInstalled(t *testing.T) {
 	receipts := []*state.Receipt{{Name: "demo", Channel: "local", Source: "/x"}}
 	p := &fakePlugins{}
 
-	Check(context.Background(), nil, p, receipts)
+	Check(context.Background(), nil, p, nil, receipts)
 	if p.calls != 0 {
 		t.Errorf("List was called %d times: outdated must not shell out for a store with no plugins", p.calls)
+	}
+}
+
+type fakeOCI struct{ digest string }
+
+func (f fakeOCI) Resolve(context.Context, string) (string, error) { return f.digest, nil }
+func (f fakeOCI) Pull(context.Context, string, string) error      { return nil }
+func (f fakeOCI) Push(context.Context, string, io.Reader) error   { return nil }
+
+func TestCheckReportsAnOCIReceiptOutdatedWhenTheDigestMoved(t *testing.T) {
+	r := &state.Receipt{Name: "alpha", Channel: "oci", Source: "ghcr.io/owner/skills:v1", Ref: "v1", Resolved: "sha256:old"}
+
+	entries := Check(context.Background(), gitx.New(), &fakePlugins{}, fakeOCI{digest: "sha256:new"}, []*state.Receipt{r})
+
+	if len(entries) != 1 || entries[0].Status != StatusOutdated {
+		t.Fatalf("entries = %+v, want one StatusOutdated", entries)
+	}
+	if entries[0].Latest != "sha256:new" {
+		t.Errorf("Latest = %q, want sha256:new", entries[0].Latest)
 	}
 }

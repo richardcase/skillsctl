@@ -262,6 +262,10 @@ func canonicalSource(src source.Source) string {
 		return src.RepoURL
 	case source.ChannelPlugin:
 		return src.Plugin + "@" + src.Marketplace
+	case source.ChannelOCI:
+		// The tag is part of an OCI source, so the whole oci:// string is the
+		// comparison — which is also exactly what Install records.
+		return src.OCISource("")
 	default:
 		return ""
 	}

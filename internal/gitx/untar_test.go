@@ -120,7 +120,7 @@ func TestUntarRejectsMaliciousEntries(t *testing.T) {
 			}
 
 			data := buildTar(t, tc.entries)
-			if err := untar(bytes.NewReader(data), dest); err == nil {
+			if err := Untar(bytes.NewReader(data), dest); err == nil {
 				t.Fatalf("untar accepted a malicious entry: %+v", tc.entries)
 			}
 
@@ -145,7 +145,7 @@ func TestUntarExtractsWellBehavedEntries(t *testing.T) {
 		{name: "a/link", typeflag: tar.TypeSymlink, linkname: "b.md"},
 	}
 
-	if err := untar(bytes.NewReader(buildTar(t, entries)), dest); err != nil {
+	if err := Untar(bytes.NewReader(buildTar(t, entries)), dest); err != nil {
 		t.Fatalf("untar of well-behaved entries failed: %v", err)
 	}
 

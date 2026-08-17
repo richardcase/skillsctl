@@ -13,6 +13,12 @@ const (
 	slugB = "github.com/o/other"
 	sha1s = "1111111111111111111111111111111111111111"
 	sha2s = "2222222222222222222222222222222222222222"
+
+	// An OCI revision directory is named by the digest Resolve returns, which
+	// carries its algorithm and a colon.
+	slugOCI = "oci/ghcr.io/o/skills"
+	digest1 = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+	digest2 = "sha256:4444444444444444444444444444444444444444444444444444444444444444"
 )
 
 // layout builds a store containing files, keyed by "/" separated paths
@@ -202,6 +208,53 @@ func TestCollectNeverLooksInsideALiveRevision(t *testing.T) {
 		t.Fatalf("Collect: %v", err)
 	}
 	want(t, rep)
+}
+
+func TestCollectNeverLooksInsideALiveOCIRevision(t *testing.T) {
+	// An OCI revision is named by its digest — "sha256:" and then hex — not by
+	// a bare sha. A name prune fails to recognise as an extraction is one it
+	// descends into, which would collect a live skill's own files.
+	s := layout(t, map[string]string{
+		"rev/oci/ghcr.io/o/skills/" + digest1 + "/alpha/SKILL.md": "linked",
+		"rev/oci/ghcr.io/o/skills/" + digest1 + "/beta/SKILL.md":  "not linked",
+		"rev/oci/ghcr.io/o/skills/" + digest1 + "/README.md":      "top level",
+	})
+
+	live := filepath.Join(s.RevPath(slugOCI, digest1), "alpha")
+	rep, err := s.Collect(Live{RevPaths: []string{live}, Slugs: []string{slugOCI}})
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	want(t, rep)
+
+	// The report is the whole contract, but a deletion is what would lose the
+	// files, so this asserts the outcome rather than the intent.
+	if _, err := s.Delete(rep); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	for _, p := range []string{"alpha/SKILL.md", "beta/SKILL.md", "README.md"} {
+		if _, err := os.Stat(filepath.Join(s.RevPath(slugOCI, digest1), filepath.FromSlash(p))); err != nil {
+			t.Errorf("gc removed %s from a live OCI revision: %v", p, err)
+		}
+	}
+}
+
+func TestCollectTakesADeadOCIRevisionWhole(t *testing.T) {
+	s := layout(t, map[string]string{
+		"rev/oci/ghcr.io/o/skills/" + digest1 + "/alpha/SKILL.md": "live",
+		"rev/oci/ghcr.io/o/skills/" + digest2 + "/alpha/SKILL.md": "stale",
+		"rev/oci/ghcr.io/o/skills/" + digest2 + "/README.md":      "stale",
+	})
+
+	rep, err := s.Collect(Live{
+		RevPaths: []string{filepath.Join(s.RevPath(slugOCI, digest1), "alpha")},
+		Slugs:    []string{slugOCI},
+	})
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	// One item for the revision, not one per skill inside it.
+	want(t, rep, "rev/oci/ghcr.io/o/skills/"+digest2)
 }
 
 func TestCollectReportsBytes(t *testing.T) {

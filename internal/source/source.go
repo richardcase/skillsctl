@@ -19,6 +19,8 @@ const (
 	ChannelPlugin Channel = "plugin"
 	// ChannelLocal represents installation from a local filesystem path.
 	ChannelLocal Channel = "local"
+	// ChannelOCI represents installation from an OCI registry.
+	ChannelOCI Channel = "oci"
 )
 
 // Source is a parsed, canonicalised install source.
@@ -35,6 +37,11 @@ type Source struct {
 
 	// Local channel.
 	Path string
+
+	// OCI channel.
+	Registry   string // registry host[:port]
+	Repository string // path within the registry, e.g. "owner/skills"
+	Tag        string
 
 	Raw string
 
@@ -105,8 +112,10 @@ func parse(raw string) (Source, error) {
 		return s, err
 	}
 	if subpath != "" {
-		if s.Channel != ChannelGit {
-			return s, fmt.Errorf("source %q: %s names a subpath within a git repository, which the %s channel has no use for",
+		// A git repository and an OCI artifact are both trees a skill sits
+		// somewhere inside; a plugin and a local path are not.
+		if s.Channel != ChannelGit && s.Channel != ChannelOCI {
+			return s, fmt.Errorf("source %q: %s names a subpath within a repository or artifact, which the %s channel has no use for",
 				raw, SubpathSep, s.Channel)
 		}
 		// An explicit subpath is a statement, so it wins over the one the
@@ -130,6 +139,9 @@ func parseChannel(raw string) (Source, error) {
 		s.Channel = ChannelLocal
 		s.Path = raw
 		return s, nil
+
+	case strings.HasPrefix(raw, "oci://"):
+		return parseOCI(raw)
 
 	case strings.Contains(raw, "://"):
 		return parseURL(raw)
@@ -210,6 +222,59 @@ func parseURL(raw string) (Source, error) {
 	return s, nil
 }
 
+// parseOCI reads an explicit oci://registry/repository:tag reference. The
+// scheme is required rather than inferred from shape, so an OCI source never
+// collides with the owner/repo git shorthand.
+func parseOCI(raw string) (Source, error) {
+	s := Source{Raw: raw, Channel: ChannelOCI}
+
+	// The tag separator is the last colon, not the first: a registry host may
+	// itself carry a port (127.0.0.1:5000), and only the final colon is ever
+	// the tag's.
+	rest := strings.TrimPrefix(raw, "oci://")
+	i := strings.LastIndex(rest, ":")
+	if i < 0 || i == len(rest)-1 {
+		return s, fmt.Errorf("oci source %q has no :tag", raw)
+	}
+	repoPart, tag := rest[:i], rest[i+1:]
+
+	parts := strings.SplitN(repoPart, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return s, fmt.Errorf("oci source %q has no repository path after the registry host", raw)
+	}
+
+	s.Registry = parts[0]
+	s.Repository = parts[1]
+	s.Tag = tag
+	return s, nil
+}
+
+// OCIScheme prefixes every OCI source string. It is required rather than
+// inferred, so it is also what a receipt must record: without it the bare
+// registry/repository:tag is caught by the owner/repo git shorthand and parses
+// back as a github source.
+const OCIScheme = "oci://"
+
+// BareRef strips the oci:// scheme, yielding the registry/repository:tag form
+// a registry client expects. A registry has never heard of the scheme, so
+// every call into ocix goes through this rather than passing a source string
+// or a receipt's Source straight down.
+func BareRef(ref string) string { return strings.TrimPrefix(ref, OCIScheme) }
+
+// OCIRef renders this source's bare registry/repository:tag reference at tag,
+// or at the tag the source itself names when tag is empty.
+func (s Source) OCIRef(tag string) string {
+	if tag == "" {
+		tag = s.Tag
+	}
+	return fmt.Sprintf("%s/%s:%s", s.Registry, s.Repository, tag)
+}
+
+// OCISource renders the canonical source string a receipt installed from this
+// source at tag records — the same oci:// form the user typed, so bundle can
+// write it into a manifest and sync can parse it back.
+func (s Source) OCISource(tag string) string { return OCIScheme + s.OCIRef(tag) }
+
 func splitOwnerRepo(p string) (owner, repo string) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) == 1 {
@@ -234,6 +299,8 @@ func (s Source) Slug() string {
 		return slugPath(s.host, s.owner, s.repo)
 	case ChannelPlugin:
 		return slugPath("plugin", s.Marketplace, s.Plugin)
+	case ChannelOCI:
+		return slugPath("oci", s.Registry, s.Repository)
 	default:
 		return slugPath("local", s.Path)
 	}
@@ -266,6 +333,8 @@ func (s Source) DefaultName() string {
 		return s.Plugin
 	case ChannelLocal:
 		return path.Base(strings.TrimSuffix(s.Path, "/"))
+	case ChannelOCI:
+		return path.Base(s.Repository)
 	default:
 		if s.Subpath != "" {
 			return path.Base(s.Subpath)

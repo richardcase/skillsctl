@@ -9,8 +9,9 @@ import (
 	"strings"
 )
 
-// untar writes a tar stream into dest, rejecting any entry that would escape it.
-func untar(r io.Reader, dest string) error {
+// Untar writes the tar stream in r into dest, rejecting any entry — a
+// symlink target included — that would resolve outside dest.
+func Untar(r io.Reader, dest string) error {
 	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()

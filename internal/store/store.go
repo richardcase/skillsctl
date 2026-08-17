@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/richardcase/skillsctl/internal/gitx"
+	"github.com/richardcase/skillsctl/internal/ocix"
 )
 
 // Store is a skillsctl data root.
@@ -130,6 +131,49 @@ func (s *Store) Ensure(ctx context.Context, g gitx.Git, slug, repoURL, sha strin
 	}
 	if err := os.Rename(tmp, rev); err != nil {
 		// Another process may have won the race; accept its result.
+		if fi, serr := os.Stat(rev); serr == nil && fi.IsDir() {
+			return rev, nil
+		}
+		return "", fmt.Errorf("publish revision: %w", err)
+	}
+	return rev, nil
+}
+
+// EnsureOCI guarantees the revision at digest is extracted, returning its
+// path. It is a no-op when the revision is already present, so it is safe to
+// call on every install including a --dry-run.
+//
+// Unlike Ensure there is no separate mirror step: an OCI pull already lands
+// at a specific digest, so there is nothing worth caching beyond the
+// revision directory itself.
+func (s *Store) EnsureOCI(ctx context.Context, o ocix.OCI, slug, ref, digest string) (string, error) {
+	rev := s.RevPath(slug, digest)
+	if err := s.within(rev); err != nil {
+		return "", err
+	}
+
+	if fi, err := os.Stat(rev); err == nil && fi.IsDir() {
+		return rev, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(rev), 0o755); err != nil {
+		return "", fmt.Errorf("create revision directory: %w", err)
+	}
+
+	tmp, err := os.MkdirTemp(filepath.Dir(rev), ".tmp-")
+	if err != nil {
+		return "", fmt.Errorf("create temp revision directory: %w", err)
+	}
+	defer func() {
+		if rerr := os.RemoveAll(tmp); rerr != nil {
+			fmt.Fprintf(os.Stderr, "skillsctl: could not remove temporary extraction directory %s: %v\n", tmp, rerr)
+		}
+	}()
+
+	if err := o.Pull(ctx, ref, tmp); err != nil {
+		return "", fmt.Errorf("pull %s: %w", ref, err)
+	}
+	if err := os.Rename(tmp, rev); err != nil {
 		if fi, serr := os.Stat(rev); serr == nil && fi.IsDir() {
 			return rev, nil
 		}

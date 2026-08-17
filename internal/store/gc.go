@@ -62,12 +62,19 @@ func (r Report) All() []Reclaimable {
 	return append(out, r.Mirrors...)
 }
 
-// shaRe matches a revision directory's name. It decides only where the scan
-// stops descending, never what is dead, so a slug component that happens to
-// look like a sha costs precision at worst: the tree beneath it is reported
-// and deleted as one item instead of one per revision. A live revision is
-// never at risk, because liveness is decided by containment before this.
-var shaRe = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+// shaRe and digestRe match a revision directory's name: a git sha, or the
+// algorithm-prefixed content digest an OCI artifact is named by. They decide
+// only where the scan stops descending, never what is dead, so a slug
+// component that happens to look like one costs precision at worst: the tree
+// beneath it is reported and deleted as one item instead of one per revision.
+//
+// Failing to match, though, is not harmless: prune would descend into a live
+// revision and collect the files under it one by one, which is why every
+// revision-naming scheme Ensure can produce must be recognised here.
+var (
+	shaRe    = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+	digestRe = regexp.MustCompile(`^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[0-9a-fA-F]{7,}$`)
+)
 
 // Collect scans the store and reports everything no live root references. It
 // changes nothing, so --dry-run and the real run see the same answer.
@@ -248,10 +255,11 @@ func holdsLive(dir string, live []string) bool {
 	return false
 }
 
-// isExtraction matches what Ensure creates under rev/: a published revision
-// named by its sha, and the temporary directory it extracts into first.
+// isExtraction matches what Ensure and EnsureOCI create under rev/: a
+// published revision named by its git sha or by its OCI digest, and the
+// temporary directory either extracts into first.
 func isExtraction(name string) bool {
-	return shaRe.MatchString(name) || strings.HasPrefix(name, ".tmp-")
+	return shaRe.MatchString(name) || digestRe.MatchString(name) || strings.HasPrefix(name, ".tmp-")
 }
 
 func isMirror(name string) bool { return strings.HasSuffix(name, ".git") }

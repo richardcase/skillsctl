@@ -135,7 +135,7 @@ func (c *CLI) Extract(ctx context.Context, mirrorPath, sha, dest string) error {
 		return fmt.Errorf("start git archive: %w", err)
 	}
 
-	untarErr := untar(stdout, dest)
+	untarErr := Untar(stdout, dest)
 	if untarErr != nil {
 		// Stop git before draining: calling Wait with an undrained pipe
 		// deadlocks, because git blocks writing into a full pipe buffer

@@ -328,3 +328,114 @@ func TestExplicitSubpathSharesTheRepositorySlug(t *testing.T) {
 			plain.Slug(), sub.Slug())
 	}
 }
+
+func TestParseOCIReference(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Channel != ChannelOCI {
+		t.Errorf("Channel = %q, want %q", s.Channel, ChannelOCI)
+	}
+	if s.Registry != "ghcr.io" {
+		t.Errorf("Registry = %q, want ghcr.io", s.Registry)
+	}
+	if s.Repository != "richardcase/skills" {
+		t.Errorf("Repository = %q, want richardcase/skills", s.Repository)
+	}
+	if s.Tag != "v1" {
+		t.Errorf("Tag = %q, want v1", s.Tag)
+	}
+}
+
+// A registry host may itself carry a port, as the in-process test registry's
+// 127.0.0.1:PORT does. The tag separator must be the last colon in the
+// reference, not the first, or a host:port registry is unparseable.
+func TestParseOCIReferenceWithARegistryPort(t *testing.T) {
+	s, err := Parse("oci://127.0.0.1:5000/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Registry != "127.0.0.1:5000" {
+		t.Errorf("Registry = %q, want 127.0.0.1:5000", s.Registry)
+	}
+	if s.Repository != "skills" {
+		t.Errorf("Repository = %q, want skills", s.Repository)
+	}
+	if s.Tag != "v1" {
+		t.Errorf("Tag = %q, want v1", s.Tag)
+	}
+}
+
+func TestParseOCIReferenceRequiresATag(t *testing.T) {
+	if _, err := Parse("oci://ghcr.io/richardcase/skills"); err == nil {
+		t.Fatal("expected an error for an OCI reference with no tag")
+	}
+}
+
+// An artifact holds a tree of skills as a repository does, and a manifest
+// names one of them by subpath, so an OCI reference carries one too.
+func TestParseOCIReferenceWithASubpath(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1//pdf-forms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Channel != ChannelOCI {
+		t.Errorf("Channel = %q, want %q", s.Channel, ChannelOCI)
+	}
+	if s.Tag != "v1" {
+		t.Errorf("Tag = %q, want v1", s.Tag)
+	}
+	if s.Subpath != "pdf-forms" {
+		t.Errorf("Subpath = %q, want pdf-forms", s.Subpath)
+	}
+	if got, want := s.Slug(), "oci/ghcr.io/richardcase/skills"; got != want {
+		t.Errorf("Slug() = %q, want %q: one artifact is one revision directory", got, want)
+	}
+}
+
+// The scheme is what keeps an OCI source out of the owner/repo git shorthand,
+// so the string a receipt records has to carry it.
+func TestOCISourceRoundTripsThroughParse(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.OCIRef(""), "ghcr.io/richardcase/skills:v1"; got != want {
+		t.Errorf("OCIRef(\"\") = %q, want the bare %q a registry takes", got, want)
+	}
+	if got, want := s.OCIRef("v2"), "ghcr.io/richardcase/skills:v2"; got != want {
+		t.Errorf("OCIRef(\"v2\") = %q, want %q", got, want)
+	}
+
+	back, err := Parse(s.OCISource("v2"))
+	if err != nil {
+		t.Fatalf("OCISource(%q) does not parse: %v", "v2", err)
+	}
+	if back.Channel != ChannelOCI || back.Tag != "v2" {
+		t.Errorf("%q parses as %s at tag %q, want oci at v2", s.OCISource("v2"), back.Channel, back.Tag)
+	}
+	if BareRef(s.OCISource("v2")) != s.OCIRef("v2") {
+		t.Errorf("BareRef must undo the scheme OCISource adds")
+	}
+}
+
+func TestOCISlugIsStableAndFilesystemSafe(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.Slug(), "oci/ghcr.io/richardcase/skills"; got != want {
+		t.Errorf("Slug() = %q, want %q", got, want)
+	}
+}
+
+func TestOCIDefaultNameIsTheLastRepositorySegment(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.DefaultName(), "skills"; got != want {
+		t.Errorf("DefaultName() = %q, want %q", got, want)
+	}
+}

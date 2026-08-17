@@ -7,6 +7,7 @@ import (
 	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/gitx"
+	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/prompt"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
@@ -21,6 +22,10 @@ var newRunner = func() func(context.Context, []string) error { return nil }
 // newPlugins builds the wrapper around the claude binary. Tests replace it, so
 // that no test installs a plugin into the developer's own ~/.claude.
 var newPlugins = func() claudex.Plugins { return claudex.New() }
+
+// newOCI builds the wrapper around the OCI registry client. Tests replace
+// it, so that no test reaches a real registry.
+var newOCI = func() ocix.OCI { return ocix.New() }
 
 // newPicker builds the chooser an install falls back to when it cannot tell
 // which skill was meant. Tests replace it, so that no test blocks reading a
@@ -80,5 +85,6 @@ func (e *env) channels() channel.Registry {
 		Git:    channel.NewGit(e.store, gitx.New()),
 		Plugin: channel.NewPlugin(newPlugins(), e.cfg),
 		Local:  channel.NewLocal(e.store),
+		OCI:    channel.NewOCI(e.store, newOCI()),
 	}
 }

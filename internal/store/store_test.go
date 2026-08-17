@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,5 +149,38 @@ func TestEnsureLeavesNoTempDirOnFailure(t *testing.T) {
 		if strings.HasPrefix(e.Name(), ".tmp-") {
 			t.Errorf("temporary extraction directory %q was left behind", e.Name())
 		}
+	}
+}
+
+type fakeOCI struct {
+	pullCount int
+}
+
+func (f *fakeOCI) Resolve(context.Context, string) (string, error) { return "", nil }
+
+func (f *fakeOCI) Pull(_ context.Context, _, dest string) error {
+	f.pullCount++
+	return os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("---\nname: x\n---\n"), 0o644)
+}
+
+func (f *fakeOCI) Push(context.Context, string, io.Reader) error { return nil }
+
+func TestEnsureOCIExtractsOnceAndIsIdempotent(t *testing.T) {
+	s := New(t.TempDir())
+	o := &fakeOCI{}
+
+	rev, err := s.EnsureOCI(context.Background(), o, "oci/ghcr.io/owner/skills", "ghcr.io/owner/skills:v1", "sha256:abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(rev, "SKILL.md")); err != nil {
+		t.Fatalf("revision directory missing SKILL.md: %v", err)
+	}
+
+	if _, err := s.EnsureOCI(context.Background(), o, "oci/ghcr.io/owner/skills", "ghcr.io/owner/skills:v1", "sha256:abc"); err != nil {
+		t.Fatal(err)
+	}
+	if o.pullCount != 1 {
+		t.Errorf("Pull was called %d times, want 1 (EnsureOCI must be a no-op once the digest is present)", o.pullCount)
 	}
 }
