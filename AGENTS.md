@@ -127,6 +127,9 @@ else lives in `internal/`, one narrow responsibility per package:
 | `doctor` | Compare the receipts against the filesystem and the store, and report every disagreement with the command that repairs it |
 | `gitx` | The `git` binary behind a `Git` interface: `Resolve`, `Mirror`, `Extract` (+ safe untar) |
 | `claudex` | The `claude` binary behind a `Plugins` interface: `List` plus the argv a `plan.Exec` runs |
+| `ocix` | The OCI registry client behind an `OCI` interface: `Resolve`, `Pull`, `Push` |
+| `pack` | Builds a `.gitignore`-aware, `.git`-excluding tar stream for packaging |
+| `testregistry` | Test-only in-process OCI registry fixture |
 | `store` | Store layout (`cache/`, `rev/`, `state.json`), `Ensure`, collection (`Collect`/`Delete`), containment checks, tree hashing |
 | `discover` | Read `SKILL.md` and its YAML frontmatter |
 | `target` | Agent config TOML, defaults, safe `Link`/`Unlink`, `ValidateSkillName` |

@@ -82,6 +82,11 @@ exact.
   bare `install` on such a repository never guesses: at a terminal it lists what
   it found and lets you tick the ones you want, and anywhere else — a pipe, a CI
   job — it prints the same list and stops, so a script still has to say.
+- **Package skills into a container image.** `skillsctl package <dir> <oci-ref>`
+  bundles a directory of skills into an OCI artifact and pushes it to any
+  registry `docker` can reach; `skillsctl install oci://registry/repo:tag`
+  installs from one, and `outdated`/`update` follow a moved tag the same way
+  they follow a moved git ref.
 - **Disk you can get back.** `skillsctl gc` deletes the revisions and mirrors no
   installed skill references, and reports what it freed. Nothing shared is
   collected while any skill still points at it.
@@ -116,6 +121,8 @@ skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
 skillsctl install owner/repo --dry-run             # show what would change
 skillsctl install superpowers@claude-plugins-official  # a Claude Code plugin
+skillsctl install oci://ghcr.io/owner/skills:v1    # from a packaged OCI artifact
+skillsctl package ./my-skills ghcr.io/owner/skills:v1  # push a directory of skills as one
 skillsctl link ./my-skill                          # a skill you are writing
 skillsctl install ./my-skill                       # the same thing
 skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
@@ -183,7 +190,8 @@ error: "brainstorm" is not installed; did you mean brainstorming?
 ```
 
 A source can be `owner/repo`, `owner/repo/path/to/skill`, any git URL
-(https, ssh or scp-style), or a local path. `//` separates a repository from a
+(https, ssh or scp-style), a local path, or `oci://registry/repository:tag` for
+a skill packaged with `skillsctl package`. `//` separates a repository from a
 subpath inside it — the only way to name one in a `.git`-suffixed or `git@host:`
 URL, where the repository boundary is otherwise the whole path.
 
@@ -342,6 +350,8 @@ Locations can be overridden with environment variables:
 | --- | --- | --- |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
+| `install oci://<ref>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Install one or more skills from an OCI artifact |
+| `package <dir> <oci-ref>` | `--dry-run` | Package a directory of skills into an OCI artifact and push it |
 | `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
@@ -536,9 +546,10 @@ reported and changes the exit code not at all.
 
 ## Status
 
-All three channels are implemented: `git`, `plugin` (`name@marketplace`) and
-`local` (`./path`), and `link` serves both of its forms. `bundle` and `sync` are
-also implemented, and `doctor` reports without a `--fix`.
+All four channels are implemented: `git`, `plugin` (`name@marketplace`),
+`local` (`./path`) and `oci` (`oci://registry/repo:tag`), and `link` serves
+both of its forms. `bundle` and `sync` are also implemented, and `doctor`
+reports without a `--fix`.
 
 One thing the plugin channel deliberately does not do yet: `outdated` reports a
 plugin as `stale` when claude has moved it since skillsctl last looked, but it
