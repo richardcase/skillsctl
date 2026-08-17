@@ -218,7 +218,19 @@ func promote(ctx context.Context, e Entry, g gitx.Git) Entry {
 	o, err := g.Describe(ctx, e.Dest)
 	switch {
 	case err != nil:
-		// Not a working copy at all, which is the ordinary case.
+		if !errors.Is(err, gitx.ErrNotRepo) {
+			return e
+		}
+		// Not a working copy at all, which is the ordinary case — except
+		// when a tool that never git-clones, like npx skills, left a
+		// lockfile naming where it actually came from.
+		if repo, reason, ok := npxSkillsProvenance(ctx, g, e.Dest); ok {
+			e.Class = ClassGit
+			e.Repo = &repo
+			return e
+		} else if reason != "" {
+			e.Reason = reason
+		}
 		return e
 	case o.RepoURL == "":
 		e.Reason = "a git working copy with no remote"

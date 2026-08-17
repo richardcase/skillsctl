@@ -111,12 +111,39 @@ Dirtiness is scoped to the skill's own directory, not the whole repository:
 unrelated churn elsewhere in a monorepo says nothing about the subtree being
 adopted, and the sha still describes it correctly.
 
+### The npx-skills install
+
+Some installers never `git clone` at all. `npx skills`
+(github.com/vercel-labs/skills) downloads a GitHub tarball and extracts it, so
+the symlinked directory has no `.git` for `Describe` to find — `promote` would
+otherwise fall back to `local` for exactly the case this tool exists to
+recover from (see "Why," above: `~/.agents/skills` is not a git repository
+either). It does leave a `skills-lock.json` beside the extracted skills
+naming, per skill, the GitHub repo it came from.
+
+When `Describe` reports no working copy, `promote` looks for that sidecar
+file above the symlink's target, matches the entry by the target directory's
+basename, and — if the entry names a `github` source that parses as a git
+source — calls `gitx.Resolve` for the repo's current HEAD sha. This is the
+one place `adopt` crosses into the network: a single read-only `ls-remote`
+equivalent, the same call `outdated` and a plain `pin` already make. Nothing
+is written, mirrored, or extracted, and a missing lockfile, a missing entry,
+an unsupported `sourceType`, or a failed resolve all fall back to `local`
+exactly like an undetectable git remote does — with a reason, past the point
+where "no lockfile at all" is indistinguishable from an ordinary directory.
+
+A real git working copy is still checked first and wins outright: the
+lockfile is only ever consulted once `Describe` has already failed to find a
+`.git`.
+
 ## Structure
 
 `internal/adopt` is a pure classifier in the shape of `internal/outdated`: it
-reads the filesystem and the receipts, decides, and returns a report. It mutates
-nothing, and it never imports `channel` or `plan` — turning classifications into
-receipts and ops is the caller's job.
+reads the filesystem and the receipts, decides, and returns a report. It
+writes nothing, and it never imports `channel` or `plan` — turning
+classifications into receipts and ops is the caller's job. It makes one
+read-only network call, `gitx.Resolve`, in the npx-skills case above; every
+other check is local.
 
 Receipt construction stays in `internal/channel`, next to the install receipt
 for the same channel, so the adopted and installed shapes cannot drift apart.

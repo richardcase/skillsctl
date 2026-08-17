@@ -2,6 +2,8 @@ package adopt
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,14 +17,23 @@ import (
 
 const skillMD = "---\nname: demo\ndescription: A demo\n---\n\nBody.\n"
 
-// fakeGit answers Describe from a table keyed by directory. Everything else
-// panics: a scan that fetched anything would not be a scan.
+// fakeGit answers Describe and Resolve from tables keyed by directory and
+// repo URL. Mirror and Extract still panic: adopt may look, live, at what a
+// lockfile names, but it must never write into the store.
 type fakeGit struct {
-	origins map[string]gitx.Origin
+	origins    map[string]gitx.Origin
+	resolved   map[string]string
+	resolveErr map[string]error
 }
 
-func (f *fakeGit) Resolve(context.Context, string, string) (string, error) {
-	panic("adopt must not resolve a remote")
+func (f *fakeGit) Resolve(_ context.Context, repoURL, _ string) (string, error) {
+	if err, ok := f.resolveErr[repoURL]; ok {
+		return "", err
+	}
+	if sha, ok := f.resolved[repoURL]; ok {
+		return sha, nil
+	}
+	panic(fmt.Sprintf("adopt resolved an unexpected repo: %s", repoURL))
 }
 
 func (f *fakeGit) Mirror(context.Context, string, string) error {
@@ -58,7 +69,11 @@ func newFixture(t *testing.T) *fixture {
 		skills: filepath.Join(root, ".claude", "skills"),
 		src:    filepath.Join(root, "src"),
 		store:  store.New(filepath.Join(root, "store")),
-		git:    &fakeGit{origins: map[string]gitx.Origin{}},
+		git: &fakeGit{
+			origins:    map[string]gitx.Origin{},
+			resolved:   map[string]string{},
+			resolveErr: map[string]error{},
+		},
 	}
 	for _, d := range []string{f.skills, f.src} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -85,6 +100,17 @@ func (f *fixture) skill(name string) string {
 func (f *fixture) link(name, dest string) {
 	f.t.Helper()
 	if err := os.Symlink(dest, filepath.Join(f.skills, name)); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// lockfile writes a skills-lock.json at dir naming one skill, the way npx
+// skills would.
+func (f *fixture) lockfile(dir, name, source, skillPath string) {
+	f.t.Helper()
+	body := fmt.Sprintf(`{"version":1,"skills":{%q:{"source":%q,"sourceType":"github","skillPath":%q}}}`,
+		name, source, skillPath)
+	if err := os.WriteFile(filepath.Join(dir, "skills-lock.json"), []byte(body), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -597,5 +623,139 @@ func TestScanIgnoresTheAgentsOwnDotDirectories(t *testing.T) {
 	}
 	if len(rep.Skipped()) != 0 {
 		t.Errorf("a dot entry was reported as unadoptable: %+v", rep.Skipped())
+	}
+}
+
+// npx skills (github.com/vercel-labs/skills) never git-clones — it extracts
+// a GitHub tarball straight to disk — so a skill it installed has no .git
+// for Describe to find. It does leave a skills-lock.json beside it naming
+// where it came from.
+func TestScanPromotesAnNpxSkillsInstallToGit(t *testing.T) {
+	f := newFixture(t)
+	dir := f.skill("demo")
+	f.lockfile(f.src, "demo", "owner/repo", "skills/demo/SKILL.md")
+	f.git.resolved["https://github.com/owner/repo.git"] = "0123456789abcdef0123456789abcdef01234567"
+	f.link("demo", dir)
+
+	got := only(t, f.scan(nil))
+
+	if got.Class != ClassGit {
+		t.Fatalf("Class = %q, want git (reason: %s)", got.Class, got.Reason)
+	}
+	if got.Repo == nil {
+		t.Fatal("no provenance recorded for a promoted entry")
+	}
+	if got.Repo.SHA != "0123456789abcdef0123456789abcdef01234567" {
+		t.Errorf("SHA = %q", got.Repo.SHA)
+	}
+	if got.Repo.Subpath != "skills/demo" {
+		t.Errorf("Subpath = %q, want skills/demo", got.Repo.Subpath)
+	}
+	if got.Repo.Repo.RepoURL != "https://github.com/owner/repo.git" {
+		t.Errorf("RepoURL = %q", got.Repo.Repo.RepoURL)
+	}
+}
+
+func TestScanLeavesLocalWhenLockfileEntryIsMissing(t *testing.T) {
+	f := newFixture(t)
+	dir := f.skill("demo")
+	f.lockfile(f.src, "someone-else", "owner/repo", "skills/someone-else/SKILL.md")
+	f.link("demo", dir)
+
+	got := only(t, f.scan(nil))
+
+	if got.Class != ClassLocal {
+		t.Fatalf("Class = %q, want local (reason: %s)", got.Class, got.Reason)
+	}
+	if !strings.Contains(got.Reason, "no entry for") {
+		t.Errorf("Reason = %q, want it to say the lockfile does not name this skill", got.Reason)
+	}
+}
+
+func TestScanKeepsLocalWhenLockfileResolveFails(t *testing.T) {
+	f := newFixture(t)
+	dir := f.skill("demo")
+	f.lockfile(f.src, "demo", "owner/repo", "skills/demo/SKILL.md")
+	f.git.resolveErr["https://github.com/owner/repo.git"] = errors.New("network unreachable")
+	f.link("demo", dir)
+
+	got := only(t, f.scan(nil))
+
+	if got.Class != ClassLocal {
+		t.Fatalf("Class = %q, want local (reason: %s)", got.Class, got.Reason)
+	}
+	if !strings.Contains(got.Reason, "network unreachable") {
+		t.Errorf("Reason = %q, want it to explain the resolve failure", got.Reason)
+	}
+}
+
+func TestScanKeepsLocalWhenLockfileSourceTypeIsNotGithub(t *testing.T) {
+	f := newFixture(t)
+	dir := f.skill("demo")
+	body := `{"version":1,"skills":{"demo":{"source":"owner/repo","sourceType":"npm","skillPath":"skills/demo/SKILL.md"}}}`
+	if err := os.WriteFile(filepath.Join(f.src, "skills-lock.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.link("demo", dir)
+
+	got := only(t, f.scan(nil))
+
+	if got.Class != ClassLocal {
+		t.Fatalf("Class = %q, want local (reason: %s)", got.Class, got.Reason)
+	}
+	if !strings.Contains(got.Reason, "npm") {
+		t.Errorf("Reason = %q, want it to name the unsupported sourceType", got.Reason)
+	}
+}
+
+// npx skills' real layout nests the extracted skill two levels below the
+// project root it writes skills-lock.json into (e.g.
+// <project>/.agents/skills/<name>), so the search has to climb more than
+// one level to find it.
+func TestScanFindsALockfileInAnAncestorDirectory(t *testing.T) {
+	f := newFixture(t)
+	nested := filepath.Join(f.src, "agents-skills")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(nested, "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skillMD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.lockfile(f.src, "demo", "owner/repo", "skills/demo/SKILL.md")
+	f.git.resolved["https://github.com/owner/repo.git"] = "aaaaaaa"
+	f.link("demo", dir)
+
+	got := only(t, f.scan(nil))
+
+	if got.Class != ClassGit {
+		t.Fatalf("Class = %q, want git (reason: %s)", got.Class, got.Reason)
+	}
+}
+
+// A real git working copy still wins over a lockfile naming the same skill:
+// the lockfile is only ever consulted once Describe has already failed to
+// find a .git.
+func TestScanStillPromotesAGitWorkingCopyOverALockfile(t *testing.T) {
+	f := newFixture(t)
+	dir := f.skill("demo")
+	f.git.origins[dir] = gitx.Origin{
+		Prefix: "skills/demo", RepoURL: "https://example.com/owner/checkout.git",
+		Ref: "main", SHA: "ffffff",
+	}
+	f.lockfile(f.src, "demo", "owner/lockfile-repo", "skills/demo/SKILL.md")
+	f.git.resolved["https://github.com/owner/lockfile-repo.git"] = "aaaaaaa"
+	f.link("demo", dir)
+
+	got := only(t, f.scan(nil))
+
+	if got.Class != ClassGit {
+		t.Fatalf("Class = %q, want git (reason: %s)", got.Class, got.Reason)
+	}
+	if got.Repo.Repo.RepoURL != "https://example.com/owner/checkout.git" {
+		t.Errorf("RepoURL = %q, want the working copy's remote, not the lockfile's", got.Repo.Repo.RepoURL)
 	}
 }
