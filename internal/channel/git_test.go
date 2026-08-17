@@ -213,3 +213,24 @@ func TestBriefCarriesNameAndDescription(t *testing.T) {
 		t.Errorf("brief = %+v, want the name and description a listing needs", got)
 	}
 }
+
+func TestBriefSortsCandidatesByName(t *testing.T) {
+	all, err := resolveNames([]discover.Skill{
+		skill("skills/zebra", "zebra-skill", ""),
+		skill("skills/monkey", "monkey-skill", ""),
+		skill("skills/alpha", "alpha-skill", ""),
+	}, "repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := brief(all)
+	want := []string{"alpha-skill", "monkey-skill", "zebra-skill"}
+	gotNames := make([]string, len(got))
+	for i, c := range got {
+		gotNames[i] = c.Name
+	}
+	if strings.Join(gotNames, ",") != strings.Join(want, ",") {
+		t.Errorf("brief order = %v, want %v: a picker list should not depend on filesystem walk order", gotNames, want)
+	}
+}
