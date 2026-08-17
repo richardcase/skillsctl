@@ -13,6 +13,10 @@ deterministic. One store, symlinked into every agent you use.
 [![Go Reference](https://pkg.go.dev/badge/github.com/richardcase/skillsctl.svg)](https://pkg.go.dev/github.com/richardcase/skillsctl)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
+<p align="center">
+  <img src="assets/demo.gif" alt="skillsctl demo: install, list, info, update --dry-run, remove" width="720">
+</p>
+
 ## Why
 
 Skills spread by copy-paste. You clone a repo into `~/.claude/skills`, copy the
