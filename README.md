@@ -121,6 +121,8 @@ skillsctl install ./my-skill                       # the same thing
 skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
+skillsctl list --include-channel git               # only skills fetched via git
+skillsctl list --exclude-channel local             # everything except skills you are editing
 skillsctl info brainstorming                       # one skill's receipt in full
 skillsctl info brainstorming --json                # the same, for a script
 skillsctl outdated                                 # what has moved upstream
@@ -345,7 +347,7 @@ Locations can be overridden with environment variables:
 | `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
-| `list` | `--json` | Show installed skills, versions and agents |
+| `list` | `--json`, `--include-channel`, `--exclude-channel` | Show installed skills, versions and agents |
 | `info <name>` | `--json` | Show one skill's receipt in full, and whether its links are live |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |

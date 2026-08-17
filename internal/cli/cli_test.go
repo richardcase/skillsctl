@@ -632,6 +632,66 @@ func TestListEmpty(t *testing.T) {
 	}
 }
 
+func TestListFilterByChannel(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+	if out, err := h.run(t, "install", url); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	dir := localDir(t, nil)
+	if out, err := h.run(t, "link", dir); err != nil {
+		t.Fatalf("link: %v\n%s", err, out)
+	}
+
+	t.Run("include", func(t *testing.T) {
+		out, err := h.run(t, "list", "--include-channel", "git")
+		if err != nil {
+			t.Fatalf("list --include-channel git: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "demo-skill") || strings.Contains(out, "my-skill") {
+			t.Errorf("--include-channel git should show only demo-skill, got:\n%s", out)
+		}
+	})
+
+	t.Run("exclude", func(t *testing.T) {
+		out, err := h.run(t, "list", "--exclude-channel", "local")
+		if err != nil {
+			t.Fatalf("list --exclude-channel local: %v\n%s", err, err)
+		}
+		if !strings.Contains(out, "demo-skill") || strings.Contains(out, "my-skill") {
+			t.Errorf("--exclude-channel local should hide my-skill, got:\n%s", out)
+		}
+	})
+
+	t.Run("include json", func(t *testing.T) {
+		out, err := h.run(t, "list", "--include-channel", "local", "--json")
+		if err != nil {
+			t.Fatalf("list --include-channel local --json: %v\n%s", err, out)
+		}
+		var got []struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("invalid JSON: %v\n%s", err, out)
+		}
+		if len(got) != 1 || got[0].Name != "my-skill" {
+			t.Errorf("got %+v, want only my-skill", got)
+		}
+	})
+
+	t.Run("mutually exclusive", func(t *testing.T) {
+		if _, err := h.run(t, "list", "--include-channel", "git", "--exclude-channel", "local"); err == nil {
+			t.Fatal("want an error when both flags are set")
+		}
+	})
+
+	t.Run("unrecognised channel", func(t *testing.T) {
+		if _, err := h.run(t, "list", "--include-channel", "bogus"); err == nil {
+			t.Fatal("want an error for an unrecognised channel")
+		}
+	})
+}
+
 func TestOutdatedReportsAMovedRef(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
