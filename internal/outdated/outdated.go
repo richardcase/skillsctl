@@ -2,8 +2,9 @@
 // each one tracks moved since it was installed — or, for a plugin, has the
 // agent that owns it moved its install out from under the receipt? It
 // performs no network fetch: a git receipt is checked with ls-remote alone,
-// nothing is mirrored or extracted, and claude is asked only when a plugin
-// receipt is present.
+// an OCI receipt's manifest is read without pulling any layer, nothing is
+// mirrored or extracted, and claude is asked only when a plugin receipt is
+// present.
 package outdated
 
 import (
@@ -12,6 +13,7 @@ import (
 
 	"github.com/richardcase/skillsctl/internal/claudex"
 	"github.com/richardcase/skillsctl/internal/gitx"
+	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
 )
@@ -59,7 +61,7 @@ type resolution struct {
 //
 // p is consulted lazily, so a store holding no plugins never shells out to
 // claude and the package keeps its promise that it fetches nothing.
-func Check(ctx context.Context, g gitx.Git, p claudex.Plugins, receipts []*state.Receipt) []Entry {
+func Check(ctx context.Context, g gitx.Git, p claudex.Plugins, o ocix.OCI, receipts []*state.Receipt) []Entry {
 	seen := map[string]resolution{}
 	entries := make([]Entry, 0, len(receipts))
 
@@ -87,6 +89,31 @@ func Check(ctx context.Context, g gitx.Git, p claudex.Plugins, receipts []*state
 		// instead is an install its agent is free to move underneath it.
 		if r.Channel == string(source.ChannelPlugin) {
 			entries = append(entries, checkPlugin(e, r, plugins))
+			continue
+		}
+
+		// An OCI receipt's Source is already the complete registry/repo:tag
+		// ref, so unlike a git remote it needs no separate ref suffix in the
+		// seen key: two receipts sharing a tag share a key outright.
+		if r.Channel == string(source.ChannelOCI) {
+			e.Ref = r.Ref
+			got, ok := seen[r.Source]
+			if !ok {
+				got.sha, got.err = o.Resolve(ctx, r.Source)
+				seen[r.Source] = got
+			}
+			if got.err != nil {
+				e.Status = StatusError
+				e.Error = got.err.Error()
+				entries = append(entries, e)
+				continue
+			}
+			e.Latest = got.sha
+			e.Status = StatusCurrent
+			if got.sha != r.Resolved {
+				e.Status = StatusOutdated
+			}
+			entries = append(entries, e)
 			continue
 		}
 

@@ -43,7 +43,7 @@ func newOutdatedCmd() *cobra.Command {
 				return nil
 			}
 
-			entries := outdated.Check(cmd.Context(), gitx.New(), newPlugins(), receipts)
+			entries := outdated.Check(cmd.Context(), gitx.New(), newPlugins(), newOCI(), receipts)
 
 			if asJSON {
 				blob, merr := json.MarshalIndent(entries, "", "  ")
