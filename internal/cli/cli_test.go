@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/richardcase/skillsctl/internal/claudex"
+	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/outdated"
 	"github.com/richardcase/skillsctl/internal/prompt"
 	"github.com/richardcase/skillsctl/internal/testrepo"
@@ -32,6 +35,28 @@ type harness struct {
 	// until a test says otherwise, so the listing-and-exit behaviour is what
 	// every test that is not about selection still sees.
 	picker *fakePicker
+
+	// oci answers every OCI call for the duration of the test. It defaults to
+	// a fake that refuses, so a test that means to exercise the OCI channel
+	// must say so by setting h.oci, the same bargain h.plugins already makes.
+	oci ocix.OCI
+}
+
+// refusingOCI is newHarness's default: any call fails loudly, so a test that
+// forgets to set h.oci finds out immediately rather than silently reaching
+// for a real registry.
+type refusingOCI struct{}
+
+func (refusingOCI) Resolve(context.Context, string) (string, error) {
+	return "", errors.New("this test has not configured an OCI registry (set h.oci)")
+}
+
+func (refusingOCI) Pull(context.Context, string, string) error {
+	return errors.New("this test has not configured an OCI registry (set h.oci)")
+}
+
+func (refusingOCI) Push(context.Context, string, io.Reader) error {
+	return errors.New("this test has not configured an OCI registry (set h.oci)")
 }
 
 // fakePicker stands in for a terminal. choose is what the user would have
@@ -69,23 +94,26 @@ func newHarness(t *testing.T) *harness {
 		codex:   filepath.Join(agents, ".codex", "skills"),
 		plugins: &fakePlugins{root: filepath.Join(root, "plugins")},
 		picker:  &fakePicker{},
+		oci:     refusingOCI{},
 	}
 
-	// Swapping the three seams for the whole test, restored by t.Cleanup. A
+	// Swapping the four seams for the whole test, restored by t.Cleanup. A
 	// test that means to exercise the plugin channel populates h.plugins; one
 	// that does not still cannot shell out. The picker is the same bargain: a
 	// test that means to choose sets h.picker.on, and one that does not cannot
-	// block on a terminal.
-	realPlugins, realRunner, realPicker := newPlugins, newRunner, newPicker
+	// block on a terminal. The OCI seam is the same again: a test that means
+	// to exercise it sets h.oci, and one that does not gets refusingOCI.
+	realPlugins, realRunner, realPicker, realOCI := newPlugins, newRunner, newPicker, newOCI
 	newPlugins = func() claudex.Plugins { return h.plugins }
 	newPicker = func() picker { return h.picker }
+	newOCI = func() ocix.OCI { return h.oci }
 	newRunner = func() func(context.Context, []string) error {
 		return func(_ context.Context, argv []string) error {
 			h.ran = append(h.ran, argv)
 			return h.plugins.exec(argv)
 		}
 	}
-	t.Cleanup(func() { newPlugins, newRunner, newPicker = realPlugins, realRunner, realPicker })
+	t.Cleanup(func() { newPlugins, newRunner, newPicker, newOCI = realPlugins, realRunner, realPicker, realOCI })
 
 	// Both agent parent directories exist, so both are "present".
 	for _, d := range []string{filepath.Join(agents, ".claude"), filepath.Join(agents, ".codex")} {
