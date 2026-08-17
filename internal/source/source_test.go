@@ -328,3 +328,48 @@ func TestExplicitSubpathSharesTheRepositorySlug(t *testing.T) {
 			plain.Slug(), sub.Slug())
 	}
 }
+
+func TestParseOCIReference(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Channel != ChannelOCI {
+		t.Errorf("Channel = %q, want %q", s.Channel, ChannelOCI)
+	}
+	if s.Registry != "ghcr.io" {
+		t.Errorf("Registry = %q, want ghcr.io", s.Registry)
+	}
+	if s.Repository != "richardcase/skills" {
+		t.Errorf("Repository = %q, want richardcase/skills", s.Repository)
+	}
+	if s.Tag != "v1" {
+		t.Errorf("Tag = %q, want v1", s.Tag)
+	}
+}
+
+func TestParseOCIReferenceRequiresATag(t *testing.T) {
+	if _, err := Parse("oci://ghcr.io/richardcase/skills"); err == nil {
+		t.Fatal("expected an error for an OCI reference with no tag")
+	}
+}
+
+func TestOCISlugIsStableAndFilesystemSafe(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.Slug(), "oci/ghcr.io/richardcase/skills"; got != want {
+		t.Errorf("Slug() = %q, want %q", got, want)
+	}
+}
+
+func TestOCIDefaultNameIsTheLastRepositorySegment(t *testing.T) {
+	s, err := Parse("oci://ghcr.io/richardcase/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s.DefaultName(), "skills"; got != want {
+		t.Errorf("DefaultName() = %q, want %q", got, want)
+	}
+}

@@ -19,6 +19,8 @@ const (
 	ChannelPlugin Channel = "plugin"
 	// ChannelLocal represents installation from a local filesystem path.
 	ChannelLocal Channel = "local"
+	// ChannelOCI represents installation from an OCI registry.
+	ChannelOCI Channel = "oci"
 )
 
 // Source is a parsed, canonicalised install source.
@@ -35,6 +37,11 @@ type Source struct {
 
 	// Local channel.
 	Path string
+
+	// OCI channel.
+	Registry   string // registry host[:port]
+	Repository string // path within the registry, e.g. "owner/skills"
+	Tag        string
 
 	Raw string
 
@@ -131,6 +138,9 @@ func parseChannel(raw string) (Source, error) {
 		s.Path = raw
 		return s, nil
 
+	case strings.HasPrefix(raw, "oci://"):
+		return parseOCI(raw)
+
 	case strings.Contains(raw, "://"):
 		return parseURL(raw)
 
@@ -210,6 +220,29 @@ func parseURL(raw string) (Source, error) {
 	return s, nil
 }
 
+// parseOCI reads an explicit oci://registry/repository:tag reference. The
+// scheme is required rather than inferred from shape, so an OCI source never
+// collides with the owner/repo git shorthand.
+func parseOCI(raw string) (Source, error) {
+	s := Source{Raw: raw, Channel: ChannelOCI}
+
+	rest := strings.TrimPrefix(raw, "oci://")
+	repoPart, tag, ok := strings.Cut(rest, ":")
+	if !ok || tag == "" {
+		return s, fmt.Errorf("oci source %q has no :tag", raw)
+	}
+
+	parts := strings.SplitN(repoPart, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return s, fmt.Errorf("oci source %q has no repository path after the registry host", raw)
+	}
+
+	s.Registry = parts[0]
+	s.Repository = parts[1]
+	s.Tag = tag
+	return s, nil
+}
+
 func splitOwnerRepo(p string) (owner, repo string) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) == 1 {
@@ -234,6 +267,8 @@ func (s Source) Slug() string {
 		return slugPath(s.host, s.owner, s.repo)
 	case ChannelPlugin:
 		return slugPath("plugin", s.Marketplace, s.Plugin)
+	case ChannelOCI:
+		return slugPath("oci", s.Registry, s.Repository)
 	default:
 		return slugPath("local", s.Path)
 	}
@@ -266,6 +301,8 @@ func (s Source) DefaultName() string {
 		return s.Plugin
 	case ChannelLocal:
 		return path.Base(strings.TrimSuffix(s.Path, "/"))
+	case ChannelOCI:
+		return path.Base(s.Repository)
 	default:
 		if s.Subpath != "" {
 			return path.Base(s.Subpath)
