@@ -82,7 +82,7 @@ exact.
   bare `install` on such a repository never guesses: at a terminal it lists what
   it found and lets you tick the ones you want, and anywhere else — a pipe, a CI
   job — it prints the same list and stops, so a script still has to say.
-- **Package skills into a container image.** `skillsctl package <dir> <oci-ref>`
+- **Package skills into a container image.** `skillsctl package <source-dir> <oci-ref>`
   bundles a directory of skills into an OCI artifact and pushes it to any
   registry `docker` can reach; `skillsctl install oci://registry/repo:tag`
   installs from one, and `outdated`/`update` follow a moved tag the same way
@@ -351,7 +351,7 @@ Locations can be overridden with environment variables:
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
 | `install oci://<ref>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Install one or more skills from an OCI artifact |
-| `package <dir> <oci-ref>` | `--dry-run` | Package a directory of skills into an OCI artifact and push it |
+| `package <source-dir> <oci-ref>` | `--dry-run` | Package a directory of skills into an OCI artifact and push it |
 | `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
