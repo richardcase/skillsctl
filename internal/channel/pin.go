@@ -94,3 +94,30 @@ func (c *Local) Pin(state.Receipt, PinOptions) (plan.Plan, PinResult, error) {
 func (c *Plugin) Pin(state.Receipt, PinOptions) (plan.Plan, PinResult, error) {
 	return plan.Plan{}, PinResult{}, errors.New("claude decides which version of a plugin is installed, so skillsctl cannot pin one")
 }
+
+// Pin freezes this receipt at the digest it is already on, or releases it to
+// track a tag again. Identical in shape to Git.Pin — a tag stands in for a
+// branch, a digest for a sha.
+func (c *OCI) Pin(r state.Receipt, o PinOptions) (plan.Plan, PinResult, error) {
+	var p plan.Plan
+
+	if r.Pinned == o.On {
+		return p, PinResult{Receipt: r}, nil
+	}
+
+	res := PinResult{Receipt: r, Changed: true}
+	res.Receipt.Pinned = o.On
+	res.Receipt.UpdatedAt = time.Now().UTC()
+
+	if o.On {
+		res.Receipt.Ref = ""
+	} else {
+		res.Receipt.Ref = o.Ref
+		if !c.store.Contains(r.RevPath) {
+			res.Note = fmt.Sprintf("its files are at %s, and the next update will re-point the symlinks into skillsctl's store", r.RevPath)
+		}
+	}
+
+	p.Add(plan.Record{Receipt: res.Receipt})
+	return p, res, nil
+}

@@ -243,6 +243,7 @@ type Registry struct {
 	Git    Channel
 	Plugin Channel
 	Local  Channel
+	OCI    Channel
 }
 
 // For returns the channel that handles c.
@@ -259,6 +260,10 @@ func (r Registry) For(c source.Channel) (Channel, error) {
 	case source.ChannelLocal:
 		if r.Local != nil {
 			return r.Local, nil
+		}
+	case source.ChannelOCI:
+		if r.OCI != nil {
+			return r.OCI, nil
 		}
 	}
 	return nil, fmt.Errorf("the %s channel is %w", c, ErrUnsupported)
