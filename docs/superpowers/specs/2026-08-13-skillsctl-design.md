@@ -232,7 +232,9 @@ back to `runtime/debug.ReadBuildInfo()` (module version + VCS stamp) so
   See [the pin and unpin design](2026-08-15-pin-and-unpin-design.md).
 - `adopt` scans each target's skills dir, follows symlinks, records anything
   unmanaged as `local` (listed, never auto-updated), and promotes entries with a
-  detectable git remote to the `git` channel.
+  detectable git remote — a clean git working copy, or a `skills-lock.json`
+  sidecar naming a GitHub source for an installer that never `git clone`d —
+  to the `git` channel.
 - `bundle` writes the `skills.toml` schema to stdout from the current receipts,
   leaving out `local` skills, whose source is a path that means nothing on
   another machine. `sync` installs what the manifest names and this machine
