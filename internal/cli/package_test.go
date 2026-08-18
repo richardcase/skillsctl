@@ -76,10 +76,10 @@ func TestPackagePushesTheTarredTree(t *testing.T) {
 }
 
 type recordingCosign struct {
-	signRef, signKey       string
-	signErr                error
-	signKeylessRef         string
-	signKeylessErr         error
+	signRef, signKey string
+	signErr          error
+	signKeylessRef   string
+	signKeylessErr   error
 }
 
 func (c *recordingCosign) Verify(context.Context, string, string) error { return nil }
