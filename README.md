@@ -92,7 +92,9 @@ exact.
   installs from one, and `outdated`/`update` follow a moved tag the same way
   they follow a moved git ref. `package --sign-key <path>` signs the pushed
   image with cosign, and `install --verify-key <path>` verifies it before
-  installing.
+  installing — or sign and verify keylessly with `--sign-keyless` and
+  `--verify-identity`/`--verify-issuer`, using Sigstore's Fulcio/Rekor flow
+  instead of a keypair.
 - **Disk you can get back.** `skillsctl gc` deletes the revisions and mirrors no
   installed skill references, and reports what it freed. Nothing shared is
   collected while any skill still points at it.
@@ -132,6 +134,9 @@ skillsctl install oci://ghcr.io/owner/skills:v1    # from a packaged OCI artifac
 skillsctl package ./my-skills ghcr.io/owner/skills:v1  # push a directory of skills as one
 skillsctl package ./my-skills ghcr.io/owner/skills:v1 --sign-key cosign.key  # ...and sign it
 skillsctl install oci://ghcr.io/owner/skills:v1 --verify-key cosign.pub  # verify before installing
+skillsctl package ./my-skills ghcr.io/owner/skills:v1 --sign-keyless  # sign via Sigstore's Fulcio/Rekor flow
+skillsctl install oci://ghcr.io/owner/skills:v1 \
+  --verify-identity signer@example.com --verify-issuer https://accounts.google.com  # verify a keyless signature
 skillsctl link ./my-skill                          # a skill you are writing
 skillsctl install ./my-skill                       # the same thing
 skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
@@ -371,8 +376,8 @@ Locations can be overridden with environment variables:
 | --- | --- | --- |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
-| `install oci://<ref>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--verify-key`, `--dry-run` | Install one or more skills from an OCI artifact |
-| `package <source-dir> <oci-ref>` | `--sign-key`, `--dry-run` | Package a directory of skills into an OCI artifact and push it |
+| `install oci://<ref>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--verify-key`, `--verify-identity`, `--verify-issuer`, `--dry-run` | Install one or more skills from an OCI artifact |
+| `package <source-dir> <oci-ref>` | `--sign-key`, `--sign-keyless`, `--dry-run` | Package a directory of skills into an OCI artifact and push it |
 | `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
