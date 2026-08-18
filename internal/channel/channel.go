@@ -67,6 +67,9 @@ type Request struct {
 	All     bool
 	Ref     string
 	Pin     bool
+	// VerifyKey is a cosign public key path. Only the OCI channel acts on it;
+	// every other channel ignores it.
+	VerifyKey string
 }
 
 // Candidate is one installable unit a channel found: a skill inside a
@@ -172,7 +175,11 @@ type Channel interface {
 	// Prepare runs even for a --dry-run, so nothing it does may be visible to
 	// the user. Populating a content-addressed cache qualifies; installing
 	// something does not.
-	Prepare(ctx context.Context, req Request) ([]Candidate, error)
+	//
+	// The []string is warnings worth printing before the install proceeds — an
+	// OCI image that is signed but was not verified, say. A channel with
+	// nothing to warn about returns nil.
+	Prepare(ctx context.Context, req Request) ([]Candidate, []string, error)
 
 	// Install turns the candidates that survived the caller's name-collision
 	// check into the plan and the receipts that plan will write.

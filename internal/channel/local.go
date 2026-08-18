@@ -42,22 +42,22 @@ func (c *Local) Ownership() Ownership { return UserOwned }
 
 // Prepare resolves the path, refuses the ones that cannot mean what they say,
 // and narrows what it finds to the skills the request asked for.
-func (c *Local) Prepare(_ context.Context, req Request) ([]Candidate, error) {
+func (c *Local) Prepare(_ context.Context, req Request) ([]Candidate, []string, error) {
 	if err := rejectRevisionFlags(req); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	root, err := c.resolve(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	found, err := discover.Walk(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(found) == 0 {
-		return nil, fmt.Errorf("%s: %w", root, discover.ErrNoSkill)
+		return nil, nil, fmt.Errorf("%s: %w", root, discover.ErrNoSkill)
 	}
 
 	// The fallback name comes from the resolved path rather than from the
@@ -65,7 +65,7 @@ func (c *Local) Prepare(_ context.Context, req Request) ([]Candidate, error) {
 	// instead of trying to call the skill ".".
 	available, err := resolveNames(found, filepath.Base(root))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chosen, err := narrow(available, req)
@@ -76,10 +76,11 @@ func (c *Local) Prepare(_ context.Context, req Request) ([]Candidate, error) {
 			amb.Meta = discover.PluginMeta(root)
 			amb.Available = brief(available)
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
-	return localCandidates(chosen, root)
+	cands, err := localCandidates(chosen, root)
+	return cands, nil, err
 }
 
 // resolve turns whatever the user typed into an absolute directory, and refuses

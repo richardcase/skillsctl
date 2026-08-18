@@ -70,7 +70,7 @@ func TestLocalInstallLinksInPlaceAndRecordsNothingFromTheStore(t *testing.T) {
 	f := newLocalFixture(t, nil)
 	req := f.request(f.dir)
 
-	cands, err := f.ch.Prepare(context.Background(), req)
+	cands, _, err := f.ch.Prepare(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestLocalResolvesRelativeAndTildePathsToSomethingStable(t *testing.T) {
 	t.Chdir(filepath.Dir(f.dir))
 	req := f.request("./" + filepath.Base(f.dir))
 
-	cands, err := f.ch.Prepare(context.Background(), req)
+	cands, _, err := f.ch.Prepare(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestLocalNamesADotPathAfterItsDirectory(t *testing.T) {
 	f := newLocalFixture(t, map[string]string{"SKILL.md": "# No frontmatter\n"})
 	t.Chdir(f.dir)
 
-	cands, err := f.ch.Prepare(context.Background(), f.request("."))
+	cands, _, err := f.ch.Prepare(context.Background(), f.request("."))
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestLocalRefusesPathsThatCannotMeanASkillOfYourOwn(t *testing.T) {
 		{name: "inside an agent's skills dir", path: inAgent, want: "already inside claude's skills directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := f.ch.Prepare(context.Background(), f.request(tc.path))
+			_, _, err := f.ch.Prepare(context.Background(), f.request(tc.path))
 			if err == nil {
 				t.Fatalf("Prepare accepted %s", tc.path)
 			}
@@ -208,13 +208,13 @@ func TestLocalSelectsSkillsInACheckoutTheWayGitDoes(t *testing.T) {
 		"skills/beta/SKILL.md":  "---\nname: beta\n---\n",
 	})
 
-	if _, err := f.ch.Prepare(context.Background(), f.request(f.dir)); err == nil {
+	if _, _, err := f.ch.Prepare(context.Background(), f.request(f.dir)); err == nil {
 		t.Error("a directory holding two skills must not be installed by guessing")
 	}
 
 	req := f.request(f.dir)
 	req.Skills = []string{"beta"}
-	cands, err := f.ch.Prepare(context.Background(), req)
+	cands, _, err := f.ch.Prepare(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Prepare with --skill: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestLocalSelectsSkillsInACheckoutTheWayGitDoes(t *testing.T) {
 	}
 
 	req.Skills, req.All = nil, true
-	if cands, err = f.ch.Prepare(context.Background(), req); err != nil || len(cands) != 2 {
+	if cands, _, err = f.ch.Prepare(context.Background(), req); err != nil || len(cands) != 2 {
 		t.Errorf("--all gave %d candidates (%v), want both", len(cands), err)
 	}
 }

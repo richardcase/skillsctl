@@ -10,7 +10,8 @@ import (
 )
 
 type packageOpts struct {
-	dryRun bool
+	dryRun  bool
+	signKey string
 }
 
 func newPackageCmd() *cobra.Command {
@@ -31,6 +32,7 @@ func newPackageCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show what would be packaged without pushing")
+	cmd.Flags().StringVar(&o.signKey, "sign-key", "", "cosign private key to sign the pushed image with")
 	return cmd
 }
 
@@ -48,6 +50,10 @@ func runPackage(cmd *cobra.Command, dir, ref string, o packageOpts) error {
 	}
 
 	if o.dryRun {
+		if o.signKey != "" {
+			cmd.Printf("would push %s and sign it\n", ref)
+			return nil
+		}
 		cmd.Printf("would push %s\n", ref)
 		return nil
 	}
@@ -61,5 +67,12 @@ func runPackage(cmd *cobra.Command, dir, ref string, o packageOpts) error {
 		return err
 	}
 	cmd.Printf("pushed %s\n", ref)
+
+	if o.signKey != "" {
+		if err := newCosign().Sign(cmd.Context(), ref, o.signKey); err != nil {
+			return err
+		}
+		cmd.Printf("signed %s\n", ref)
+	}
 	return nil
 }

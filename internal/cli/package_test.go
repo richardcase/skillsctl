@@ -74,3 +74,95 @@ func TestPackagePushesTheTarredTree(t *testing.T) {
 		t.Error("pushed an empty tar")
 	}
 }
+
+type recordingCosign struct {
+	signRef, signKey string
+	signErr          error
+}
+
+func (c *recordingCosign) Verify(context.Context, string, string) error { return nil }
+func (c *recordingCosign) Signed(context.Context, string) (bool, error) { return false, nil }
+func (c *recordingCosign) Sign(_ context.Context, ref, keyPath string) error {
+	c.signRef, c.signKey = ref, keyPath
+	return c.signErr
+}
+
+func TestPackageSignsAfterPushingWhenSignKeyIsGiven(t *testing.T) {
+	h := newHarness(t)
+	rec := &recordingOCI{}
+	cs := &recordingCosign{}
+	h.oci = rec
+	h.cosign = cs
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte("---\nname: alpha\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := h.run(t, "package", dir, "ghcr.io/owner/skills:v1", "--sign-key", "cosign.key")
+	if err != nil {
+		t.Fatalf("package: %v\n%s", err, out)
+	}
+	if cs.signRef != "ghcr.io/owner/skills:v1" {
+		t.Errorf("signed ref = %q, want ghcr.io/owner/skills:v1", cs.signRef)
+	}
+	if cs.signKey != "cosign.key" {
+		t.Errorf("sign key = %q, want cosign.key", cs.signKey)
+	}
+	if !strings.Contains(out, "signed ghcr.io/owner/skills:v1") {
+		t.Errorf("output %q should confirm the signature", out)
+	}
+}
+
+func TestPackageDoesNotSignWithoutSignKey(t *testing.T) {
+	h := newHarness(t)
+	rec := &recordingOCI{}
+	cs := &recordingCosign{}
+	h.oci = rec
+	h.cosign = cs
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte("---\nname: alpha\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := h.run(t, "package", dir, "ghcr.io/owner/skills:v1"); err != nil {
+		t.Fatal(err)
+	}
+	if cs.signRef != "" {
+		t.Errorf("signed %q without --sign-key", cs.signRef)
+	}
+}
+
+func TestPackageDryRunDoesNotSign(t *testing.T) {
+	h := newHarness(t)
+	rec := &recordingOCI{}
+	cs := &recordingCosign{}
+	h.oci = rec
+	h.cosign = cs
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte("---\nname: alpha\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := h.run(t, "package", dir, "ghcr.io/owner/skills:v1", "--sign-key", "cosign.key", "--dry-run")
+	if err != nil {
+		t.Fatalf("package --dry-run: %v\n%s", err, out)
+	}
+	if cs.signRef != "" {
+		t.Error("--dry-run must not sign")
+	}
+	if !strings.Contains(out, "and sign it") {
+		t.Errorf("dry-run output %q should mention signing", out)
+	}
+}

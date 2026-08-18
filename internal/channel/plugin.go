@@ -44,17 +44,17 @@ func pluginID(src source.Source) string { return src.Plugin + "@" + src.Marketpl
 // already is adopted rather than installed again, which makes install
 // idempotent and gives a way to bring an existing plugin under skillsctl
 // without uninstalling it first.
-func (c *Plugin) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
+func (c *Plugin) Prepare(ctx context.Context, req Request) ([]Candidate, []string, error) {
 	if err := rejectRepositoryFlags(req); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := c.installFor(req.Targets); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	installed, err := c.claude.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cand := Candidate{Name: req.Source.DefaultName()}
@@ -63,7 +63,7 @@ func (c *Plugin) Prepare(ctx context.Context, req Request) ([]Candidate, error) 
 		cand.Version = got.Version
 		cand.Path = got.InstallPath
 	}
-	return []Candidate{cand}, nil
+	return []Candidate{cand}, nil, nil
 }
 
 // rejectRepositoryFlags turns a flag that only means something for a git

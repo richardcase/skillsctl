@@ -16,13 +16,14 @@ import (
 
 // installOpts is the flag set of one install invocation.
 type installOpts struct {
-	agents []string
-	skills []string
-	all    bool
-	ref    string
-	as     string
-	pin    bool
-	dryRun bool
+	agents    []string
+	skills    []string
+	all       bool
+	ref       string
+	as        string
+	pin       bool
+	verifyKey string
+	dryRun    bool
 }
 
 func newInstallCmd() *cobra.Command {
@@ -50,6 +51,7 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&o.ref, "ref", "", "branch, tag or sha to install (default: the repository's HEAD)")
 	cmd.Flags().StringVar(&o.as, "as", "", "install under this name instead of the one in SKILL.md")
 	cmd.Flags().BoolVar(&o.pin, "pin", false, "freeze at the resolved sha, so update skips it")
+	cmd.Flags().StringVar(&o.verifyKey, "verify-key", "", "cosign public key to verify an oci:// image's signature against before installing")
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
 }
@@ -67,6 +69,9 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	src, err := source.Parse(raw)
 	if err != nil {
 		return err
+	}
+	if o.verifyKey != "" && src.Channel != source.ChannelOCI {
+		return fmt.Errorf("--verify-key only applies to oci:// sources")
 	}
 
 	e, err := newEnv()
@@ -94,21 +99,25 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	defer func() { _ = h.Close() }()
 
 	req := channel.Request{
-		Source:  src,
-		Targets: targets,
-		Skills:  o.skills,
-		All:     o.all,
-		Ref:     o.ref,
-		Pin:     o.pin,
+		Source:    src,
+		Targets:   targets,
+		Skills:    o.skills,
+		All:       o.all,
+		Ref:       o.ref,
+		Pin:       o.pin,
+		VerifyKey: o.verifyKey,
 	}
 
-	chosen, err := ch.Prepare(ctx, req)
+	chosen, warnings, err := ch.Prepare(ctx, req)
 	if err != nil {
-		chosen, err = resolveAmbiguity(ctx, cmd, ch, &req, o, err)
+		chosen, warnings, err = resolveAmbiguity(ctx, cmd, ch, &req, o, err)
 	}
 	if err != nil {
 		reportAmbiguous(cmd, err)
 		return err
+	}
+	for _, w := range warnings {
+		cmd.Println(w)
 	}
 
 	if o.as != "" {
@@ -225,25 +234,25 @@ func dedupeSkips(lists ...[]string) []string {
 func resolveAmbiguity(
 	ctx context.Context, cmd *cobra.Command, ch channel.Channel,
 	req *channel.Request, o installOpts, cause error,
-) ([]channel.Candidate, error) {
+) ([]channel.Candidate, []string, error) {
 	var amb *channel.Ambiguous
 	if !errors.As(cause, &amb) {
-		return nil, cause
+		return nil, nil, cause
 	}
 	// narrow also reports an ambiguity for a --skill that names nothing in the
 	// repository. That is a typo rather than an unanswered question, and a
 	// picker is no answer to it.
 	if len(o.skills) > 0 || o.all {
-		return nil, cause
+		return nil, nil, cause
 	}
 	p := newPicker()
 	if !p.Interactive() {
-		return nil, cause
+		return nil, nil, cause
 	}
 
 	names, err := selectSkills(p, amb, o.as != "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// A second request, for the re-read only. Install must still see the ref
@@ -260,16 +269,16 @@ func resolveAmbiguity(
 		lookup.Ref = amb.Resolved
 	}
 
-	chosen, err := ch.Prepare(ctx, lookup)
+	chosen, warnings, err := ch.Prepare(ctx, lookup)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	req.Skills = names
 	for _, line := range pickedListing(amb, names) {
 		cmd.Println(line)
 	}
-	return chosen, nil
+	return chosen, warnings, nil
 }
 
 // reportAmbiguous prints what the user could have asked for, when the channel
