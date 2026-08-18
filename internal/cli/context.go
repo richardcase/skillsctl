@@ -91,6 +91,6 @@ func (e *env) channels() channel.Registry {
 		Git:    channel.NewGit(e.store, gitx.New()),
 		Plugin: channel.NewPlugin(newPlugins(), e.cfg),
 		Local:  channel.NewLocal(e.store),
-		OCI:    channel.NewOCI(e.store, newOCI()),
+		OCI:    channel.NewOCI(e.store, newOCI(), newCosign()),
 	}
 }

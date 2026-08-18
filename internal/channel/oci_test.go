@@ -2,11 +2,14 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/richardcase/skillsctl/internal/cosignx"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
@@ -45,7 +48,7 @@ func (f *fakeOCI) Push(context.Context, string, io.Reader) error { return nil }
 func TestOCIPrepareFindsTheSkillAtTheResolvedDigest(t *testing.T) {
 	st := store.New(t.TempDir())
 	o := &fakeOCI{digest: "sha256:aaa"}
-	c := NewOCI(st, o)
+	c := NewOCI(st, o, &fakeCosign{})
 
 	src, err := source.Parse("oci://ghcr.io/owner/skills:v1")
 	if err != nil {
@@ -67,7 +70,7 @@ func TestOCIPrepareFindsTheSkillAtTheResolvedDigest(t *testing.T) {
 func TestOCIInstallRecordsAReceiptTrackingTheTag(t *testing.T) {
 	st := store.New(t.TempDir())
 	o := &fakeOCI{digest: "sha256:aaa"}
-	c := NewOCI(st, o)
+	c := NewOCI(st, o, &fakeCosign{})
 
 	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
 	cands, _, err := c.Prepare(context.Background(), Request{Source: src, All: true})
@@ -112,7 +115,7 @@ func TestOCIInstallRecordsAReceiptTrackingTheTag(t *testing.T) {
 func TestOCIUpdateRelinksWhenTheDigestMoved(t *testing.T) {
 	st := store.New(t.TempDir())
 	o := &fakeOCI{digest: "sha256:aaa"}
-	c := NewOCI(st, o)
+	c := NewOCI(st, o, &fakeCosign{})
 
 	r := &state.Receipt{
 		Name: "alpha", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1",
@@ -142,7 +145,7 @@ func TestOCIUpdateResolvesTheTagTheReceiptTracks(t *testing.T) {
 		digest: "sha256:wrong",
 		byRef:  map[string]string{"ghcr.io/owner/skills:v2": "sha256:right"},
 	}
-	c := NewOCI(st, o)
+	c := NewOCI(st, o, &fakeCosign{})
 
 	r := &state.Receipt{
 		Name: "alpha", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1",
@@ -164,8 +167,119 @@ func TestOCIUpdateResolvesTheTagTheReceiptTracks(t *testing.T) {
 }
 
 func TestOCIOwnershipIsStoreOwned(t *testing.T) {
-	c := NewOCI(store.New(t.TempDir()), &fakeOCI{})
+	c := NewOCI(store.New(t.TempDir()), &fakeOCI{}, &fakeCosign{})
 	if c.Ownership() != StoreOwned {
 		t.Errorf("Ownership() = %v, want StoreOwned", c.Ownership())
+	}
+}
+
+// fakeCosign answers Verify/Signed/Sign for a test. A zero-value fakeCosign
+// verifies successfully and reports every ref as unsigned, so tests that
+// don't care about signing are unaffected by its presence.
+type fakeCosign struct {
+	verifyErr error
+	signed    bool
+	signedErr error
+	verified  []string
+	asked     []string
+}
+
+func (f *fakeCosign) Verify(_ context.Context, ref, _ string) error {
+	f.verified = append(f.verified, ref)
+	return f.verifyErr
+}
+
+func (f *fakeCosign) Signed(_ context.Context, ref string) (bool, error) {
+	f.asked = append(f.asked, ref)
+	return f.signed, f.signedErr
+}
+
+func (f *fakeCosign) Sign(context.Context, string, string) error { return nil }
+
+func TestOCIPrepareVerifiesAgainstTheResolvedDigest(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, warnings, err := c.Prepare(context.Background(), Request{Source: src, All: true, VerifyKey: "cosign.pub"})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for a successful verify", warnings)
+	}
+	if len(cs.verified) != 1 || cs.verified[0] != "ghcr.io/owner/skills@sha256:aaa" {
+		t.Errorf("verified %v, want one call against the digest ref", cs.verified)
+	}
+}
+
+func TestOCIPrepareFailsClosedOnABadSignature(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{verifyErr: errors.New("no matching signatures")}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, _, err := c.Prepare(context.Background(), Request{Source: src, All: true, VerifyKey: "cosign.pub"})
+	if err == nil {
+		t.Fatal("Prepare accepted a failing verification")
+	}
+	// store.Root is a plain exported field: st.Root is the same t.TempDir()
+	// passed into store.New above.
+	if _, statErr := os.Stat(filepath.Join(st.Root, "rev")); statErr == nil {
+		t.Error("a failed verification must not extract the revision")
+	}
+}
+
+func TestOCIPrepareWarnsWhenSignedButNotVerified(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{signed: true}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, warnings, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "ghcr.io/owner/skills@sha256:aaa") {
+		t.Errorf("warnings = %v, want one warning naming the digest ref", warnings)
+	}
+	if len(cs.asked) != 1 {
+		t.Errorf("Signed asked %d times, want 1", len(cs.asked))
+	}
+}
+
+func TestOCIPrepareStaysSilentWhenUnsigned(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{signed: false}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, warnings, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for an unsigned image", warnings)
+	}
+}
+
+func TestOCIPrepareStaysSilentWhenSignedIsUnknown(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{signedErr: cosignx.ErrNotFound}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, warnings, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	if err != nil {
+		t.Fatalf("Prepare: %v (cosign missing must not fail an unrelated install)", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none when whether it is signed is unknown", warnings)
 	}
 }

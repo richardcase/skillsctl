@@ -67,6 +67,9 @@ type Request struct {
 	All     bool
 	Ref     string
 	Pin     bool
+	// VerifyKey is a cosign public key path. Only the OCI channel acts on it;
+	// every other channel ignores it.
+	VerifyKey string
 }
 
 // Candidate is one installable unit a channel found: a skill inside a

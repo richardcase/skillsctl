@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/richardcase/skillsctl/internal/cosignx"
 	"github.com/richardcase/skillsctl/internal/discover"
 	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/plan"
@@ -21,12 +22,15 @@ import (
 type OCI struct {
 	linked
 
-	store *store.Store
-	oci   ocix.OCI
+	store  *store.Store
+	oci    ocix.OCI
+	cosign cosignx.Cosign
 }
 
-// NewOCI returns the OCI channel backed by st and o.
-func NewOCI(st *store.Store, o ocix.OCI) *OCI { return &OCI{store: st, oci: o} }
+// NewOCI returns the OCI channel backed by st, o and cs.
+func NewOCI(st *store.Store, o ocix.OCI, cs cosignx.Cosign) *OCI {
+	return &OCI{store: st, oci: o, cosign: cs}
+}
 
 // Ownership reports that the store holds the files and the links undo them.
 func (c *OCI) Ownership() Ownership { return StoreOwned }
@@ -43,14 +47,20 @@ func ociSourceOf(r *state.Receipt) (source.Source, error) {
 	return src, nil
 }
 
-// Prepare resolves the tag to a digest, extracts the revision, and narrows
-// the skills it found to the ones the request asked for.
+// Prepare resolves the tag to a digest, verifies or checks its signature,
+// extracts the revision, and narrows the skills it found to the ones the
+// request asked for.
 func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, error) {
 	src := req.Source
 
 	ref := src.OCIRef(req.Ref)
 
 	digest, err := c.oci.Resolve(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	warnings, err := c.checkSignature(ctx, src, digest, req.VerifyKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -93,7 +103,37 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 	}
 
 	cands, err := c.candidates(chosen, revRoot, digest)
-	return cands, nil, err
+	return cands, warnings, err
+}
+
+// checkSignature verifies the image at digest against req.VerifyKey when one
+// was given, failing closed on a bad signature before anything is extracted.
+// With no key given, it checks only whether the image is signed at all, and
+// returns a warning rather than an error when it is — an install must not
+// silently skip a check that was actually available.
+//
+// A failure to tell whether the image is signed (cosign missing, a
+// transient registry error) is not itself an error: whether the image is
+// signed is genuinely unknown, so the install proceeds exactly as it did
+// before signing existed.
+func (c *OCI) checkSignature(ctx context.Context, src source.Source, digest, verifyKey string) ([]string, error) {
+	digestRef := fmt.Sprintf("%s/%s@%s", src.Registry, src.Repository, digest)
+
+	if verifyKey != "" {
+		if err := c.cosign.Verify(ctx, digestRef, verifyKey); err != nil {
+			return nil, fmt.Errorf("refusing to install: %w", err)
+		}
+		return nil, nil
+	}
+
+	signed, err := c.cosign.Signed(ctx, digestRef)
+	if err != nil {
+		return nil, nil
+	}
+	if !signed {
+		return nil, nil
+	}
+	return []string{fmt.Sprintf("warning: %s is signed but was not verified (pass --verify-key to verify it)", digestRef)}, nil
 }
 
 func (c *OCI) candidates(sels []selection, revRoot, digest string) ([]Candidate, error) {
