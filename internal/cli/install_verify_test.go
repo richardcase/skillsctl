@@ -93,6 +93,74 @@ func TestInstallRejectsVerifyKeyOnANonOCISource(t *testing.T) {
 	}
 }
 
+func TestInstallVerifiesKeylessBeforeInstalling(t *testing.T) {
+	h := newHarness(t)
+	h.oci = &fakeOCIWithLayer{digest: "sha256:aaa"}
+	h.cosign = &verifyingCosign{}
+
+	out, err := h.run(t, "install", "oci://ghcr.io/owner/skills:v1", "--all",
+		"--verify-identity", "signer@example.com", "--verify-issuer", "https://accounts.google.com")
+	if err != nil {
+		t.Fatalf("install --verify-identity/--verify-issuer: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "warning:") {
+		t.Errorf("a verified install should print no warning:\n%s", out)
+	}
+}
+
+func TestInstallFailsClosedOnABadKeylessSignature(t *testing.T) {
+	h := newHarness(t)
+	h.oci = &fakeOCIWithLayer{digest: "sha256:aaa"}
+	h.cosign = &verifyingCosign{verifyKeylessErr: errors.New("no matching signatures")}
+
+	out, err := h.run(t, "install", "oci://ghcr.io/owner/skills:v1", "--all",
+		"--verify-identity", "signer@example.com", "--verify-issuer", "https://accounts.google.com")
+	if err == nil {
+		t.Fatalf("install accepted a failing keyless verification:\n%s", out)
+	}
+}
+
+func TestInstallRequiresIdentityAndIssuerTogether(t *testing.T) {
+	h := newHarness(t)
+	h.oci = &fakeOCIWithLayer{digest: "sha256:aaa"}
+	h.cosign = &verifyingCosign{}
+
+	out, err := h.run(t, "install", "oci://ghcr.io/owner/skills:v1", "--all",
+		"--verify-identity", "signer@example.com")
+	if err == nil {
+		t.Fatalf("install accepted --verify-identity without --verify-issuer:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "verify-issuer") {
+		t.Errorf("error = %v, want it to name --verify-issuer", err)
+	}
+}
+
+func TestInstallRejectsVerifyKeyAndVerifyIdentityTogether(t *testing.T) {
+	h := newHarness(t)
+	h.oci = &fakeOCIWithLayer{digest: "sha256:aaa"}
+	h.cosign = &verifyingCosign{}
+
+	out, err := h.run(t, "install", "oci://ghcr.io/owner/skills:v1", "--all",
+		"--verify-key", "cosign.pub",
+		"--verify-identity", "signer@example.com", "--verify-issuer", "https://accounts.google.com")
+	if err == nil {
+		t.Fatalf("install accepted --verify-key and --verify-identity together:\n%s", out)
+	}
+}
+
+func TestInstallRejectsVerifyIdentityOnANonOCISource(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	out, err := h.run(t, "install", url, "--verify-identity", "signer@example.com", "--verify-issuer", "https://accounts.google.com")
+	if err == nil {
+		t.Fatalf("install accepted --verify-identity on a git source:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "oci://") {
+		t.Errorf("error = %v, want it to name oci:// sources", err)
+	}
+}
+
 // writeSkillMD lays out one skill at dest, the shape internal/channel's own
 // fakeOCI.Pull already uses.
 func writeSkillMD(dest string) error {
