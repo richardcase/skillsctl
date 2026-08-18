@@ -16,13 +16,14 @@ import (
 
 // installOpts is the flag set of one install invocation.
 type installOpts struct {
-	agents []string
-	skills []string
-	all    bool
-	ref    string
-	as     string
-	pin    bool
-	dryRun bool
+	agents    []string
+	skills    []string
+	all       bool
+	ref       string
+	as        string
+	pin       bool
+	verifyKey string
+	dryRun    bool
 }
 
 func newInstallCmd() *cobra.Command {
@@ -50,6 +51,7 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&o.ref, "ref", "", "branch, tag or sha to install (default: the repository's HEAD)")
 	cmd.Flags().StringVar(&o.as, "as", "", "install under this name instead of the one in SKILL.md")
 	cmd.Flags().BoolVar(&o.pin, "pin", false, "freeze at the resolved sha, so update skips it")
+	cmd.Flags().StringVar(&o.verifyKey, "verify-key", "", "cosign public key to verify an oci:// image's signature against before installing")
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
 }
@@ -67,6 +69,9 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	src, err := source.Parse(raw)
 	if err != nil {
 		return err
+	}
+	if o.verifyKey != "" && src.Channel != source.ChannelOCI {
+		return fmt.Errorf("--verify-key only applies to oci:// sources")
 	}
 
 	e, err := newEnv()
@@ -94,12 +99,13 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	defer func() { _ = h.Close() }()
 
 	req := channel.Request{
-		Source:  src,
-		Targets: targets,
-		Skills:  o.skills,
-		All:     o.all,
-		Ref:     o.ref,
-		Pin:     o.pin,
+		Source:    src,
+		Targets:   targets,
+		Skills:    o.skills,
+		All:       o.all,
+		Ref:       o.ref,
+		Pin:       o.pin,
+		VerifyKey: o.verifyKey,
 	}
 
 	chosen, warnings, err := ch.Prepare(ctx, req)
