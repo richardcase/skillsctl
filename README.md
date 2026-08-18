@@ -1,7 +1,7 @@
 # skillsctl
 
 Homebrew for agent skills: install, update and remove agent skills from git
-repositories, with a receipt for every install so update and removal are
+repositories, Claude plugins, OCI images with a receipt for every install so update and removal are
 deterministic. One store, symlinked into every agent you use.
 
 [![CI](https://github.com/richardcase/skillsctl/actions/workflows/ci.yml/badge.svg)](https://github.com/richardcase/skillsctl/actions/workflows/ci.yml)
