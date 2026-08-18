@@ -16,14 +16,16 @@ import (
 
 // installOpts is the flag set of one install invocation.
 type installOpts struct {
-	agents    []string
-	skills    []string
-	all       bool
-	ref       string
-	as        string
-	pin       bool
-	verifyKey string
-	dryRun    bool
+	agents         []string
+	skills         []string
+	all            bool
+	ref            string
+	as             string
+	pin            bool
+	verifyKey      string
+	verifyIdentity string
+	verifyIssuer   string
+	dryRun         bool
 }
 
 func newInstallCmd() *cobra.Command {
@@ -52,6 +54,10 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&o.as, "as", "", "install under this name instead of the one in SKILL.md")
 	cmd.Flags().BoolVar(&o.pin, "pin", false, "freeze at the resolved sha, so update skips it")
 	cmd.Flags().StringVar(&o.verifyKey, "verify-key", "", "cosign public key to verify an oci:// image's signature against before installing")
+	cmd.Flags().StringVar(&o.verifyIdentity, "verify-identity", "", "signer identity to verify a Sigstore keyless signature against (e.g. a CI workflow's OIDC subject)")
+	cmd.Flags().StringVar(&o.verifyIssuer, "verify-issuer", "", "OIDC issuer that must have signed --verify-identity's certificate (e.g. https://token.actions.githubusercontent.com)")
+	cmd.MarkFlagsRequiredTogether("verify-identity", "verify-issuer")
+	cmd.MarkFlagsMutuallyExclusive("verify-key", "verify-identity")
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
 }
@@ -70,8 +76,8 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	if err != nil {
 		return err
 	}
-	if o.verifyKey != "" && src.Channel != source.ChannelOCI {
-		return fmt.Errorf("--verify-key only applies to oci:// sources")
+	if (o.verifyKey != "" || o.verifyIdentity != "") && src.Channel != source.ChannelOCI {
+		return fmt.Errorf("--verify-key/--verify-identity only apply to oci:// sources")
 	}
 
 	e, err := newEnv()
@@ -99,13 +105,15 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	defer func() { _ = h.Close() }()
 
 	req := channel.Request{
-		Source:    src,
-		Targets:   targets,
-		Skills:    o.skills,
-		All:       o.all,
-		Ref:       o.ref,
-		Pin:       o.pin,
-		VerifyKey: o.verifyKey,
+		Source:         src,
+		Targets:        targets,
+		Skills:         o.skills,
+		All:            o.all,
+		Ref:            o.ref,
+		Pin:            o.pin,
+		VerifyKey:      o.verifyKey,
+		VerifyIdentity: o.verifyIdentity,
+		VerifyIssuer:   o.verifyIssuer,
 	}
 
 	chosen, warnings, err := ch.Prepare(ctx, req)

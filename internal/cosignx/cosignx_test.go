@@ -102,3 +102,62 @@ func TestRunReportsAMissingBinaryRatherThanAnExecFailure(t *testing.T) {
 		t.Errorf("error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestSignKeylessBuildsTheExpectedArgv(t *testing.T) {
+	var gotArgs []string
+	c := &CLI{Bin: "cosign"}
+	c.output = func(_ context.Context, args ...string) (string, error) {
+		gotArgs = args
+		return "", nil
+	}
+	if err := c.SignKeyless(context.Background(), "ghcr.io/owner/skills:v1"); err != nil {
+		t.Fatalf("SignKeyless: %v", err)
+	}
+	want := "sign --yes ghcr.io/owner/skills:v1"
+	if got := strings.Join(gotArgs, " "); got != want {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+}
+
+func TestSignKeylessWrapsAFailure(t *testing.T) {
+	err := fake("", errors.New("no oidc token available")).SignKeyless(context.Background(), "ghcr.io/owner/skills:v1")
+	if err == nil {
+		t.Fatal("SignKeyless accepted a failing cosign call")
+	}
+	if !strings.Contains(err.Error(), "sign ghcr.io/owner/skills:v1") {
+		t.Errorf("error = %v, want it to name the ref", err)
+	}
+}
+
+func TestVerifyKeylessBuildsTheExpectedArgv(t *testing.T) {
+	var gotArgs []string
+	c := &CLI{Bin: "cosign"}
+	c.output = func(_ context.Context, args ...string) (string, error) {
+		gotArgs = args
+		return "Verification for ghcr.io/owner/skills@sha256:aaa --\n", nil
+	}
+	err := c.VerifyKeyless(context.Background(), "ghcr.io/owner/skills@sha256:aaa",
+		"https://github.com/owner/repo/.github/workflows/release.yml@refs/heads/main",
+		"https://token.actions.githubusercontent.com")
+	if err != nil {
+		t.Fatalf("VerifyKeyless: %v", err)
+	}
+	want := "verify --certificate-identity " +
+		"https://github.com/owner/repo/.github/workflows/release.yml@refs/heads/main " +
+		"--certificate-oidc-issuer https://token.actions.githubusercontent.com " +
+		"ghcr.io/owner/skills@sha256:aaa"
+	if got := strings.Join(gotArgs, " "); got != want {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+}
+
+func TestVerifyKeylessWrapsAFailure(t *testing.T) {
+	err := fake("", errors.New("no matching signatures")).VerifyKeyless(context.Background(),
+		"ghcr.io/owner/skills@sha256:aaa", "signer@example.com", "https://accounts.google.com")
+	if err == nil {
+		t.Fatal("VerifyKeyless accepted a failing cosign call")
+	}
+	if !strings.Contains(err.Error(), "verify ghcr.io/owner/skills@sha256:aaa") {
+		t.Errorf("error = %v, want it to name the ref", err)
+	}
+}

@@ -177,11 +177,15 @@ func TestOCIOwnershipIsStoreOwned(t *testing.T) {
 // verifies successfully and reports every ref as unsigned, so tests that
 // don't care about signing are unaffected by its presence.
 type fakeCosign struct {
-	verifyErr error
-	signed    bool
-	signedErr error
-	verified  []string
-	asked     []string
+	verifyErr          error
+	signed             bool
+	signedErr          error
+	verifyKeylessErr   error
+	verified           []string
+	verifiedKeyless    []string
+	asked              []string
+	lastVerifyIdentity string
+	lastVerifyIssuer   string
 }
 
 func (f *fakeCosign) Verify(_ context.Context, ref, _ string) error {
@@ -195,6 +199,15 @@ func (f *fakeCosign) Signed(_ context.Context, ref string) (bool, error) {
 }
 
 func (f *fakeCosign) Sign(context.Context, string, string) error { return nil }
+
+func (f *fakeCosign) SignKeyless(context.Context, string) error { return nil }
+
+func (f *fakeCosign) VerifyKeyless(_ context.Context, ref, identity, issuer string) error {
+	f.verifiedKeyless = append(f.verifiedKeyless, ref)
+	f.lastVerifyIdentity = identity
+	f.lastVerifyIssuer = issuer
+	return f.verifyKeylessErr
+}
 
 func TestOCIPrepareVerifiesAgainstTheResolvedDigest(t *testing.T) {
 	st := store.New(t.TempDir())
@@ -230,6 +243,55 @@ func TestOCIPrepareFailsClosedOnABadSignature(t *testing.T) {
 	// passed into store.New above.
 	if _, statErr := os.Stat(filepath.Join(st.Root, "rev")); statErr == nil {
 		t.Error("a failed verification must not extract the revision")
+	}
+}
+
+func TestOCIPrepareVerifiesKeylessAgainstTheResolvedDigest(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, warnings, err := c.Prepare(context.Background(), Request{
+		Source: src, All: true,
+		VerifyIdentity: "signer@example.com",
+		VerifyIssuer:   "https://accounts.google.com",
+	})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for a successful keyless verify", warnings)
+	}
+	if len(cs.verifiedKeyless) != 1 || cs.verifiedKeyless[0] != "ghcr.io/owner/skills@sha256:aaa" {
+		t.Errorf("verifiedKeyless = %v, want one call against the digest ref", cs.verifiedKeyless)
+	}
+	if cs.lastVerifyIdentity != "signer@example.com" {
+		t.Errorf("VerifyKeyless identity = %q, want the requested identity", cs.lastVerifyIdentity)
+	}
+	if cs.lastVerifyIssuer != "https://accounts.google.com" {
+		t.Errorf("VerifyKeyless issuer = %q, want the requested issuer", cs.lastVerifyIssuer)
+	}
+}
+
+func TestOCIPrepareFailsClosedOnABadKeylessSignature(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{verifyKeylessErr: errors.New("no matching signatures")}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, _, err := c.Prepare(context.Background(), Request{
+		Source: src, All: true,
+		VerifyIdentity: "signer@example.com",
+		VerifyIssuer:   "https://accounts.google.com",
+	})
+	if err == nil {
+		t.Fatal("Prepare accepted a failing keyless verification")
+	}
+	if _, statErr := os.Stat(filepath.Join(st.Root, "rev")); statErr == nil {
+		t.Error("a failed keyless verification must not extract the revision")
 	}
 }
 

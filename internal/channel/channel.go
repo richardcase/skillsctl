@@ -70,6 +70,13 @@ type Request struct {
 	// VerifyKey is a cosign public key path. Only the OCI channel acts on it;
 	// every other channel ignores it.
 	VerifyKey string
+	// VerifyIdentity and VerifyIssuer pin trust for a Sigstore keyless
+	// verification: the signer identity a Fulcio-issued cert must be bound
+	// to, and the OIDC issuer that must have issued it. Only the OCI
+	// channel acts on either; every other channel ignores them. Set
+	// together or not at all — the CLI layer enforces that.
+	VerifyIdentity string
+	VerifyIssuer   string
 }
 
 // Candidate is one installable unit a channel found: a skill inside a

@@ -60,7 +60,7 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 		return nil, nil, err
 	}
 
-	warnings, err := c.checkSignature(ctx, src, digest, req.VerifyKey)
+	warnings, err := c.checkSignature(ctx, src, digest, req.VerifyKey, req.VerifyIdentity, req.VerifyIssuer)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -107,20 +107,29 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 }
 
 // checkSignature verifies the image at digest against req.VerifyKey when one
-// was given, failing closed on a bad signature before anything is extracted.
-// With no key given, it checks only whether the image is signed at all, and
-// returns a warning rather than an error when it is — an install must not
-// silently skip a check that was actually available.
+// was given, or against req.VerifyIdentity/req.VerifyIssuer as a keyless
+// verification when no key was given but an identity was, failing closed on
+// a bad signature before anything is extracted. With neither given, it
+// checks only whether the image is signed at all, and returns a warning
+// rather than an error when it is — an install must not silently skip a
+// check that was actually available.
 //
 // A failure to tell whether the image is signed (cosign missing, a
 // transient registry error) is not itself an error: whether the image is
 // signed is genuinely unknown, so the install proceeds exactly as it did
 // before signing existed.
-func (c *OCI) checkSignature(ctx context.Context, src source.Source, digest, verifyKey string) ([]string, error) {
+func (c *OCI) checkSignature(ctx context.Context, src source.Source, digest, verifyKey, verifyIdentity, verifyIssuer string) ([]string, error) {
 	digestRef := fmt.Sprintf("%s/%s@%s", src.Registry, src.Repository, digest)
 
 	if verifyKey != "" {
 		if err := c.cosign.Verify(ctx, digestRef, verifyKey); err != nil {
+			return nil, fmt.Errorf("refusing to install: %w", err)
+		}
+		return nil, nil
+	}
+
+	if verifyIdentity != "" {
+		if err := c.cosign.VerifyKeyless(ctx, digestRef, verifyIdentity, verifyIssuer); err != nil {
 			return nil, fmt.Errorf("refusing to install: %w", err)
 		}
 		return nil, nil
@@ -133,7 +142,7 @@ func (c *OCI) checkSignature(ctx context.Context, src source.Source, digest, ver
 	if !signed {
 		return nil, nil
 	}
-	return []string{fmt.Sprintf("warning: %s is signed but was not verified (pass --verify-key to verify it)", digestRef)}, nil
+	return []string{fmt.Sprintf("warning: %s is signed but was not verified (pass --verify-key, or --verify-identity/--verify-issuer, to verify it)", digestRef)}, nil
 }
 
 func (c *OCI) candidates(sels []selection, revRoot, digest string) ([]Candidate, error) {

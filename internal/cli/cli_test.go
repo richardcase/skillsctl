@@ -82,6 +82,14 @@ func (refusingCosign) Sign(context.Context, string, string) error {
 	return errors.New("this test has not configured cosign (set h.cosign)")
 }
 
+func (refusingCosign) SignKeyless(context.Context, string) error {
+	return errors.New("this test has not configured cosign (set h.cosign)")
+}
+
+func (refusingCosign) VerifyKeyless(context.Context, string, string, string) error {
+	return errors.New("this test has not configured cosign (set h.cosign)")
+}
+
 // fakePicker stands in for a terminal. choose is what the user would have
 // done; asked records what they would have been shown.
 type fakePicker struct {
