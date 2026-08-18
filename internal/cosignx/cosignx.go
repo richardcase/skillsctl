@@ -33,6 +33,16 @@ type Cosign interface {
 	// the decryption password from COSIGN_PASSWORD, its own convention —
 	// this inherits the process environment rather than handling it itself.
 	Sign(ctx context.Context, ref, keyPath string) error
+	// SignKeyless signs ref using Sigstore's keyless flow: cosign drives
+	// OIDC (browser locally, ambient token in CI), gets a short-lived cert
+	// from Fulcio, and uploads the signature to Rekor. No key material
+	// touches disk on either side of this call.
+	SignKeyless(ctx context.Context, ref string) error
+	// VerifyKeyless checks ref's signature was made by a Fulcio-issued cert
+	// bound to identity, issued by issuer, and is present in Rekor. Both
+	// identity and issuer must be given — keyless trust pinned to only one
+	// of them is not trust at all.
+	VerifyKeyless(ctx context.Context, ref, identity, issuer string) error
 }
 
 // CLI implements Cosign using the cosign binary.
@@ -78,6 +88,26 @@ func (c *CLI) Signed(ctx context.Context, ref string) (bool, error) {
 func (c *CLI) Sign(ctx context.Context, ref, keyPath string) error {
 	if _, err := c.output(ctx, "sign", "--key", keyPath, "--yes", ref); err != nil {
 		return fmt.Errorf("sign %s: %w", ref, err)
+	}
+	return nil
+}
+
+// SignKeyless signs ref using Sigstore's keyless flow.
+func (c *CLI) SignKeyless(ctx context.Context, ref string) error {
+	if _, err := c.output(ctx, "sign", "--yes", ref); err != nil {
+		return fmt.Errorf("sign %s: %w", ref, err)
+	}
+	return nil
+}
+
+// VerifyKeyless checks ref's signature against a Fulcio-issued cert bound
+// to identity and issued by issuer.
+func (c *CLI) VerifyKeyless(ctx context.Context, ref, identity, issuer string) error {
+	if _, err := c.output(ctx, "verify",
+		"--certificate-identity", identity,
+		"--certificate-oidc-issuer", issuer,
+		ref); err != nil {
+		return fmt.Errorf("verify %s: %w", ref, err)
 	}
 	return nil
 }
