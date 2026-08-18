@@ -142,7 +142,7 @@ func (c *OCI) checkSignature(ctx context.Context, src source.Source, digest, ver
 	if !signed {
 		return nil, nil
 	}
-	return []string{fmt.Sprintf("warning: %s is signed but was not verified (pass --verify-key to verify it)", digestRef)}, nil
+	return []string{fmt.Sprintf("warning: %s is signed but was not verified (pass --verify-key, or --verify-identity/--verify-issuer, to verify it)", digestRef)}, nil
 }
 
 func (c *OCI) candidates(sels []selection, revRoot, digest string) ([]Candidate, error) {
