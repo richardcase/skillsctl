@@ -177,11 +177,13 @@ func TestOCIOwnershipIsStoreOwned(t *testing.T) {
 // verifies successfully and reports every ref as unsigned, so tests that
 // don't care about signing are unaffected by its presence.
 type fakeCosign struct {
-	verifyErr error
-	signed    bool
-	signedErr error
-	verified  []string
-	asked     []string
+	verifyErr        error
+	signed           bool
+	signedErr        error
+	verifyKeylessErr error
+	verified         []string
+	verifiedKeyless  []string
+	asked            []string
 }
 
 func (f *fakeCosign) Verify(_ context.Context, ref, _ string) error {
@@ -195,6 +197,13 @@ func (f *fakeCosign) Signed(_ context.Context, ref string) (bool, error) {
 }
 
 func (f *fakeCosign) Sign(context.Context, string, string) error { return nil }
+
+func (f *fakeCosign) SignKeyless(context.Context, string) error { return nil }
+
+func (f *fakeCosign) VerifyKeyless(_ context.Context, ref, _, _ string) error {
+	f.verifiedKeyless = append(f.verifiedKeyless, ref)
+	return f.verifyKeylessErr
+}
 
 func TestOCIPrepareVerifiesAgainstTheResolvedDigest(t *testing.T) {
 	st := store.New(t.TempDir())

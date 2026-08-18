@@ -23,9 +23,11 @@ func (f *fakeOCIWithLayer) Pull(_ context.Context, _, dest string) error {
 func (f *fakeOCIWithLayer) Push(context.Context, string, io.Reader) error { return nil }
 
 type verifyingCosign struct {
-	verifyErr error
-	signed    bool
-	verified  []string
+	verifyErr        error
+	signed           bool
+	verified         []string
+	verifyKeylessErr error
+	verifiedKeyless  []string
 }
 
 func (c *verifyingCosign) Verify(_ context.Context, ref, _ string) error {
@@ -34,6 +36,13 @@ func (c *verifyingCosign) Verify(_ context.Context, ref, _ string) error {
 }
 func (c *verifyingCosign) Signed(context.Context, string) (bool, error) { return c.signed, nil }
 func (c *verifyingCosign) Sign(context.Context, string, string) error   { return nil }
+
+func (c *verifyingCosign) SignKeyless(context.Context, string) error { return nil }
+
+func (c *verifyingCosign) VerifyKeyless(_ context.Context, ref, _, _ string) error {
+	c.verifiedKeyless = append(c.verifiedKeyless, ref)
+	return c.verifyKeylessErr
+}
 
 func TestInstallVerifiesTheSignatureBeforeInstalling(t *testing.T) {
 	h := newHarness(t)

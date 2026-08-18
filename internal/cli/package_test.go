@@ -76,8 +76,10 @@ func TestPackagePushesTheTarredTree(t *testing.T) {
 }
 
 type recordingCosign struct {
-	signRef, signKey string
-	signErr          error
+	signRef, signKey       string
+	signErr                error
+	signKeylessRef         string
+	signKeylessErr         error
 }
 
 func (c *recordingCosign) Verify(context.Context, string, string) error { return nil }
@@ -86,6 +88,13 @@ func (c *recordingCosign) Sign(_ context.Context, ref, keyPath string) error {
 	c.signRef, c.signKey = ref, keyPath
 	return c.signErr
 }
+
+func (c *recordingCosign) SignKeyless(_ context.Context, ref string) error {
+	c.signKeylessRef = ref
+	return c.signKeylessErr
+}
+
+func (c *recordingCosign) VerifyKeyless(context.Context, string, string, string) error { return nil }
 
 func TestPackageSignsAfterPushingWhenSignKeyIsGiven(t *testing.T) {
 	h := newHarness(t)
