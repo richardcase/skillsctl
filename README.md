@@ -125,6 +125,7 @@ skillsctl install owner/repo -a claude             # just one agent
 skillsctl install owner/repo --ref v1.2.0 --pin    # pin a version
 skillsctl install owner/repo --dry-run             # show what would change
 skillsctl install superpowers@claude-plugins-official  # a Claude Code plugin
+skillsctl install https://gitlab.com/group/subgroup/repo.git  # any git host, incl. GitLab subgroups
 skillsctl install oci://ghcr.io/owner/skills:v1    # from a packaged OCI artifact
 skillsctl package ./my-skills ghcr.io/owner/skills:v1  # push a directory of skills as one
 skillsctl link ./my-skill                          # a skill you are writing
@@ -202,6 +203,14 @@ artifact from a subpath inside it — the only way to name one in a
 `.git`-suffixed or `git@host:` URL, where the repository boundary is otherwise
 the whole path, and in an `oci://` reference, where the tag ends it:
 `oci://ghcr.io/owner/skills:v1//pdf-forms`.
+
+The `owner/repo` shorthand is GitHub-specific, but any other git host — GitLab,
+Bitbucket, a self-hosted server — works with its full URL, `.git` suffix
+included: `skillsctl install https://gitlab.com/group/subgroup/repo.git`. The
+suffix matters more on GitLab than GitHub, since GitLab projects can nest
+inside subgroups (`group/subgroup/repo`), and without an explicit `.git`
+boundary that path is indistinguishable from `owner/repo/path/to/skill`. Add
+`//path/to/skill` after the `.git` to name a skill inside such a repository.
 
 A repository holding several skills can be narrowed with `--skill <name>`
 (repeatable, matching a skill's name or its path) or `--all`. Without one of
