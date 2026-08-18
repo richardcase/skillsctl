@@ -177,13 +177,15 @@ func TestOCIOwnershipIsStoreOwned(t *testing.T) {
 // verifies successfully and reports every ref as unsigned, so tests that
 // don't care about signing are unaffected by its presence.
 type fakeCosign struct {
-	verifyErr        error
-	signed           bool
-	signedErr        error
-	verifyKeylessErr error
-	verified         []string
-	verifiedKeyless  []string
-	asked            []string
+	verifyErr          error
+	signed             bool
+	signedErr          error
+	verifyKeylessErr   error
+	verified           []string
+	verifiedKeyless    []string
+	asked              []string
+	lastVerifyIdentity string
+	lastVerifyIssuer   string
 }
 
 func (f *fakeCosign) Verify(_ context.Context, ref, _ string) error {
@@ -200,8 +202,10 @@ func (f *fakeCosign) Sign(context.Context, string, string) error { return nil }
 
 func (f *fakeCosign) SignKeyless(context.Context, string) error { return nil }
 
-func (f *fakeCosign) VerifyKeyless(_ context.Context, ref, _, _ string) error {
+func (f *fakeCosign) VerifyKeyless(_ context.Context, ref, identity, issuer string) error {
 	f.verifiedKeyless = append(f.verifiedKeyless, ref)
+	f.lastVerifyIdentity = identity
+	f.lastVerifyIssuer = issuer
 	return f.verifyKeylessErr
 }
 
@@ -262,6 +266,12 @@ func TestOCIPrepareVerifiesKeylessAgainstTheResolvedDigest(t *testing.T) {
 	}
 	if len(cs.verifiedKeyless) != 1 || cs.verifiedKeyless[0] != "ghcr.io/owner/skills@sha256:aaa" {
 		t.Errorf("verifiedKeyless = %v, want one call against the digest ref", cs.verifiedKeyless)
+	}
+	if cs.lastVerifyIdentity != "signer@example.com" {
+		t.Errorf("VerifyKeyless identity = %q, want the requested identity", cs.lastVerifyIdentity)
+	}
+	if cs.lastVerifyIssuer != "https://accounts.google.com" {
+		t.Errorf("VerifyKeyless issuer = %q, want the requested issuer", cs.lastVerifyIssuer)
 	}
 }
 

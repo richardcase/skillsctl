@@ -23,11 +23,13 @@ func (f *fakeOCIWithLayer) Pull(_ context.Context, _, dest string) error {
 func (f *fakeOCIWithLayer) Push(context.Context, string, io.Reader) error { return nil }
 
 type verifyingCosign struct {
-	verifyErr        error
-	signed           bool
-	verified         []string
-	verifyKeylessErr error
-	verifiedKeyless  []string
+	verifyErr          error
+	signed             bool
+	verified           []string
+	verifyKeylessErr   error
+	verifiedKeyless    []string
+	lastVerifyIdentity string
+	lastVerifyIssuer   string
 }
 
 func (c *verifyingCosign) Verify(_ context.Context, ref, _ string) error {
@@ -39,8 +41,10 @@ func (c *verifyingCosign) Sign(context.Context, string, string) error   { return
 
 func (c *verifyingCosign) SignKeyless(context.Context, string) error { return nil }
 
-func (c *verifyingCosign) VerifyKeyless(_ context.Context, ref, _, _ string) error {
+func (c *verifyingCosign) VerifyKeyless(_ context.Context, ref, identity, issuer string) error {
 	c.verifiedKeyless = append(c.verifiedKeyless, ref)
+	c.lastVerifyIdentity = identity
+	c.lastVerifyIssuer = issuer
 	return c.verifyKeylessErr
 }
 
@@ -105,6 +109,13 @@ func TestInstallVerifiesKeylessBeforeInstalling(t *testing.T) {
 	}
 	if strings.Contains(out, "warning:") {
 		t.Errorf("a verified install should print no warning:\n%s", out)
+	}
+	cs := h.cosign.(*verifyingCosign)
+	if cs.lastVerifyIdentity != "signer@example.com" {
+		t.Errorf("VerifyKeyless identity = %q, want the --verify-identity value", cs.lastVerifyIdentity)
+	}
+	if cs.lastVerifyIssuer != "https://accounts.google.com" {
+		t.Errorf("VerifyKeyless issuer = %q, want the --verify-issuer value", cs.lastVerifyIssuer)
 	}
 }
 
