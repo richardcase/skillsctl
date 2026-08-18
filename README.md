@@ -11,7 +11,7 @@ deterministic. One store, symlinked into every agent you use.
 
 [![Go](https://img.shields.io/github/go-mod/go-version/richardcase/skillsctl)](go.mod)
 [![Go Reference](https://pkg.go.dev/badge/github.com/richardcase/skillsctl.svg)](https://pkg.go.dev/github.com/richardcase/skillsctl)
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <p align="center">
   <img src="assets/demo.gif" alt="skillsctl demo: install, list, info, update --dry-run, remove" width="720">
@@ -605,4 +605,4 @@ rules, for both human contributors and AI agents.
 
 ## License
 
-[AGPL-3.0](LICENSE).
+[Apache-2.0](LICENSE).
