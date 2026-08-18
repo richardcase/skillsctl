@@ -102,13 +102,16 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		Pin:     o.pin,
 	}
 
-	chosen, err := ch.Prepare(ctx, req)
+	chosen, warnings, err := ch.Prepare(ctx, req)
 	if err != nil {
-		chosen, err = resolveAmbiguity(ctx, cmd, ch, &req, o, err)
+		chosen, warnings, err = resolveAmbiguity(ctx, cmd, ch, &req, o, err)
 	}
 	if err != nil {
 		reportAmbiguous(cmd, err)
 		return err
+	}
+	for _, w := range warnings {
+		cmd.Println(w)
 	}
 
 	if o.as != "" {
@@ -225,25 +228,25 @@ func dedupeSkips(lists ...[]string) []string {
 func resolveAmbiguity(
 	ctx context.Context, cmd *cobra.Command, ch channel.Channel,
 	req *channel.Request, o installOpts, cause error,
-) ([]channel.Candidate, error) {
+) ([]channel.Candidate, []string, error) {
 	var amb *channel.Ambiguous
 	if !errors.As(cause, &amb) {
-		return nil, cause
+		return nil, nil, cause
 	}
 	// narrow also reports an ambiguity for a --skill that names nothing in the
 	// repository. That is a typo rather than an unanswered question, and a
 	// picker is no answer to it.
 	if len(o.skills) > 0 || o.all {
-		return nil, cause
+		return nil, nil, cause
 	}
 	p := newPicker()
 	if !p.Interactive() {
-		return nil, cause
+		return nil, nil, cause
 	}
 
 	names, err := selectSkills(p, amb, o.as != "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// A second request, for the re-read only. Install must still see the ref
@@ -260,16 +263,16 @@ func resolveAmbiguity(
 		lookup.Ref = amb.Resolved
 	}
 
-	chosen, err := ch.Prepare(ctx, lookup)
+	chosen, warnings, err := ch.Prepare(ctx, lookup)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	req.Skills = names
 	for _, line := range pickedListing(amb, names) {
 		cmd.Println(line)
 	}
-	return chosen, nil
+	return chosen, warnings, nil
 }
 
 // reportAmbiguous prints what the user could have asked for, when the channel

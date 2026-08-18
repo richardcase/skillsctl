@@ -45,12 +45,12 @@ type selection struct {
 
 // Prepare resolves the ref, extracts the revision, and narrows the skills it
 // found to the ones the request asked for.
-func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
+func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, []string, error) {
 	src := req.Source
 
 	sha, err := c.git.Resolve(ctx, src.RepoURL, req.Ref)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Populating the content-addressed cache is idempotent and not a
@@ -58,24 +58,24 @@ func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 	// the plan name the skills exactly rather than guess.
 	revRoot, err := c.store.Ensure(ctx, c.git, src.Slug(), src.RepoURL, sha)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	revPath, err := store.Join(revRoot, src.Subpath)
 	if err != nil {
-		return nil, fmt.Errorf("refusing to install: %w", err)
+		return nil, nil, fmt.Errorf("refusing to install: %w", err)
 	}
 
 	found, err := discover.Walk(revPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(found) == 0 {
-		return nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
+		return nil, nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
 	}
 
 	available, err := resolveNames(found, src.DefaultName())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chosen, err := narrow(available, req)
@@ -87,10 +87,11 @@ func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 			amb.Available = brief(available)
 			amb.Resolved = sha
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
-	return c.candidates(chosen, revRoot, sha)
+	cands, err := c.candidates(chosen, revRoot, sha)
+	return cands, nil, err
 }
 
 // narrow reduces the discovered skills to the ones the request asked for.

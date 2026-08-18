@@ -113,7 +113,7 @@ func planMissing(ctx context.Context, reg channel.Registry, e Entry, targets []t
 	}
 
 	req := channel.Request{Source: src, Targets: targets, Ref: e.Ref, Pin: e.Pinned}
-	chosen, err := ch.Prepare(ctx, req)
+	chosen, _, err := ch.Prepare(ctx, req)
 	if err != nil {
 		return errorVerdict(e, err), plan.Plan{}
 	}

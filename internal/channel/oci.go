@@ -45,39 +45,39 @@ func ociSourceOf(r *state.Receipt) (source.Source, error) {
 
 // Prepare resolves the tag to a digest, extracts the revision, and narrows
 // the skills it found to the ones the request asked for.
-func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
+func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, error) {
 	src := req.Source
 
 	ref := src.OCIRef(req.Ref)
 
 	digest, err := c.oci.Resolve(ctx, ref)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	revRoot, err := c.store.EnsureOCI(ctx, c.oci, src.Slug(), ref, digest)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// An artifact holds a tree of skills exactly as a repository does, so a
 	// subpath narrows it the same way — which is also what lets a manifest
 	// name one skill out of an artifact that ships several.
 	revPath, err := store.Join(revRoot, src.Subpath)
 	if err != nil {
-		return nil, fmt.Errorf("refusing to install: %w", err)
+		return nil, nil, fmt.Errorf("refusing to install: %w", err)
 	}
 
 	found, err := discover.Walk(revPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(found) == 0 {
-		return nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
+		return nil, nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
 	}
 
 	available, err := resolveNames(found, src.DefaultName())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chosen, err := narrow(available, req)
@@ -89,10 +89,11 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, error) {
 			amb.Available = brief(available)
 			amb.Resolved = digest
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
-	return c.candidates(chosen, revRoot, digest)
+	cands, err := c.candidates(chosen, revRoot, digest)
+	return cands, nil, err
 }
 
 func (c *OCI) candidates(sels []selection, revRoot, digest string) ([]Candidate, error) {

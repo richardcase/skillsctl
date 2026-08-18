@@ -60,7 +60,7 @@ func TestPluginOwnershipIsTheAgents(t *testing.T) {
 func TestPluginInstallExecsThenRecords(t *testing.T) {
 	c, _ := newPluginChannel()
 
-	cands, err := c.Prepare(context.Background(), pluginRequest())
+	cands, _, err := c.Prepare(context.Background(), pluginRequest())
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestPluginInstallAdoptsWithoutExecuting(t *testing.T) {
 		ID: "superpowers@claude-plugins-official", Version: "6.3.0", InstallPath: rev,
 	}}}, cfg)
 
-	cands, err := c.Prepare(context.Background(), Request{Source: src, Targets: cfg.Targets})
+	cands, _, err := c.Prepare(context.Background(), Request{Source: src, Targets: cfg.Targets})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestPluginInstallOfAnAdoptedPluginPlansTheLinksExactly(t *testing.T) {
 	}}}, cfg)
 	req := Request{Source: src, Targets: cfg.Targets}
 
-	cands, err := c.Prepare(context.Background(), req)
+	cands, _, err := c.Prepare(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestPluginInstallOfAFreshPluginNotesTheLinksItCannotYetName(t *testing.T) {
 	}
 	req := Request{Source: src, Targets: cfg.Targets}
 
-	cands, err := c.Prepare(context.Background(), req)
+	cands, _, err := c.Prepare(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestPluginRefusesAgentsThatDoNotInstallPlugins(t *testing.T) {
 	req := pluginRequest()
 	req.Targets = []target.Target{{Name: "codex"}}
 
-	_, err := c.Prepare(context.Background(), req)
+	_, _, err := c.Prepare(context.Background(), req)
 	if err == nil {
 		t.Fatal("Prepare accepted an agent that does not install plugins")
 	}
@@ -385,7 +385,7 @@ func TestPluginSurfacesAFailedRead(t *testing.T) {
 	f := &fakeClaude{err: claudex.ErrNotFound}
 	c := NewPlugin(f, pluginCfg)
 
-	if _, err := c.Prepare(context.Background(), pluginRequest()); !errors.Is(err, claudex.ErrNotFound) {
+	if _, _, err := c.Prepare(context.Background(), pluginRequest()); !errors.Is(err, claudex.ErrNotFound) {
 		t.Errorf("error = %v, want it to wrap ErrNotFound", err)
 	}
 }

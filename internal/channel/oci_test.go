@@ -52,7 +52,7 @@ func TestOCIPrepareFindsTheSkillAtTheResolvedDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cands, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	cands, _, err := c.Prepare(context.Background(), Request{Source: src, All: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestOCIInstallRecordsAReceiptTrackingTheTag(t *testing.T) {
 	c := NewOCI(st, o)
 
 	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
-	cands, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	cands, _, err := c.Prepare(context.Background(), Request{Source: src, All: true})
 	if err != nil {
 		t.Fatal(err)
 	}
