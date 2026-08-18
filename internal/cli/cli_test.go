@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/richardcase/skillsctl/internal/claudex"
+	"github.com/richardcase/skillsctl/internal/cosignx"
 	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/outdated"
 	"github.com/richardcase/skillsctl/internal/prompt"
@@ -40,6 +41,11 @@ type harness struct {
 	// a fake that refuses, so a test that means to exercise the OCI channel
 	// must say so by setting h.oci, the same bargain h.plugins already makes.
 	oci ocix.OCI
+
+	// cosign answers every cosign call for the duration of the test, the same
+	// bargain h.oci makes: it defaults to a fake that refuses, so a test that
+	// means to exercise signing or verification must set h.cosign.
+	cosign cosignx.Cosign
 }
 
 // refusingOCI is newHarness's default: any call fails loudly, so a test that
@@ -57,6 +63,23 @@ func (refusingOCI) Pull(context.Context, string, string) error {
 
 func (refusingOCI) Push(context.Context, string, io.Reader) error {
 	return errors.New("this test has not configured an OCI registry (set h.oci)")
+}
+
+// refusingCosign is newHarness's default: any call fails loudly, so a test
+// that forgets to set h.cosign finds out immediately rather than silently
+// reaching for a real cosign install.
+type refusingCosign struct{}
+
+func (refusingCosign) Verify(context.Context, string, string) error {
+	return errors.New("this test has not configured cosign (set h.cosign)")
+}
+
+func (refusingCosign) Signed(context.Context, string) (bool, error) {
+	return false, errors.New("this test has not configured cosign (set h.cosign)")
+}
+
+func (refusingCosign) Sign(context.Context, string, string) error {
+	return errors.New("this test has not configured cosign (set h.cosign)")
 }
 
 // fakePicker stands in for a terminal. choose is what the user would have
@@ -95,25 +118,30 @@ func newHarness(t *testing.T) *harness {
 		plugins: &fakePlugins{root: filepath.Join(root, "plugins")},
 		picker:  &fakePicker{},
 		oci:     refusingOCI{},
+		cosign:  refusingCosign{},
 	}
 
-	// Swapping the four seams for the whole test, restored by t.Cleanup. A
+	// Swapping the five seams for the whole test, restored by t.Cleanup. A
 	// test that means to exercise the plugin channel populates h.plugins; one
 	// that does not still cannot shell out. The picker is the same bargain: a
 	// test that means to choose sets h.picker.on, and one that does not cannot
 	// block on a terminal. The OCI seam is the same again: a test that means
-	// to exercise it sets h.oci, and one that does not gets refusingOCI.
-	realPlugins, realRunner, realPicker, realOCI := newPlugins, newRunner, newPicker, newOCI
+	// to exercise it sets h.oci, and one that does not gets refusingOCI. The
+	// cosign seam follows suit with h.cosign and refusingCosign.
+	realPlugins, realRunner, realPicker, realOCI, realCosign := newPlugins, newRunner, newPicker, newOCI, newCosign
 	newPlugins = func() claudex.Plugins { return h.plugins }
 	newPicker = func() picker { return h.picker }
 	newOCI = func() ocix.OCI { return h.oci }
+	newCosign = func() cosignx.Cosign { return h.cosign }
 	newRunner = func() func(context.Context, []string) error {
 		return func(_ context.Context, argv []string) error {
 			h.ran = append(h.ran, argv)
 			return h.plugins.exec(argv)
 		}
 	}
-	t.Cleanup(func() { newPlugins, newRunner, newPicker, newOCI = realPlugins, realRunner, realPicker, realOCI })
+	t.Cleanup(func() {
+		newPlugins, newRunner, newPicker, newOCI, newCosign = realPlugins, realRunner, realPicker, realOCI, realCosign
+	})
 
 	// Both agent parent directories exist, so both are "present".
 	for _, d := range []string{filepath.Join(agents, ".claude"), filepath.Join(agents, ".codex")} {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/claudex"
+	"github.com/richardcase/skillsctl/internal/cosignx"
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/prompt"
@@ -26,6 +27,11 @@ var newPlugins = func() claudex.Plugins { return claudex.New() }
 // newOCI builds the wrapper around the OCI registry client. Tests replace
 // it, so that no test reaches a real registry.
 var newOCI = func() ocix.OCI { return ocix.New() }
+
+// newCosign builds the wrapper around the cosign binary. Tests replace it,
+// so that no test shells out to a real cosign or reaches a real registry it
+// doesn't control.
+var newCosign = func() cosignx.Cosign { return cosignx.New() }
 
 // newPicker builds the chooser an install falls back to when it cannot tell
 // which skill was meant. Tests replace it, so that no test blocks reading a
