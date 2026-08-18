@@ -39,7 +39,7 @@ nfpms:
     maintainer: Richard Case <richmcase@gmail.com>
     description: Install, update and remove agent skills.
     homepage: https://github.com/richardcase/skillsctl
-    license: AGPL-3.0
+    license: Apache-2.0
     bindir: /usr/bin
 
 homebrew_casks:
@@ -49,7 +49,7 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/richardcase/skillsctl
     description: Install, update and remove agent skills.
-    license: AGPL-3.0
+    license: Apache-2.0
     binaries:
       - skillsctl
     hooks:

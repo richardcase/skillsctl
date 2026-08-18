@@ -11,7 +11,7 @@ accurate and `remove` never has to infer anything.
 
 - Module: `github.com/richardcase/skillsctl`
 - Go 1.25 (`GOTOOLCHAIN=local` — do not rely on toolchain auto-download)
-- Licence: AGPL-3.0
+- Licence: Apache-2.0
 
 ## Setup and commands
 
