@@ -242,6 +242,49 @@ func TestOCIPrepareFailsClosedOnABadSignature(t *testing.T) {
 	}
 }
 
+func TestOCIPrepareVerifiesKeylessAgainstTheResolvedDigest(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, warnings, err := c.Prepare(context.Background(), Request{
+		Source: src, All: true,
+		VerifyIdentity: "signer@example.com",
+		VerifyIssuer:   "https://accounts.google.com",
+	})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for a successful keyless verify", warnings)
+	}
+	if len(cs.verifiedKeyless) != 1 || cs.verifiedKeyless[0] != "ghcr.io/owner/skills@sha256:aaa" {
+		t.Errorf("verifiedKeyless = %v, want one call against the digest ref", cs.verifiedKeyless)
+	}
+}
+
+func TestOCIPrepareFailsClosedOnABadKeylessSignature(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	cs := &fakeCosign{verifyKeylessErr: errors.New("no matching signatures")}
+	c := NewOCI(st, o, cs)
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	_, _, err := c.Prepare(context.Background(), Request{
+		Source: src, All: true,
+		VerifyIdentity: "signer@example.com",
+		VerifyIssuer:   "https://accounts.google.com",
+	})
+	if err == nil {
+		t.Fatal("Prepare accepted a failing keyless verification")
+	}
+	if _, statErr := os.Stat(filepath.Join(st.Root, "rev")); statErr == nil {
+		t.Error("a failed keyless verification must not extract the revision")
+	}
+}
+
 func TestOCIPrepareWarnsWhenSignedButNotVerified(t *testing.T) {
 	st := store.New(t.TempDir())
 	o := &fakeOCI{digest: "sha256:aaa"}
