@@ -394,7 +394,15 @@ the offline flags instead. Neither is the default; pick whichever fits how
 the image was built.
 
 **Keypair**, for images signed by hand or by a pipeline that already manages
-its own keys. Generate one with `cosign generate-key-pair`, then:
+its own keys. Generate one with `cosign generate-key-pair`:
+
+```bash
+cosign generate-key-pair
+# writes cosign.key (encrypted private key) and cosign.pub (public key);
+# prompts for a password to encrypt cosign.key unless COSIGN_PASSWORD is set
+```
+
+then:
 
 ```bash
 skillsctl package ./my-skills ghcr.io/owner/skills:v1 --sign-key cosign.key
@@ -431,6 +439,52 @@ both are required together, and must match the signer's certificate exactly.
 `cosign verify --certificate-identity <identity> --certificate-oidc-issuer <issuer> <ref>`,
 which — unlike `--verify-key` — is an online check: it queries Rekor's
 transparency log for the signature.
+
+Each CI platform has to be told to hand its job an OIDC token before cosign
+can use it:
+
+**GitHub Actions** grants nothing by default — add `id-token: write` to the
+job's permissions, then sign as usual:
+
+```yaml
+permissions:
+  id-token: write   # required so cosign can request the ambient OIDC token
+  contents: read
+steps:
+  - uses: sigstore/cosign-installer@v3
+  - run: skillsctl package ./my-skills ghcr.io/owner/skills:v1 --sign-keyless
+```
+
+Verify against the workflow's own identity:
+
+```bash
+skillsctl install oci://ghcr.io/owner/skills:v1 \
+  --verify-identity https://github.com/owner/repo/.github/workflows/release.yml@refs/heads/main \
+  --verify-issuer https://token.actions.githubusercontent.com
+```
+
+**GitLab CI** has no ambient token — request one explicitly via `id_tokens`
+with `aud: sigstore`, which cosign reads from the `SIGSTORE_ID_TOKEN`
+environment variable it sets:
+
+```yaml
+sign:
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  script:
+    - skillsctl package ./my-skills registry.example.com/owner/skills:v1 --sign-keyless
+```
+
+GitLab's certificate identity is the pipeline's URL rather than an email —
+note the required double slash before the CI config path, and that the
+issuer is the GitLab instance itself:
+
+```bash
+skillsctl install oci://registry.example.com/owner/skills:v1 \
+  --verify-identity "https://gitlab.com/owner/skills//.gitlab-ci.yml@refs/heads/main" \
+  --verify-issuer https://gitlab.com
+```
 
 `install` refuses the install outright, before anything is extracted or
 linked, if verification is requested and fails. If an image is signed but
