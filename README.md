@@ -17,6 +17,21 @@ deterministic. One store, symlinked into every agent you use.
   <img src="assets/demo.gif" alt="skillsctl demo: install, list, info, update --dry-run, remove" width="720">
 </p>
 
+## Table of Contents
+
+- [Why](#why)
+- [Features](#features)
+- [Install](#install)
+- [Use](#use)
+- [How it works](#how-it-works)
+- [Commands](#commands)
+- [Configuration](#configuration)
+- [skills.toml](#skillstoml)
+- [Status](#status)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Why
 
 Skills spread by copy-paste. You clone a repo into `~/.claude/skills`, copy the
