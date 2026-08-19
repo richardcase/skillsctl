@@ -80,6 +80,12 @@ func reportDoctor(cmd *cobra.Command, rep doctor.Report, asJSON bool) error {
 		}
 	}
 
+	for _, w := range rep.Warnings {
+		if _, err := fmt.Fprintln(out, w); err != nil {
+			return err
+		}
+	}
+
 	if rep.IsEmpty() {
 		_, err := fmt.Fprintln(out, "Nothing wrong.")
 		return err
@@ -88,7 +94,7 @@ func reportDoctor(cmd *cobra.Command, rep doctor.Report, asJSON bool) error {
 	// One tabwriter per group, because the columns differ by what the finding
 	// is about: a skill in an agent, or a directory in the store.
 	for i, g := range rep.Groups() {
-		if i > 0 || len(rep.Unscanned) > 0 {
+		if i > 0 || len(rep.Unscanned) > 0 || len(rep.Warnings) > 0 {
 			_, _ = fmt.Fprintln(out)
 		}
 		_, _ = fmt.Fprintln(out, g.Title)

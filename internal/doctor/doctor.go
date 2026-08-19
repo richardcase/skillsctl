@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,6 +23,12 @@ import (
 	"github.com/richardcase/skillsctl/internal/store"
 	"github.com/richardcase/skillsctl/internal/target"
 )
+
+// cosignWarning is the advisory doctor prints when cosign is not on PATH.
+// It names both what breaks — signing and verification are opt-in flags
+// that fail at the point of use without it — and where to get it.
+const cosignWarning = "cosign was not found on PATH: signing and verification will not work. " +
+	"Install it from https://docs.sigstore.dev/cosign/system_config/installation/"
 
 // Kind is a class of inconsistency, and the thing findings are grouped by.
 type Kind string
@@ -121,6 +128,10 @@ type Unscanned struct {
 type Report struct {
 	Findings  []Finding   `json:"findings"`
 	Unscanned []Unscanned `json:"unscanned,omitempty"`
+	// Warnings are advisory notes about the environment doctor runs in —
+	// they never count as a problem and never affect IsEmpty or the exit
+	// code, unlike Findings.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Group is every finding of one kind, under the commands that repair them.
@@ -215,7 +226,17 @@ func Scan(ts []target.Target, db *state.DB, st *store.Store, live store.Live) (R
 	if err := checkStore(&rep, st, live); err != nil {
 		return Report{}, err
 	}
+	checkCosign(&rep)
 	return rep, nil
+}
+
+// checkCosign warns when cosign is not on PATH. It is advisory rather than a
+// finding: signing and verification are both opt-in flags, and nothing about
+// an unsigned install is broken.
+func checkCosign(rep *Report) {
+	if _, err := exec.LookPath("cosign"); err != nil {
+		rep.Warnings = append(rep.Warnings, cosignWarning)
+	}
 }
 
 // checkReceipts looks outward from the receipts: what they claim exists, and

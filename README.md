@@ -464,6 +464,10 @@ command that repairs it, and the decision stays yours. Every configured agent is
 scanned, with no way to narrow it: a health check that skipped an agent would
 report a clean bill of health for a broken one.
 
+It also warns, without failing, when `cosign` is not on `PATH` — signing and
+verifying packages both depend on it, and the warning names where to install
+it.
+
 ```
 $ skillsctl doctor
 missing links

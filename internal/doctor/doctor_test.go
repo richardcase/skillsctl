@@ -545,6 +545,34 @@ func TestSkillsCountsDistinctNames(t *testing.T) {
 	}
 }
 
+func TestCosignMissingFromPathIsAWarningNotAFinding(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PATH", t.TempDir())
+
+	rep := f.scan()
+	if !rep.IsEmpty() {
+		t.Fatalf("a missing cosign is not a finding: %+v", rep.Findings)
+	}
+	if len(rep.Warnings) != 1 || rep.Warnings[0] != cosignWarning {
+		t.Fatalf("warnings = %v, want one warning about cosign", rep.Warnings)
+	}
+}
+
+func TestCosignOnPathAddsNoWarning(t *testing.T) {
+	f := newFixture(t)
+	bin := t.TempDir()
+	write(t, filepath.Join(bin, "cosign"), "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(bin, "cosign"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	rep := f.scan()
+	if len(rep.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none when cosign is on PATH", rep.Warnings)
+	}
+}
+
 func TestScanChangesNothing(t *testing.T) {
 	f := newFixture(t)
 	// Damage of every kind the scan can reach, so nothing is left unexercised.

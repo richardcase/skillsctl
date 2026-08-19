@@ -151,6 +151,36 @@ func TestDoctorWritesItsWholeReportToStdout(t *testing.T) {
 	}
 }
 
+func TestDoctorWarnsWhenCosignIsMissingFromPath(t *testing.T) {
+	healthy(t)
+	t.Setenv("PATH", t.TempDir())
+
+	code, out := exitCode(t, "doctor")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want %d; a missing cosign is a warning, not a failure\n%s", code, ExitOK, out)
+	}
+	if !strings.Contains(out, "cosign was not found on PATH") {
+		t.Errorf("want the cosign warning in the report:\n%s", out)
+	}
+	if !strings.Contains(out, "Nothing wrong") {
+		t.Errorf("a warning alone must not hide the clean consistency check:\n%s", out)
+	}
+}
+
+func TestDoctorJSONCarriesTheCosignWarning(t *testing.T) {
+	h := healthy(t)
+	t.Setenv("PATH", t.TempDir())
+
+	stdout, _, _ := h.runSplit(t, "doctor", "--json")
+	var rep doctor.Report
+	if err := json.Unmarshal([]byte(stdout), &rep); err != nil {
+		t.Fatalf("doctor --json emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if len(rep.Warnings) != 1 || !strings.Contains(rep.Warnings[0], "cosign was not found on PATH") {
+		t.Errorf("warnings = %v, want one warning about cosign", rep.Warnings)
+	}
+}
+
 func TestDoctorJSON(t *testing.T) {
 	h := healthy(t)
 	if err := os.Remove(filepath.Join(h.codex, "demo-skill")); err != nil {
