@@ -385,6 +385,60 @@ Locations can be overridden with environment variables:
 | `SKILLSCTL_HOME` | the store | `$XDG_DATA_HOME/skillsctl`, then `~/.local/share/skillsctl` |
 | `SKILLSCTL_CONFIG` | the config file | `$XDG_CONFIG_HOME/skillsctl/config.toml`, then `~/.config/skillsctl/config.toml` |
 
+### Signing and verification
+
+`package`/`install` support two independent, mutually exclusive ways to sign
+and verify an OCI artifact, both by shelling out to `cosign` — install it
+separately and have it on `PATH`, or `skillsctl` reports as much and names
+the offline flags instead. Neither is the default; pick whichever fits how
+the image was built.
+
+**Keypair**, for images signed by hand or by a pipeline that already manages
+its own keys. Generate one with `cosign generate-key-pair`, then:
+
+```bash
+skillsctl package ./my-skills ghcr.io/owner/skills:v1 --sign-key cosign.key
+skillsctl install oci://ghcr.io/owner/skills:v1 --verify-key cosign.pub
+```
+
+Signing runs `cosign sign --key <path> --yes <ref>`; cosign reads the key's
+decryption password from `COSIGN_PASSWORD` in the environment, not from a
+flag. Verification runs `cosign verify --key <path> <ref>` and never makes a
+network call beyond the registry pull itself — it works with no access to
+Sigstore's infrastructure. Losing the private key stops you signing new
+images under that identity; it does not invalidate images already signed.
+
+**Keyless**, for images signed in CI, where there is no key to hold or
+rotate — the signer's identity is the workflow itself, backed by Sigstore's
+Fulcio (short-lived certificate issuance) and Rekor (transparency log):
+
+```bash
+skillsctl package ./my-skills ghcr.io/owner/skills:v1 --sign-keyless
+skillsctl install oci://ghcr.io/owner/skills:v1 \
+  --verify-identity signer@example.com --verify-issuer https://accounts.google.com
+```
+
+`--sign-keyless` runs `cosign sign --yes <ref>` with no `--key`, so cosign
+drives its own OIDC flow: an interactive browser login when run on a
+workstation, or the CI platform's ambient OIDC token when run unattended —
+GitHub Actions' own `https://token.actions.githubusercontent.com` issuer is
+picked up automatically, with nothing extra to configure. The resulting
+certificate's identity (an email address, or a CI workflow's OIDC subject
+like `https://github.com/owner/repo/.github/workflows/release.yml@refs/heads/main`)
+and issuer are what `--verify-identity`/`--verify-issuer` check against —
+both are required together, and must match the signer's certificate exactly.
+`--verify-identity`/`--verify-issuer` runs
+`cosign verify --certificate-identity <identity> --certificate-oidc-issuer <issuer> <ref>`,
+which — unlike `--verify-key` — is an online check: it queries Rekor's
+transparency log for the signature.
+
+`install` refuses the install outright, before anything is extracted or
+linked, if verification is requested and fails. If an image is signed but
+`install` was given neither `--verify-key` nor
+`--verify-identity`/`--verify-issuer`, it still installs — skipping
+verification is opt-in, not silent, so it prints a warning naming both ways
+to verify.
+
 ## Commands
 
 | Command | Flags | Does |
