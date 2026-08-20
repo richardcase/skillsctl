@@ -59,6 +59,7 @@ func (c *Local) Prepare(_ context.Context, req Request) ([]Candidate, []string, 
 	if len(found) == 0 {
 		return nil, nil, fmt.Errorf("%s: %w", root, discover.ErrNoSkill)
 	}
+	found = discover.Decorate(root, found)
 
 	// The fallback name comes from the resolved path rather than from the
 	// source, so that `skillsctl install .` names the directory it was run in
@@ -155,6 +156,7 @@ func localCandidates(sels []selection, root string) ([]Candidate, error) {
 			Desc:    s.skill.Description,
 			Path:    s.skill.Dir,
 			Subpath: subpath,
+			Plugin:  s.skill.Plugin,
 		})
 	}
 	return out, nil

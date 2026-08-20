@@ -276,7 +276,8 @@ skills in https://github.com/mattpocock/skills.git @ 9a2f5c1:
 
 There has to be someone to ask: when stdin or stderr is not a terminal — a
 pipe, a CI job, `< /dev/null` — the same list is printed and the command stops,
-so an unattended run can never install something nobody chose:
+so an unattended run can never install something nobody chose. Grouping
+carries over to this plain form too:
 
 ```
 $ skillsctl install vercel-labs/agent-skills < /dev/null
@@ -284,6 +285,26 @@ skills in https://github.com/vercel-labs/agent-skills.git @ 7c41bf0:
   pdf-forms     Extract and fill PDF forms
   web-research  Research a topic against primary sources
 error: this repository holds 2 skills: pass --skill <name> (repeatable) or --all
+```
+
+A Claude Code plugin-marketplace repository — a root
+`.claude-plugin/marketplace.json` naming plugins that each nest their own
+`skills/` — is recognized the same way: skills are grouped and labelled by the
+plugin they belong to, however deep they are nested, and a plugin's own
+`.claude-plugin/plugin.json` description fills in for a skill whose own
+`SKILL.md` has none:
+
+```
+$ skillsctl install humanlayer/skills < /dev/null
+skills in https://github.com/humanlayer/skills.git @ 52a638e:
+  show-me:
+    show-me    Explain visually
+  improve-claude-md:
+    improve-claude-md  Improve CLAUDE.md files
+error: this repository holds 2 skills: pass --skill <name> (repeatable) or --all
+
+$ skillsctl install humanlayer/skills --skill show-me
+installed show-me @ 52a638e into claude
 ```
 
 `link <path>` on a directory of several skills asks the same question.

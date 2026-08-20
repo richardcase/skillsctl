@@ -84,6 +84,7 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 	if len(found) == 0 {
 		return nil, nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
 	}
+	found = discover.Decorate(revPath, found)
 
 	available, err := resolveNames(found, src.DefaultName())
 	if err != nil {
@@ -164,6 +165,7 @@ func (c *OCI) candidates(sels []selection, revRoot, digest string) ([]Candidate,
 			Desc:    s.skill.Description,
 			Path:    s.skill.Dir,
 			Subpath: subpath,
+			Plugin:  s.skill.Plugin,
 			Version: digest,
 			Hash:    hash,
 		})

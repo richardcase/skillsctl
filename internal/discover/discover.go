@@ -44,6 +44,10 @@ type Skill struct {
 	// the repository, which is what a receipt records and what --skill matches
 	// when a name is missing or ambiguous.
 	Rel string
+	// Plugin is the marketplace plugin this skill was discovered under, set by
+	// Decorate. Empty when the source has no marketplace.json or the skill
+	// falls outside every plugins[].source.
+	Plugin string
 }
 
 // Frontmatter parses a leading `---` YAML block. A file with no block is not

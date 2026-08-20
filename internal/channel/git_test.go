@@ -214,6 +214,20 @@ func TestBriefCarriesNameAndDescription(t *testing.T) {
 	}
 }
 
+func TestBriefCarriesPlugin(t *testing.T) {
+	s := skill("plugins/show-me/skills/show-me", "show-me", "")
+	s.Plugin = "show-me"
+	all, err := resolveNames([]discover.Skill{s}, "repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := brief(all)
+	if len(got) != 1 || got[0].Plugin != "show-me" {
+		t.Errorf("brief = %+v, want Plugin %q carried through", got, "show-me")
+	}
+}
+
 func TestBriefSortsCandidatesByName(t *testing.T) {
 	all, err := resolveNames([]discover.Skill{
 		skill("skills/zebra", "zebra-skill", ""),
