@@ -266,6 +266,39 @@ func TestInstallOffersHeaderRowsForAMultiCategoryRepo(t *testing.T) {
 	}
 }
 
+// A repository shaped like a Claude plugin - every skill under a shared
+// "skills/" wrapper, with the real categories one level below it - still
+// offers a header row per category rather than falling back to a flat list.
+func TestInstallOffersHeaderRowsForAPluginStyleWrappedRepo(t *testing.T) {
+	h := newHarness(t)
+	url, _ := pluginStyleCategorizedRepo(t)
+	h.picker.on, h.picker.choose = true, picks(1)
+
+	out, err := h.run(t, "install", url)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	asked := h.picker.asked
+	var headers []string
+	for _, it := range asked.Items {
+		if it.Header {
+			headers = append(headers, it.Label)
+		}
+	}
+	// Candidates are sorted by skill name (grill-me, scaffold-exercises, tdd),
+	// and categories appear in first-seen order over that list.
+	want := []string{"productivity", "misc", "engineering"}
+	if len(headers) != len(want) {
+		t.Fatalf("picker was offered headers %v, want %v: %+v", headers, want, asked.Items)
+	}
+	for i, w := range want {
+		if headers[i] != w {
+			t.Errorf("headers = %v, want %v", headers, want)
+		}
+	}
+}
+
 func TestInstallPickedSkillDryRunChangesNothing(t *testing.T) {
 	h := newHarness(t)
 	url, _ := multiRepo(t)
