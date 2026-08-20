@@ -26,6 +26,15 @@ func ValidateSkillName(name string) error {
 	return nil
 }
 
+// Occupied reports whether dir/name already has something at it — a
+// receipt's own symlink, a foreign symlink, or anything else. It is what
+// Link would refuse to overwrite, checked before offering the name as a
+// choice rather than after.
+func Occupied(dir, name string) bool {
+	_, err := os.Lstat(filepath.Join(dir, name))
+	return err == nil
+}
+
 // Link points linkPath at revPath, creating parent directories as needed.
 // It reports whether it created the symlink: an existing symlink that already
 // points at revPath is a no-op success and reports created == false, so callers
