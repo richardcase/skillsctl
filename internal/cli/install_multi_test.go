@@ -42,6 +42,26 @@ func categorizedRepo(t *testing.T) (url, sha string) {
 	})
 }
 
+const (
+	tddMD      = "---\nname: tdd\ndescription: Build features test-first\n---\n\nBody.\n"
+	grillMeMD  = "---\nname: grill-me\ndescription: Stress-test a plan\n---\n\nBody.\n"
+	scaffoldMD = "---\nname: scaffold-exercises\ndescription: Scaffold exercise files\n---\n\nBody.\n"
+)
+
+// pluginStyleCategorizedRepo is a fixture repository shaped like a Claude
+// plugin: every skill sits under a single "skills/" wrapper folder, with the
+// real categories one level below it. This is the layout that used to defeat
+// category grouping entirely, because "skills" itself was taken as the (one
+// and only) category.
+func pluginStyleCategorizedRepo(t *testing.T) (url, sha string) {
+	t.Helper()
+	return testrepo.New(t, map[string]string{
+		"skills/engineering/tdd/SKILL.md":         tddMD,
+		"skills/productivity/grill-me/SKILL.md":   grillMeMD,
+		"skills/misc/scaffold-exercises/SKILL.md": scaffoldMD,
+	})
+}
+
 // linked reports whether name is linked into the claude target.
 func linked(t *testing.T, h *harness, name string) bool {
 	t.Helper()

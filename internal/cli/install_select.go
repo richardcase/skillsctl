@@ -101,17 +101,66 @@ func selectSkills(p picker, amb *channel.Ambiguous, single bool) ([]string, erro
 	return names, nil
 }
 
-// category is the top-level folder a candidate's skill lives under within its
-// source, or "" for one that sits at the source's root. It is derived from
-// Subpath rather than stored anywhere: the picker is the only thing that
-// currently cares.
-func category(c channel.Candidate) string {
+// categoryPrefixLen reports how many leading Subpath segments are shared by
+// every candidate's parent directory - a wrapper folder (a plugin's "skills/"
+// convention, for example) that every skill sits under and that therefore
+// carries no distinguishing signal. Such a prefix is stripped before the
+// first remaining segment is taken as the category, so a repo laid out as
+// skills/<category>/<name> groups by <category> rather than by "skills".
+//
+// A candidate at the source's root has no parent segments at all, which
+// forces the intersection to zero: a repo mixing root-level and nested
+// skills is left unstripped, same as before this existed.
+func categoryPrefixLen(cands []channel.Candidate) int {
+	var prefix []string
+	set := false
+	for _, c := range cands {
+		dir := filepath.ToSlash(c.Subpath)
+		var parts []string
+		if dir != "" {
+			parts = strings.Split(dir, "/")
+			parts = parts[:len(parts)-1] // drop the skill's own directory
+		}
+		if !set {
+			prefix = parts
+			set = true
+			continue
+		}
+		prefix = commonPrefix(prefix, parts)
+	}
+	return len(prefix)
+}
+
+// commonPrefix returns the longest leading run of elements shared by a and b.
+func commonPrefix(a, b []string) []string {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return a[:i]
+		}
+	}
+	return a[:n]
+}
+
+// category is the folder a candidate's skill lives under within its source,
+// once the prefixLen leading segments common to every candidate (see
+// categoryPrefixLen) are stripped, or "" for one that sits at the source's
+// root or directly under such a shared wrapper. It is derived from Subpath
+// rather than stored anywhere: the picker is the only thing that currently
+// cares.
+func category(c channel.Candidate, prefixLen int) string {
 	dir := filepath.ToSlash(c.Subpath)
-	i := strings.IndexByte(dir, '/')
-	if i < 0 {
+	if dir == "" {
 		return ""
 	}
-	return dir[:i]
+	parts := strings.Split(dir, "/")
+	if len(parts) <= prefixLen+1 {
+		return ""
+	}
+	return parts[prefixLen]
 }
 
 // pickerItems builds the rows selectSkills shows, and member, the parallel
@@ -124,11 +173,12 @@ func category(c channel.Candidate) string {
 // this buckets by category itself rather than assuming same-category
 // candidates are adjacent.
 func pickerItems(cands []channel.Candidate) ([]prompt.Item, []int) {
+	prefixLen := categoryPrefixLen(cands)
 	cats := make([]string, len(cands))
 	var order []string
 	seen := map[string]bool{}
 	for i, c := range cands {
-		cats[i] = category(c)
+		cats[i] = category(c, prefixLen)
 		if cats[i] != "" && !seen[cats[i]] {
 			seen[cats[i]] = true
 			order = append(order, cats[i])
