@@ -25,6 +25,23 @@ func multiRepo(t *testing.T) (url, sha string) {
 	})
 }
 
+const oneMD = "---\nname: one\ndescription: The first cat-a skill\n---\n\nBody.\n"
+
+const twoMD = "---\nname: two\ndescription: The second cat-a skill\n---\n\nBody.\n"
+
+const threeMD = "---\nname: three\ndescription: The lone cat-b skill\n---\n\nBody.\n"
+
+// categorizedRepo is a fixture repository whose skills span two top-level
+// folders, which is what turns the picker's flat list into a grouped one.
+func categorizedRepo(t *testing.T) (url, sha string) {
+	t.Helper()
+	return testrepo.New(t, map[string]string{
+		"cat-a/one/SKILL.md":   oneMD,
+		"cat-a/two/SKILL.md":   twoMD,
+		"cat-b/three/SKILL.md": threeMD,
+	})
+}
+
 // linked reports whether name is linked into the claude target.
 func linked(t *testing.T, h *harness, name string) bool {
 	t.Helper()

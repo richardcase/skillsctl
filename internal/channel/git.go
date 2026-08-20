@@ -149,12 +149,14 @@ func (c *Git) candidates(sels []selection, revRoot, sha string) ([]Candidate, er
 
 // brief renders selections for a listing, which needs no revision path and no
 // hash: the point of the listing is to name what could have been asked for.
+// Subpath is included even though nothing installs from it, because it is
+// also where a skill sits within the repository, which the picker groups by.
 // Sorted by name so the list a user picks from doesn't depend on filesystem
 // walk order.
 func brief(sels []selection) []Candidate {
 	out := make([]Candidate, 0, len(sels))
 	for _, s := range sels {
-		out = append(out, Candidate{Name: s.name, Desc: s.skill.Description})
+		out = append(out, Candidate{Name: s.name, Desc: s.skill.Description, Subpath: s.skill.Rel})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

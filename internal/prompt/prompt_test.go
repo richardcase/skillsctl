@@ -369,6 +369,143 @@ func TestSelectWithNoItemsIsCancelled(t *testing.T) {
 	}
 }
 
+// groupedItems is two header rows each with two members: rows 0=cat-a header,
+// 1=alpha, 2=beta, 3=cat-b header, 4=gamma, 5=delta.
+func groupedItems() Options {
+	return Options{
+		Header: []string{"skills in repo:"},
+		Items: []Item{
+			{Label: "cat-a", Header: true},
+			{Label: "alpha"},
+			{Label: "beta"},
+			{Label: "cat-b", Header: true},
+			{Label: "gamma"},
+			{Label: "delta"},
+		},
+		Help: "space toggle",
+	}
+}
+
+func TestSpaceOnAHeaderTogglesItsGroup(t *testing.T) {
+	got, err := script(t, groupedItems(), keySpace, keyEnter)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Errorf("selection = %v, want [1 2] (cat-a's members)", got)
+	}
+}
+
+func TestSpaceOnAHeaderDoesNotTouchOtherGroups(t *testing.T) {
+	got, err := script(t, groupedItems(), keyDown, keyDown, keyDown, keySpace, keyEnter)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	if len(got) != 2 || got[0] != 4 || got[1] != 5 {
+		t.Errorf("selection = %v, want [4 5] (cat-b's members)", got)
+	}
+}
+
+func TestSpaceOnAHeaderTwiceClearsItsGroup(t *testing.T) {
+	if _, err := script(t, groupedItems(), keySpace, keySpace, keyEnter); !errors.Is(err, ErrCancelled) {
+		t.Errorf("toggling a group on then off = %v, want ErrCancelled (nothing ticked)", err)
+	}
+}
+
+func TestSpaceOnAHeaderFillsAPartlyTickedGroup(t *testing.T) {
+	// One member already ticked means the group has not finished being
+	// chosen, so the header fills it in rather than clearing the one tick.
+	got, err := script(t, groupedItems(), keyDown, keySpace, keyUp, keySpace, keyEnter)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Errorf("selection = %v, want [1 2]", got)
+	}
+}
+
+func TestGlobalSelectAllSkipsHeaders(t *testing.T) {
+	got, err := script(t, groupedItems(), keyAll, keyEnter)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	want := []int{1, 2, 4, 5}
+	if len(got) != len(want) {
+		t.Fatalf("selection = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("selection = %v, want %v", got, want)
+		}
+	}
+
+	// And it clears every member back out again, ignoring the headers'
+	// always-false entries when deciding it should.
+	if _, err := script(t, groupedItems(), keyAll, keyAll, keyEnter); !errors.Is(err, ErrCancelled) {
+		t.Errorf("clearing every row and confirming = %v, want ErrCancelled", err)
+	}
+}
+
+func TestHeaderRenderShowsAggregateState(t *testing.T) {
+	m := newModel(groupedItems()).fit(80, 24)
+
+	got := strings.Join(m.render(), "\n")
+	if !strings.Contains(got, emptyBox) {
+		t.Errorf("an untouched header should show the empty box:\n%s", got)
+	}
+
+	m = m.apply(keyDown).apply(keySpace) // tick alpha only, leaving beta untouched
+	got = strings.Join(m.render(), "\n")
+	if !strings.Contains(got, partialBox) {
+		t.Errorf("a partly-ticked group's header should show the partial box:\n%s", got)
+	}
+
+	m = m.apply(keyDown).apply(keySpace) // tick beta too
+	got = strings.Join(m.render(), "\n")
+	if !strings.Contains(got, tickedBox) {
+		t.Errorf("a fully-ticked group's header should show the ticked box:\n%s", got)
+	}
+}
+
+func TestRenderIndentsMembersUnderTheirHeader(t *testing.T) {
+	m := newModel(groupedItems()).fit(80, 24)
+	got := m.render()
+
+	var headerLine, memberLine string
+	for _, l := range got {
+		if strings.Contains(l, "cat-a") {
+			headerLine = l
+		}
+		if strings.Contains(l, "alpha") {
+			memberLine = l
+		}
+	}
+	if headerLine == "" || memberLine == "" {
+		t.Fatalf("expected both a header and a member row in:\n%s", strings.Join(got, "\n"))
+	}
+	if !strings.HasPrefix(memberLine, "    ") {
+		t.Errorf("member row %q should be indented deeper than the header", memberLine)
+	}
+	if strings.HasPrefix(headerLine, "    ") {
+		t.Errorf("header row %q should not be indented like a member", headerLine)
+	}
+}
+
+func TestSingleModeCannotConfirmOnAHeader(t *testing.T) {
+	opts := groupedItems()
+	opts.Single = true
+
+	// Enter on the header row (cursor starts at 0) is a no-op; moving onto a
+	// member and confirming there is what takes the selection.
+	got, err := script(t, opts, keyEnter, keyDown, keyEnter)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	if len(got) != 1 || got[0] != 1 {
+		t.Errorf("selection = %v, want [1]", got)
+	}
+}
+
 // utf8Valid reports whether s survived truncation intact.
 func utf8Valid(s string) bool {
 	for _, r := range s {
