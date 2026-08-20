@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/richardcase/skillsctl/internal/channel"
@@ -76,11 +77,7 @@ func firstLine(s string) string {
 // answers in the form --skill would have taken. single is for --as, which
 // renames one skill and so cannot be handed several.
 func selectSkills(p picker, amb *channel.Ambiguous, single bool) ([]string, error) {
-	labels := rowLabels(amb.Available)
-	items := make([]prompt.Item, len(labels))
-	for i, l := range labels {
-		items[i] = prompt.Item{Label: l}
-	}
+	items, member := pickerItems(amb.Available)
 
 	help := "↑/↓ move · space toggle · a all · enter install · q cancel"
 	if single {
@@ -99,9 +96,76 @@ func selectSkills(p picker, amb *channel.Ambiguous, single bool) ([]string, erro
 
 	names := make([]string, 0, len(chosen))
 	for _, i := range chosen {
-		names = append(names, amb.Available[i].Name)
+		names = append(names, amb.Available[member[i]].Name)
 	}
 	return names, nil
+}
+
+// category is the top-level folder a candidate's skill lives under within its
+// source, or "" for one that sits at the source's root. It is derived from
+// Subpath rather than stored anywhere: the picker is the only thing that
+// currently cares.
+func category(c channel.Candidate) string {
+	dir := filepath.ToSlash(c.Subpath)
+	i := strings.IndexByte(dir, '/')
+	if i < 0 {
+		return ""
+	}
+	return dir[:i]
+}
+
+// pickerItems builds the rows selectSkills shows, and member, the parallel
+// slice that maps each row back to its index in cands: -1 for a header row,
+// the candidate's index otherwise. Grouping only kicks in once candidates
+// actually span 2+ categories - a repository with all its skills at the root,
+// which is the common case, gets the same flat list as before this existed.
+//
+// cands is sorted by name, not by where a skill sits in the repository, so
+// this buckets by category itself rather than assuming same-category
+// candidates are adjacent.
+func pickerItems(cands []channel.Candidate) ([]prompt.Item, []int) {
+	cats := make([]string, len(cands))
+	var order []string
+	seen := map[string]bool{}
+	for i, c := range cands {
+		cats[i] = category(c)
+		if cats[i] != "" && !seen[cats[i]] {
+			seen[cats[i]] = true
+			order = append(order, cats[i])
+		}
+	}
+
+	labels := rowLabels(cands)
+	if len(order) < 2 {
+		items := make([]prompt.Item, len(labels))
+		member := make([]int, len(labels))
+		for i, l := range labels {
+			items[i] = prompt.Item{Label: l}
+			member[i] = i
+		}
+		return items, member
+	}
+
+	var items []prompt.Item
+	var member []int
+	// Root-level candidates, if any, are listed first and stay unheaded.
+	for i := range cands {
+		if cats[i] == "" {
+			items = append(items, prompt.Item{Label: labels[i]})
+			member = append(member, i)
+		}
+	}
+	for _, cat := range order {
+		items = append(items, prompt.Item{Label: cat, Header: true})
+		member = append(member, -1)
+		for i := range cands {
+			if cats[i] == cat {
+				items = append(items, prompt.Item{Label: labels[i]})
+				member = append(member, i)
+			}
+		}
+	}
+	return items, member
 }
 
 // pickedListing is what replaces the picker once it has been erased, so the

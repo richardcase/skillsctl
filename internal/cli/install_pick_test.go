@@ -221,6 +221,51 @@ func TestInstallPickedSkillIsListedAfterTheChoice(t *testing.T) {
 	}
 }
 
+// A repository whose skills span two folders offers a header row per folder,
+// so the picker's own semantics (a header selecting its group) can turn one
+// toggle into "every skill in cat-a".
+func TestInstallOffersHeaderRowsForAMultiCategoryRepo(t *testing.T) {
+	h := newHarness(t)
+	url, _ := categorizedRepo(t)
+	// The rows fakePicker.choose returns stand in for what the real picker
+	// would have resolved a header toggle to: cat-a's two members.
+	h.picker.on, h.picker.choose = true, picks(1, 2)
+
+	out, err := h.run(t, "install", url)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	asked := h.picker.asked
+	want := []struct {
+		header bool
+		label  string
+	}{
+		{true, "cat-a"},
+		{false, "one"},
+		{false, "two"},
+		{true, "cat-b"},
+		{false, "three"},
+	}
+	if len(asked.Items) != len(want) {
+		t.Fatalf("picker was offered %d rows, want %d: %+v", len(asked.Items), len(want), asked.Items)
+	}
+	for i, w := range want {
+		if asked.Items[i].Header != w.header || !strings.Contains(asked.Items[i].Label, w.label) {
+			t.Errorf("row %d = %+v, want Header=%v containing %q", i, asked.Items[i], w.header, w.label)
+		}
+	}
+
+	for _, name := range []string{"one", "two"} {
+		if !linked(t, h, name) {
+			t.Errorf("%s should be linked: choosing cat-a's header picks its whole group", name)
+		}
+	}
+	if linked(t, h, "three") {
+		t.Error("cat-b was never chosen, so three should not be linked")
+	}
+}
+
 func TestInstallPickedSkillDryRunChangesNothing(t *testing.T) {
 	h := newHarness(t)
 	url, _ := multiRepo(t)

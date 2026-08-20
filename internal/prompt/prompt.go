@@ -22,6 +22,11 @@ type Item struct {
 	// Label is the whole row as it should appear, already formatted and
 	// aligned by the caller. The picker only truncates it to the terminal.
 	Label string
+	// Header marks this row as a group heading rather than a choice: space
+	// toggles every item below it up to the next header (or the end of the
+	// list) as a block, it is drawn with an aggregate mark instead of its
+	// own, and it cannot be confirmed in single-select mode.
+	Header bool
 }
 
 // Options describes one selection.
@@ -45,6 +50,7 @@ const (
 	noCursor   = "  "
 	tickedBox  = "◉ "
 	emptyBox   = "◯ "
+	partialBox = "◐ "
 )
 
 // visibleFloor is how many rows are worth keeping visible before the chrome
@@ -165,6 +171,9 @@ func (m model) apply(k key) model {
 	// around it is not.
 	switch k {
 	case keyEnter:
+		if m.single && len(m.items) > 0 && m.items[m.cursor].Header {
+			return m
+		}
 		m.state = confirmed
 		return m
 	case keyCancel:
@@ -183,7 +192,15 @@ func (m model) apply(k key) model {
 	case keySpace:
 		if !m.single {
 			sel := m.copySelected()
-			sel[m.cursor] = !sel[m.cursor]
+			if m.items[m.cursor].Header {
+				lo, hi := m.cursor+1, groupEnd(m.items, m.cursor)
+				fill := !allTickedRange(sel, lo, hi)
+				for i := lo; i < hi; i++ {
+					sel[i] = fill
+				}
+			} else {
+				sel[m.cursor] = !sel[m.cursor]
+			}
 			m.selected = sel
 		}
 	case keyAll:
@@ -193,6 +210,9 @@ func (m model) apply(k key) model {
 			fill := !m.allTicked()
 			sel := m.copySelected()
 			for i := range sel {
+				if m.items[i].Header {
+					continue
+				}
 				sel[i] = fill
 			}
 			m.selected = sel
@@ -214,14 +234,19 @@ func (m model) result() ([]int, error) {
 		return nil, ErrCancelled
 	}
 	if m.single {
+		if m.items[m.cursor].Header {
+			return nil, ErrCancelled
+		}
 		return []int{m.cursor}, nil
 	}
 
 	// In list order, not in the order the rows were ticked: the order the user
-	// clicked in is not an order to install in.
+	// clicked in is not an order to install in. A header's own entry is never
+	// set true, but skipping it here keeps that invariant explicit rather than
+	// relied upon.
 	var out []int
 	for i, ok := range m.selected {
-		if ok {
+		if ok && !m.items[i].Header {
 			out = append(out, i)
 		}
 	}
@@ -241,9 +266,14 @@ func (m model) render() []string {
 		}
 	}
 
+	grouped := m.hasGroups()
 	end := min(m.offset+m.rows, len(m.items))
 	for i := m.offset; i < end; i++ {
-		lines = append(lines, "  "+m.mark(i)+m.items[i].Label)
+		indent := "  "
+		if grouped && !m.items[i].Header {
+			indent = "    "
+		}
+		lines = append(lines, indent+m.mark(i)+m.items[i].Label)
 	}
 	if hidden := len(m.items) - (end - m.offset); hidden > 0 {
 		lines = append(lines, fmt.Sprintf("  … %d more", hidden))
@@ -271,10 +301,70 @@ func (m model) mark(i int) string {
 	if m.single {
 		return cursor
 	}
+	if m.items[i].Header {
+		return cursor + m.groupBox(i)
+	}
 	if m.selected[i] {
 		return cursor + tickedBox
 	}
 	return cursor + emptyBox
+}
+
+// groupBox is the checkbox a header row draws: it reports whether every,
+// none, or only some of the items below it (up to the next header) are
+// ticked, since the header itself is never a choice.
+func (m model) groupBox(i int) string {
+	lo, hi := i+1, groupEnd(m.items, i)
+	ticked := 0
+	for j := lo; j < hi; j++ {
+		if m.selected[j] {
+			ticked++
+		}
+	}
+	switch ticked {
+	case 0:
+		return emptyBox
+	case hi - lo:
+		return tickedBox
+	default:
+		return partialBox
+	}
+}
+
+// hasGroups reports whether any row is a header, which is what decides
+// whether member rows are indented to read as children.
+func (m model) hasGroups() bool {
+	for _, it := range m.items {
+		if it.Header {
+			return true
+		}
+	}
+	return false
+}
+
+// groupEnd is the index one past the last member of the header at i: the
+// next header row, or the end of the list.
+func groupEnd(items []Item, i int) int {
+	for j := i + 1; j < len(items); j++ {
+		if items[j].Header {
+			return j
+		}
+	}
+	return len(items)
+}
+
+// allTickedRange reports whether every item in [lo, hi) is ticked. An empty
+// range is never "all ticked" - there is nothing to have finished choosing.
+func allTickedRange(sel []bool, lo, hi int) bool {
+	if lo >= hi {
+		return false
+	}
+	for i := lo; i < hi; i++ {
+		if !sel[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // scroll moves the window so the cursor stays in it.
@@ -303,12 +393,17 @@ func (m model) copySelected() []bool {
 }
 
 func (m model) allTicked() bool {
-	for _, ok := range m.selected {
+	hasMembers := false
+	for i, ok := range m.selected {
+		if m.items[i].Header {
+			continue
+		}
+		hasMembers = true
 		if !ok {
 			return false
 		}
 	}
-	return len(m.selected) > 0
+	return hasMembers
 }
 
 // feed folds a chunk of terminal input into the model, and hands back the tail

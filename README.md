@@ -256,6 +256,24 @@ installs what is ticked and `q` backs out. Backing out, or confirming with
 nothing ticked, exits `1` and changes nothing. With `--as`, which renames a
 single skill, the list takes one choice instead of several.
 
+A repository whose skills live under two or more top-level folders — several
+independent skill packs in one repo — gets a folder heading per group instead
+of one flat list. Space on a heading ticks or clears every skill under it in
+one keystroke; a skill can still be ticked on its own:
+
+```
+$ skillsctl install mattpocock/skills
+skills in https://github.com/mattpocock/skills.git @ 9a2f5c1:
+
+  ❯ ◉ content
+      ◉ blog-post-writer   Write a blog post in your voice
+      ◉ tweet-thread       Turn notes into a tweet thread
+    ◯ engineering
+      ◯ pr-description     Summarize a diff into a PR description
+
+  ↑/↓ move · space toggle · a all · enter install · q cancel
+```
+
 There has to be someone to ask: when stdin or stderr is not a terminal — a
 pipe, a CI job, `< /dev/null` — the same list is printed and the command stops,
 so an unattended run can never install something nobody chose:
