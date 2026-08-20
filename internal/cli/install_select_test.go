@@ -61,6 +61,87 @@ func TestCategoryIsTheFirstSubpathSegmentAfterAnyCommonWrapper(t *testing.T) {
 	}
 }
 
+func TestCategoryPrefersPluginOverSubpath(t *testing.T) {
+	c := channel.Candidate{Plugin: "show-me", Subpath: "plugins/show-me/skills/show-me"}
+	if got := category(c, 0); got != "show-me" {
+		t.Errorf("category = %q, want the Plugin name preferred over the derived Subpath segment", got)
+	}
+}
+
+func TestCategoryFallsBackToSubpathWhenNoPlugin(t *testing.T) {
+	c := channel.Candidate{Subpath: "cat-a/one"}
+	if got := category(c, 0); got != "cat-a" {
+		t.Errorf("category = %q, want cat-a", got)
+	}
+}
+
+func TestPickerItemsGroupsByPluginName(t *testing.T) {
+	cands := []channel.Candidate{
+		{Name: "show-me", Plugin: "show-me", Subpath: "plugins/show-me/skills/show-me"},
+		{Name: "improve-claude-md", Plugin: "improve-claude-md", Subpath: "plugins/improve-claude-md/skills/improve-claude-md"},
+	}
+	items, _ := pickerItems(cands)
+
+	var headers []string
+	for _, it := range items {
+		if it.Header {
+			headers = append(headers, it.Label)
+		}
+	}
+	want := []string{"show-me", "improve-claude-md"}
+	if len(headers) != len(want) {
+		t.Fatalf("headers = %v, want %v", headers, want)
+	}
+	for i, w := range want {
+		if headers[i] != w {
+			t.Errorf("headers = %v, want %v", headers, want)
+		}
+	}
+}
+
+func TestListingGroupsByCategoryWhenPresent(t *testing.T) {
+	all := []channel.Candidate{
+		{Name: "alpha", Plugin: "plugin-a", Desc: "The alpha skill"},
+		{Name: "beta", Plugin: "plugin-b", Desc: "The beta skill"},
+	}
+
+	lines := listing(discover.Metadata{}, "skills in repo:", all)
+	got := strings.Join(lines, "\n")
+	for _, want := range []string{"plugin-a", "plugin-b", "alpha", "beta", "The alpha skill", "The beta skill"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("listing = %q, want it to contain %q", got, want)
+		}
+	}
+
+	headerIdx, rowIdx := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "plugin-a") && !strings.Contains(l, "alpha") {
+			headerIdx = i
+		}
+		if strings.Contains(l, "alpha") {
+			rowIdx = i
+		}
+	}
+	if headerIdx < 0 || rowIdx < 0 || headerIdx > rowIdx {
+		t.Errorf("listing lines = %q, want a plugin-a header line before its alpha row", lines)
+	}
+}
+
+func TestListingStaysFlatWithOneCategory(t *testing.T) {
+	all := []channel.Candidate{{Name: "alpha-skill", Desc: "Does the alpha thing"}}
+
+	got := listing(discover.Metadata{}, "skills in repo:", all)
+	want := []string{"skills in repo:", "  alpha-skill  Does the alpha thing"}
+	if len(got) != len(want) {
+		t.Fatalf("listing = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("listing[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestPickerItemsStaysFlatWithFewerThanTwoCategories(t *testing.T) {
 	cands := []channel.Candidate{
 		{Name: "alpha", Subpath: "skills/alpha"},

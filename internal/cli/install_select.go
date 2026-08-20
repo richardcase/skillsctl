@@ -13,11 +13,30 @@ import (
 const maxDescription = 72
 
 // listing renders the available skills, one per line, for the messages that
-// have to tell the user what they could have asked for.
+// have to tell the user what they could have asked for. Grouped the same way
+// the interactive picker groups its rows (see bucketByCategory), so a
+// multi-plugin or multi-category repository reads the same whether or not a
+// terminal is attached.
 func listing(meta discover.Metadata, header string, cands []channel.Candidate) []string {
 	lines := headerLines(meta, header)
-	for _, label := range rowLabels(cands) {
-		lines = append(lines, "  "+label)
+	labels := rowLabels(cands)
+
+	root, groups := bucketByCategory(cands)
+	if groups == nil {
+		for _, l := range labels {
+			lines = append(lines, "  "+l)
+		}
+		return lines
+	}
+
+	for _, i := range root {
+		lines = append(lines, "  "+labels[i])
+	}
+	for _, g := range groups {
+		lines = append(lines, "  "+g.name+":")
+		for _, i := range g.idx {
+			lines = append(lines, "    "+labels[i])
+		}
 	}
 	return lines
 }
@@ -145,13 +164,16 @@ func commonPrefix(a, b []string) []string {
 	return a[:n]
 }
 
-// category is the folder a candidate's skill lives under within its source,
-// once the prefixLen leading segments common to every candidate (see
-// categoryPrefixLen) are stripped, or "" for one that sits at the source's
-// root or directly under such a shared wrapper. It is derived from Subpath
-// rather than stored anywhere: the picker is the only thing that currently
-// cares.
+// category is the group a candidate's skill is shown under: its marketplace
+// Plugin when one was resolved, otherwise the folder a candidate's skill
+// lives under within its source, once the prefixLen leading segments common
+// to every candidate (see categoryPrefixLen) are stripped, or "" for one that
+// sits at the source's root or directly under such a shared wrapper. The
+// folder form is derived from Subpath rather than stored anywhere.
 func category(c channel.Candidate, prefixLen int) string {
+	if c.Plugin != "" {
+		return c.Plugin
+	}
 	dir := filepath.ToSlash(c.Subpath)
 	if dir == "" {
 		return ""
@@ -163,16 +185,24 @@ func category(c channel.Candidate, prefixLen int) string {
 	return parts[prefixLen]
 }
 
-// pickerItems builds the rows selectSkills shows, and member, the parallel
-// slice that maps each row back to its index in cands: -1 for a header row,
-// the candidate's index otherwise. Grouping only kicks in once candidates
-// actually span 2+ categories - a repository with all its skills at the root,
-// which is the common case, gets the same flat list as before this existed.
+// categoryGroup is every candidate index sharing one category, in the order
+// bucketByCategory found them.
+type categoryGroup struct {
+	name string
+	idx  []int
+}
+
+// bucketByCategory groups cands' indices by category(), in first-seen order.
+// root holds the indices with no category (sit at the source's root or
+// directly under a shared wrapper); groups is nil once fewer than 2
+// categories are present, telling the caller to fall back to a flat list -
+// a repository with all its skills at the root, the common case, is
+// unaffected by grouping.
 //
 // cands is sorted by name, not by where a skill sits in the repository, so
 // this buckets by category itself rather than assuming same-category
 // candidates are adjacent.
-func pickerItems(cands []channel.Candidate) ([]prompt.Item, []int) {
+func bucketByCategory(cands []channel.Candidate) (root []int, groups []categoryGroup) {
 	prefixLen := categoryPrefixLen(cands)
 	cats := make([]string, len(cands))
 	var order []string
@@ -184,9 +214,35 @@ func pickerItems(cands []channel.Candidate) ([]prompt.Item, []int) {
 			order = append(order, cats[i])
 		}
 	}
-
-	labels := rowLabels(cands)
 	if len(order) < 2 {
+		return nil, nil
+	}
+
+	for i := range cands {
+		if cats[i] == "" {
+			root = append(root, i)
+		}
+	}
+	for _, cat := range order {
+		var idx []int
+		for i := range cands {
+			if cats[i] == cat {
+				idx = append(idx, i)
+			}
+		}
+		groups = append(groups, categoryGroup{name: cat, idx: idx})
+	}
+	return root, groups
+}
+
+// pickerItems builds the rows selectSkills shows, and member, the parallel
+// slice that maps each row back to its index in cands: -1 for a header row,
+// the candidate's index otherwise.
+func pickerItems(cands []channel.Candidate) ([]prompt.Item, []int) {
+	labels := rowLabels(cands)
+
+	root, groups := bucketByCategory(cands)
+	if groups == nil {
 		items := make([]prompt.Item, len(labels))
 		member := make([]int, len(labels))
 		for i, l := range labels {
@@ -199,20 +255,16 @@ func pickerItems(cands []channel.Candidate) ([]prompt.Item, []int) {
 	var items []prompt.Item
 	var member []int
 	// Root-level candidates, if any, are listed first and stay unheaded.
-	for i := range cands {
-		if cats[i] == "" {
+	for _, i := range root {
+		items = append(items, prompt.Item{Label: labels[i]})
+		member = append(member, i)
+	}
+	for _, g := range groups {
+		items = append(items, prompt.Item{Label: g.name, Header: true})
+		member = append(member, -1)
+		for _, i := range g.idx {
 			items = append(items, prompt.Item{Label: labels[i]})
 			member = append(member, i)
-		}
-	}
-	for _, cat := range order {
-		items = append(items, prompt.Item{Label: cat, Header: true})
-		member = append(member, -1)
-		for i := range cands {
-			if cats[i] == cat {
-				items = append(items, prompt.Item{Label: labels[i]})
-				member = append(member, i)
-			}
 		}
 	}
 	return items, member
