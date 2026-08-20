@@ -96,6 +96,10 @@ type Candidate struct {
 	// Subpath locates the skill within its source, "" when the source is the
 	// skill.
 	Subpath string
+	// Plugin is the marketplace plugin this skill was discovered under, ""
+	// when the source has no marketplace.json or the skill sits outside every
+	// plugins[].source.
+	Plugin string
 	// Version is the resolved revision: a sha, or a plugin version. Empty when
 	// only the agent can say what it will be, which is what Settle is for.
 	Version string

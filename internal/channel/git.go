@@ -72,6 +72,7 @@ func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 	if len(found) == 0 {
 		return nil, nil, fmt.Errorf("%s: %w", revPath, discover.ErrNoSkill)
 	}
+	found = discover.Decorate(revPath, found)
 
 	available, err := resolveNames(found, src.DefaultName())
 	if err != nil {
@@ -140,6 +141,7 @@ func (c *Git) candidates(sels []selection, revRoot, sha string) ([]Candidate, er
 			Desc:    s.skill.Description,
 			Path:    s.skill.Dir,
 			Subpath: subpath,
+			Plugin:  s.skill.Plugin,
 			Version: sha,
 			Hash:    hash,
 		})
@@ -156,7 +158,7 @@ func (c *Git) candidates(sels []selection, revRoot, sha string) ([]Candidate, er
 func brief(sels []selection) []Candidate {
 	out := make([]Candidate, 0, len(sels))
 	for _, s := range sels {
-		out = append(out, Candidate{Name: s.name, Desc: s.skill.Description, Subpath: s.skill.Rel})
+		out = append(out, Candidate{Name: s.name, Desc: s.skill.Description, Subpath: s.skill.Rel, Plugin: s.skill.Plugin})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
