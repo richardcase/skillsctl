@@ -279,3 +279,70 @@ func TestLinkPathInstallsWhatWasPicked(t *testing.T) {
 		t.Errorf("receipts = %+v, want one local receipt for beta", got)
 	}
 }
+
+// A skill already covered by a receipt cannot be installed again under the
+// same name, so offering it as a picker choice can only lead to an error the
+// user has already committed to by the time they see it.
+func TestInstallPickerHidesAlreadyInstalledSkills(t *testing.T) {
+	h := newHarness(t)
+	url, _ := multiRepo(t)
+
+	if out, err := h.run(t, "install", url, "--skill", "alpha"); err != nil {
+		t.Fatalf("install --skill alpha: %v\n%s", err, out)
+	}
+
+	h.picker.on, h.picker.choose = true, picks(0)
+	out, err := h.run(t, "install", url)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	asked := h.picker.asked
+	if len(asked.Items) != 1 {
+		t.Fatalf("picker was offered %d rows, want 1 (alpha is already installed): %+v", len(asked.Items), asked.Items)
+	}
+	if !strings.Contains(asked.Items[0].Label, "beta") {
+		t.Errorf("row = %q, want beta, the only skill not yet installed", asked.Items[0].Label)
+	}
+	if !linked(t, h, "beta") {
+		t.Error("beta should now be linked")
+	}
+}
+
+// A name can be occupied without a receipt covering it — something other than
+// skillsctl put a symlink there, the way `claude plugin install` or a hand-made
+// link would. No receipt means dropInstalled's old name check missed it
+// entirely, and install failed deep inside Link with a raw, confusing error.
+// It must be excluded from the picker exactly like a receipted name, and
+// naming it directly must fail with a clean message instead.
+func TestInstallPickerHidesSkillsOccupiedByAForeignSymlink(t *testing.T) {
+	h := newHarness(t)
+	url, _ := multiRepo(t)
+
+	foreign := t.TempDir()
+	if err := os.MkdirAll(h.claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(foreign, filepath.Join(h.claude, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+
+	h.picker.on, h.picker.choose = true, picks(0)
+	out, err := h.run(t, "install", url)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	asked := h.picker.asked
+	if len(asked.Items) != 1 || !strings.Contains(asked.Items[0].Label, "beta") {
+		t.Fatalf("picker should only offer beta; alpha is occupied by a foreign symlink: %+v", asked.Items)
+	}
+
+	out, err = h.run(t, "install", url, "--skill", "alpha")
+	if err == nil {
+		t.Fatalf("install --skill alpha succeeded despite the foreign symlink\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "skillsctl adopt") {
+		t.Errorf("error = %v, want it to point at `skillsctl adopt`", err)
+	}
+}

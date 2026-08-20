@@ -118,7 +118,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 
 	chosen, warnings, err := ch.Prepare(ctx, req)
 	if err != nil {
-		chosen, warnings, err = resolveAmbiguity(ctx, cmd, ch, &req, o, err)
+		chosen, warnings, err = resolveAmbiguity(ctx, cmd, ch, &req, o, h.DB, err)
 	}
 	if err != nil {
 		reportAmbiguous(cmd, err)
@@ -135,7 +135,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 		chosen[0].Name = o.as
 	}
 
-	wanted, skipped, err := dropInstalled(h.DB, chosen)
+	wanted, skipped, err := dropInstalled(h.DB, targets, chosen)
 	if err != nil {
 		return err
 	}
@@ -241,12 +241,22 @@ func dedupeSkips(lists ...[]string) []string {
 // the listing, and an exit code — exactly as it was.
 func resolveAmbiguity(
 	ctx context.Context, cmd *cobra.Command, ch channel.Channel,
-	req *channel.Request, o installOpts, cause error,
+	req *channel.Request, o installOpts, db *state.DB, cause error,
 ) ([]channel.Candidate, []string, error) {
 	var amb *channel.Ambiguous
 	if !errors.As(cause, &amb) {
 		return nil, nil, cause
 	}
+
+	// Narrowed here rather than left to dropInstalled, and in place on the
+	// shared *Ambiguous so the plain listing reportAmbiguous prints for a
+	// non-interactive caller agrees with what the picker below would have
+	// offered: neither shows a name that could only fail.
+	amb.Available = availableToInstall(db, req.Targets, amb.Available)
+	if len(amb.Available) == 0 {
+		return nil, nil, fmt.Errorf("every skill in this repository is already installed: remove one first, or install with --as <name>")
+	}
+
 	// narrow also reports an ambiguity for a --skill that names nothing in the
 	// repository. That is a typo rather than an unanswered question, and a
 	// picker is no answer to it.
@@ -289,6 +299,38 @@ func resolveAmbiguity(
 	return chosen, warnings, nil
 }
 
+// availableToInstall narrows an ambiguous repository's candidates to the ones
+// that are not already installed, so neither the picker nor the plain listing
+// shown to a non-interactive caller offers a choice that could only fail: a
+// receipt already claims the name, or a target's skills directory already has
+// something at it (a foreign symlink adopt would classify, not skillsctl's
+// own).
+func availableToInstall(db *state.DB, targets []target.Target, cands []channel.Candidate) []channel.Candidate {
+	var out []channel.Candidate
+	for _, c := range cands {
+		if _, ok := db.Receipts[c.Name]; ok {
+			continue
+		}
+		if len(occupiedAgents(targets, c.Name)) > 0 {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// occupiedAgents names the targets whose skills directory already has
+// something at name, so Link would refuse it.
+func occupiedAgents(targets []target.Target, name string) []string {
+	var out []string
+	for _, t := range targets {
+		if target.Occupied(t.Dir, name) {
+			out = append(out, t.Name)
+		}
+	}
+	return out
+}
+
 // reportAmbiguous prints what the user could have asked for, when the channel
 // could not narrow the request to a single answer. The channel returns the
 // candidates; how a listing looks is this package's business.
@@ -306,18 +348,28 @@ func reportAmbiguous(cmd *cobra.Command, err error) {
 // whose names are already taken. Naming a single skill is a request for that
 // skill in particular, so a collision there is an error; asking for several is
 // a request for whatever is missing, so collisions are reported and skipped.
-func dropInstalled(db *state.DB, chosen []channel.Candidate) (wanted []channel.Candidate, skipped []string, err error) {
+func dropInstalled(db *state.DB, targets []target.Target, chosen []channel.Candidate) (wanted []channel.Candidate, skipped []string, err error) {
 	for _, s := range chosen {
-		existing, ok := db.Receipts[s.Name]
-		if !ok {
-			wanted = append(wanted, s)
+		if existing, ok := db.Receipts[s.Name]; ok {
+			if len(chosen) == 1 {
+				return nil, nil, fmt.Errorf("%q is already installed from %s: remove it first, or install this one with --as <name>",
+					s.Name, existing.Source)
+			}
+			skipped = append(skipped, fmt.Sprintf("skipped %s: already installed from %s", s.Name, existing.Source))
 			continue
 		}
-		if len(chosen) == 1 {
-			return nil, nil, fmt.Errorf("%q is already installed from %s: remove it first, or install this one with --as <name>",
-				s.Name, existing.Source)
+		// No receipt claims the name, but a target's skills directory already
+		// has something at it — a symlink something other than skillsctl put
+		// there, which Link would refuse to overwrite.
+		if agents := occupiedAgents(targets, s.Name); len(agents) > 0 {
+			if len(chosen) == 1 {
+				return nil, nil, fmt.Errorf("%q already exists in %s: run `skillsctl adopt` to take it over, or remove it first",
+					s.Name, strings.Join(agents, ", "))
+			}
+			skipped = append(skipped, fmt.Sprintf("skipped %s: already exists in %s", s.Name, strings.Join(agents, ", ")))
+			continue
 		}
-		skipped = append(skipped, fmt.Sprintf("skipped %s: already installed from %s", s.Name, existing.Source))
+		wanted = append(wanted, s)
 	}
 	if len(wanted) == 0 {
 		return nil, nil, fmt.Errorf("every skill selected is already installed: remove one first, or install with --as <name>")
