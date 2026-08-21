@@ -360,3 +360,75 @@ func TestOCIPrepareStaysSilentWhenSignedIsUnknown(t *testing.T) {
 		t.Errorf("warnings = %v, want none when whether it is signed is unknown", warnings)
 	}
 }
+
+func TestOCIRollbackSwapsBackToThePreviousDigest(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	c := NewOCI(st, o, &fakeCosign{})
+
+	src, _ := source.Parse("oci://ghcr.io/owner/skills:v1")
+	cands, _, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tgt := target.Target{Name: "claude", Dir: t.TempDir()}
+	req := Request{Source: src, Targets: []target.Target{tgt}, All: true}
+	_, receipts, _, err := c.Install(req, cands)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := receipts[0]
+
+	// Move to a second digest, exactly as TestOCIUpdateRelinksWhenTheDigestMoved does.
+	o.digest = "sha256:bbb"
+	verdicts, p, err := c.Update(context.Background(), []*state.Receipt{&r}, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(verdicts) != 1 || verdicts[0].Status != StatusUpdated {
+		t.Fatalf("fixture setup: Update verdicts = %+v, want one StatusUpdated", verdicts)
+	}
+	for _, op := range p.Ops {
+		if rec, ok := op.(plan.Record); ok {
+			r = rec.Receipt
+		}
+	}
+	if r.Resolved != "sha256:bbb" || r.PreviousResolved != "sha256:aaa" {
+		t.Fatalf("fixture: receipt = %+v, want Resolved sha256:bbb and PreviousResolved sha256:aaa", r)
+	}
+
+	rp, v, err := c.Rollback(context.Background(), r)
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if v.Status != StatusUpdated {
+		t.Errorf("Status = %q, want %q", v.Status, StatusUpdated)
+	}
+	if v.Latest != "sha256:aaa" {
+		t.Errorf("Latest = %q, want the digest it rolled back to", v.Latest)
+	}
+	var rec plan.Record
+	for _, op := range rp.Ops {
+		if r, ok := op.(plan.Record); ok {
+			rec = r
+		}
+	}
+	if rec.Receipt.Resolved != "sha256:aaa" {
+		t.Errorf("recorded Resolved = %q, want sha256:aaa", rec.Receipt.Resolved)
+	}
+	if rec.Receipt.PreviousResolved != "sha256:bbb" {
+		t.Errorf("recorded PreviousResolved = %q, want the toggle to remember sha256:bbb", rec.Receipt.PreviousResolved)
+	}
+}
+
+func TestOCIRollbackRefusesWithNothingToRollBackTo(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{digest: "sha256:aaa"}
+	c := NewOCI(st, o, &fakeCosign{})
+
+	r := state.Receipt{Name: "demo", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1", Resolved: "sha256:aaa"}
+	_, _, err := c.Rollback(context.Background(), r)
+	if !errors.Is(err, ErrNothingToRollBackTo) {
+		t.Errorf("Rollback error = %v, want ErrNothingToRollBackTo", err)
+	}
+}
