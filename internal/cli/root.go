@@ -19,6 +19,7 @@ func NewRootCmd() *cobra.Command {
 		newAdoptCmd(),
 		newBrowseCmd(),
 		newBundleCmd(),
+		newDiffCmd(),
 		newDoctorCmd(),
 		newGCCmd(),
 		newInfoCmd(),

@@ -187,6 +187,8 @@ skillsctl list --exclude-channel local             # everything except skills yo
 skillsctl info brainstorming                       # one skill's receipt in full
 skillsctl info brainstorming --json                # the same, for a script
 skillsctl outdated                                 # what has moved upstream
+skillsctl diff avoid-ai-writing                    # what `update` would change
+skillsctl diff avoid-ai-writing --against previous # what `rollback` would undo
 skillsctl update                                   # move everything to its ref's head
 skillsctl update avoid-ai-writing                  # just this one, pin or not
 skillsctl update --dry-run                         # show what would change
@@ -580,6 +582,7 @@ to verify.
 | `browse` | `--dry-run` | Pick installed skills interactively to update or remove |
 | `info <name>` | `--json` | Show one skill's receipt in full, and whether its links are live |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
+| `diff <name>` | `--against latest\|previous` | Print the unified diff between an installed skill and what `update` would move to, or what `rollback` would move back to |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
 | `pin <name>...` | `--dry-run` | Freeze skills at the revision they are installed at |
 | `unpin <name>...` | `--ref`, `--dry-run` | Release the pin, so `update` moves them again |
