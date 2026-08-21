@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestGitRollbackSwapsBackToThePreviousRevision(t *testing.T) {
 		t.Fatalf("fixture: PreviousResolved = %q, want the first commit %q", r.PreviousResolved, first)
 	}
 
-	p, v, err := c.Rollback(context.Background(), *r)
+	p, v, err := c.Rollback(context.Background(), *r, false)
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestGitRollbackSwapsBackToThePreviousRevision(t *testing.T) {
 func TestGitRollbackTwiceTogglesBack(t *testing.T) {
 	c, r, first, second := gitRollbackFixture(t)
 
-	p1, _, err := c.Rollback(context.Background(), *r)
+	p1, _, err := c.Rollback(context.Background(), *r, false)
 	if err != nil {
 		t.Fatalf("first Rollback: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestGitRollbackTwiceTogglesBack(t *testing.T) {
 		t.Fatalf("after first rollback: Resolved = %q, want %q", r.Resolved, first)
 	}
 
-	p2, v2, err := c.Rollback(context.Background(), *r)
+	p2, v2, err := c.Rollback(context.Background(), *r, false)
 	if err != nil {
 		t.Fatalf("second Rollback: %v", err)
 	}
@@ -160,13 +161,58 @@ func TestGitRollbackTwiceTogglesBack(t *testing.T) {
 	}
 }
 
+func TestGitRollbackRefusesASkillEditedSinceItWasInstalled(t *testing.T) {
+	c, r, first, _ := gitRollbackFixture(t)
+
+	// An edit made through the symlink lands in the revision directory the
+	// receipt's hash was taken from, which is exactly what inspect notices.
+	edit := filepath.Join(r.RevPath, "SKILL.md")
+	if err := os.WriteFile(edit, []byte(rollbackSkillMD+"\nEdited by hand.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := c.Rollback(context.Background(), *r, false); !errors.Is(err, ErrEditedSinceInstall) {
+		t.Errorf("Rollback error = %v, want ErrEditedSinceInstall", err)
+	}
+
+	p, v, err := c.Rollback(context.Background(), *r, true)
+	if err != nil {
+		t.Fatalf("Rollback --force: %v", err)
+	}
+	if v.Latest != first {
+		t.Errorf("Latest = %q, want --force to roll back to %q", v.Latest, first)
+	}
+	if p.IsEmpty() {
+		t.Error("--force planned nothing")
+	}
+}
+
+func TestGitRollbackAllowsAReceiptWithNoContentHash(t *testing.T) {
+	c, r, first, _ := gitRollbackFixture(t)
+
+	// A receipt written before the hash existed cannot be judged dirty, the
+	// same policy update applies, so it must not become un-rollbackable.
+	r.ContentHash = ""
+	if err := os.WriteFile(filepath.Join(r.RevPath, "SKILL.md"), []byte(rollbackSkillMD+"\nEdited.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, v, err := c.Rollback(context.Background(), *r, false)
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if v.Latest != first {
+		t.Errorf("Latest = %q, want %q", v.Latest, first)
+	}
+}
+
 func TestGitRollbackRefusesWithNothingToRollBackTo(t *testing.T) {
 	c, r, _, _ := gitRollbackFixture(t)
 	r.PreviousResolved = ""
 	r.PreviousRevPath = ""
 	r.PreviousContentHash = ""
 
-	_, _, err := c.Rollback(context.Background(), *r)
+	_, _, err := c.Rollback(context.Background(), *r, false)
 	if !errors.Is(err, ErrNothingToRollBackTo) {
 		t.Errorf("Rollback error = %v, want ErrNothingToRollBackTo", err)
 	}

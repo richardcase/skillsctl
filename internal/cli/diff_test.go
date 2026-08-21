@@ -36,7 +36,7 @@ func TestDiffWithNoChangesSaysSo(t *testing.T) {
 
 func TestDiffAgainstPreviousShowsWhatRollbackWouldUndo(t *testing.T) {
 	h := newHarness(t)
-	dir, first := installed(t, h)
+	dir, _ := installed(t, h)
 	testrepo.Commit(t, dir, map[string]string{"SKILL.md": skillMD + "\nMore.\n"})
 	if out, err := h.run(t, "update"); err != nil {
 		t.Fatalf("update: %v\n%s", err, out)
@@ -49,7 +49,6 @@ func TestDiffAgainstPreviousShowsWhatRollbackWouldUndo(t *testing.T) {
 	if !strings.Contains(out, "More.") {
 		t.Errorf("diff missing the change rollback would undo:\n%s", out)
 	}
-	_ = first
 }
 
 func TestDiffAgainstPreviousRefusesASkillThatHasNeverBeenUpdated(t *testing.T) {

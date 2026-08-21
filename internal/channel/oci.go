@@ -344,12 +344,24 @@ func (c *OCI) relink(ctx context.Context, r *state.Receipt, src source.Source, r
 // (registry/repository@digest) rather than the tag: a tag can have moved
 // since, and a rollback that re-pulled through it could silently land on
 // neither the old digest nor the new one.
-func (c *OCI) Rollback(ctx context.Context, r state.Receipt) (plan.Plan, Verdict, error) {
+// A skill edited through its symlink is refused unless force, the same check
+// Update makes and for the same reason.
+func (c *OCI) Rollback(ctx context.Context, r state.Receipt, force bool) (plan.Plan, Verdict, error) {
 	v := Verdict{Name: r.Name, Channel: r.Channel, Current: r.Resolved}
 
 	if r.PreviousResolved == "" {
 		return plan.Plan{}, v, ErrNothingToRollBackTo
 	}
+
+	dirty, note, err := inspect(&r)
+	if err != nil {
+		return plan.Plan{}, v, err
+	}
+	if dirty && !force {
+		v.Status = StatusDirty
+		return plan.Plan{}, v, ErrEditedSinceInstall
+	}
+	v.Note = note
 
 	src, err := ociSourceOf(&r)
 	if err != nil {

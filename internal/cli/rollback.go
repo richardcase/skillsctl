@@ -11,7 +11,10 @@ import (
 )
 
 func newRollbackCmd() *cobra.Command {
-	var dryRun bool
+	var (
+		force  bool
+		dryRun bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "rollback <name>...",
@@ -21,13 +24,16 @@ func newRollbackCmd() *cobra.Command {
 			"Rollback is a toggle: running it again undoes itself, swapping back to the\n" +
 			"revision the first rollback moved away from. A skill that has never been\n" +
 			"updated has nothing to roll back to. `skillsctl diff <name> --against\n" +
-			"previous` shows what a rollback would change before you run it.",
+			"previous` shows what a rollback would change before you run it.\n\n" +
+			"A skill that has been edited through its symlink is skipped unless --force,\n" +
+			"since rolling it back would discard those edits.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRollback(cmd, args, dryRun)
+			return runRollback(cmd, args, force, dryRun)
 		},
 	}
 
+	cmd.Flags().BoolVar(&force, "force", false, "roll back even a skill that has been edited since it was installed")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
 }
@@ -40,7 +46,7 @@ type rollbackEntry struct {
 	err  error
 }
 
-func runRollback(cmd *cobra.Command, names []string, dryRun bool) error {
+func runRollback(cmd *cobra.Command, names []string, force, dryRun bool) error {
 	ctx := cmd.Context()
 
 	e, err := newEnv()
@@ -65,7 +71,7 @@ func runRollback(cmd *cobra.Command, names []string, dryRun bool) error {
 		}
 		taken[name] = true
 
-		en, ops := rollbackOne(ctx, reg, h.DB, name)
+		en, ops := rollbackOne(ctx, reg, h.DB, name, force)
 		p.Add(ops.Ops...)
 		entries = append(entries, en)
 	}
@@ -95,7 +101,7 @@ func runRollback(cmd *cobra.Command, names []string, dryRun bool) error {
 // rollbackOne resolves one name to a verdict and the ops that carry it out.
 // Every way it can fail is a verdict rather than an error, so one unknown
 // name never hides what could be done with the rest.
-func rollbackOne(ctx context.Context, reg channel.Registry, db *state.DB, name string) (rollbackEntry, plan.Plan) {
+func rollbackOne(ctx context.Context, reg channel.Registry, db *state.DB, name string, force bool) (rollbackEntry, plan.Plan) {
 	en := rollbackEntry{name: name}
 
 	r, ok := db.Receipts[name]
@@ -110,7 +116,7 @@ func rollbackOne(ctx context.Context, reg channel.Registry, db *state.DB, name s
 		return en, plan.Plan{}
 	}
 
-	p, v, err := ch.Rollback(ctx, *r)
+	p, v, err := ch.Rollback(ctx, *r, force)
 	if err != nil {
 		en.err = err
 		return en, plan.Plan{}

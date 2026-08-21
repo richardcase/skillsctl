@@ -52,7 +52,7 @@ func pluginRequest() Request {
 
 func TestPluginRollbackRefuses(t *testing.T) {
 	c := NewPlugin(&fakeClaude{}, target.Config{})
-	_, _, err := c.Rollback(context.Background(), state.Receipt{Name: "demo"})
+	_, _, err := c.Rollback(context.Background(), state.Receipt{Name: "demo"}, false)
 	if !errors.Is(err, ErrRollbackUnsupported) {
 		t.Errorf("Rollback error = %v, want ErrRollbackUnsupported", err)
 	}

@@ -185,7 +185,7 @@ func TestLinkPathForRejectsNamesThatLeaveTheDirectory(t *testing.T) {
 // link writes has to be readable as "later than install".
 func TestLinkedRollbackRefuses(t *testing.T) {
 	c := &Local{}
-	_, _, err := c.Rollback(context.Background(), state.Receipt{Name: "demo"})
+	_, _, err := c.Rollback(context.Background(), state.Receipt{Name: "demo"}, false)
 	if !errors.Is(err, ErrRollbackUnsupported) {
 		t.Errorf("Rollback error = %v, want ErrRollbackUnsupported", err)
 	}

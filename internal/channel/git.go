@@ -394,12 +394,26 @@ func (c *Git) relink(ctx context.Context, r *state.Receipt, sha string, now time
 // same relink Update would have done to reach it, run in reverse. It is a
 // toggle: the receipt's current triple becomes the new Previous*, so a
 // second Rollback undoes the first.
-func (c *Git) Rollback(ctx context.Context, r state.Receipt) (plan.Plan, Verdict, error) {
+//
+// A skill edited through its symlink is refused unless force, the same check
+// Update makes and for the same reason: the edits would be discarded, and the
+// edited tree would become PreviousRevPath, which the next gc reclaims.
+func (c *Git) Rollback(ctx context.Context, r state.Receipt, force bool) (plan.Plan, Verdict, error) {
 	v := Verdict{Name: r.Name, Channel: r.Channel, Current: r.Resolved}
 
 	if r.PreviousResolved == "" {
 		return plan.Plan{}, v, ErrNothingToRollBackTo
 	}
+
+	dirty, note, err := inspect(&r)
+	if err != nil {
+		return plan.Plan{}, v, err
+	}
+	if dirty && !force {
+		v.Status = StatusDirty
+		return plan.Plan{}, v, ErrEditedSinceInstall
+	}
+	v.Note = note
 
 	ops, receipt, err := c.relink(ctx, &r, r.PreviousResolved, time.Now().UTC())
 	if err != nil {

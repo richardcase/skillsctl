@@ -397,7 +397,7 @@ func TestOCIRollbackSwapsBackToThePreviousDigest(t *testing.T) {
 		t.Fatalf("fixture: receipt = %+v, want Resolved sha256:bbb and PreviousResolved sha256:aaa", r)
 	}
 
-	rp, v, err := c.Rollback(context.Background(), r)
+	rp, v, err := c.Rollback(context.Background(), r, false)
 	if err != nil {
 		t.Fatalf("Rollback: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestOCIRollbackRefusesWithNothingToRollBackTo(t *testing.T) {
 	c := NewOCI(st, o, &fakeCosign{})
 
 	r := state.Receipt{Name: "demo", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1", Resolved: "sha256:aaa"}
-	_, _, err := c.Rollback(context.Background(), r)
+	_, _, err := c.Rollback(context.Background(), r, false)
 	if !errors.Is(err, ErrNothingToRollBackTo) {
 		t.Errorf("Rollback error = %v, want ErrNothingToRollBackTo", err)
 	}
