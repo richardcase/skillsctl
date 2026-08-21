@@ -66,6 +66,28 @@ func TestLocalOwnershipIsTheUsers(t *testing.T) {
 	}
 }
 
+func TestLocalPrepareWarnsOnAnUndeclaredAgent(t *testing.T) {
+	f := newLocalFixture(t, map[string]string{
+		"SKILL.md": "---\nname: my-skill\ndescription: A skill\nagents: [claude]\n---\n\nBody.\n",
+	})
+	req := f.request(f.dir)
+	req.Targets = append(req.Targets, target.Target{Name: "codex", Dir: filepath.Join(t.TempDir(), "codex", "skills")})
+
+	cands, warnings, err := f.ch.Prepare(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if len(cands) != 1 {
+		t.Fatalf("candidates = %+v, want the one skill: the warning is advisory, not a refusal", cands)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %q, want one naming codex", warnings)
+	}
+	if !strings.Contains(warnings[0], "codex") || !strings.Contains(warnings[0], "my-skill") {
+		t.Errorf("warning = %q, want it to name the skill and the agent it does not declare", warnings[0])
+	}
+}
+
 func TestLocalInstallLinksInPlaceAndRecordsNothingFromTheStore(t *testing.T) {
 	f := newLocalFixture(t, nil)
 	req := f.request(f.dir)
