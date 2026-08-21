@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/richardcase/skillsctl/internal/channel"
 	"github.com/richardcase/skillsctl/internal/claudex"
@@ -10,6 +11,7 @@ import (
 	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/prompt"
+	"github.com/richardcase/skillsctl/internal/registry"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
 	"github.com/richardcase/skillsctl/internal/target"
@@ -32,6 +34,18 @@ var newOCI = func() ocix.OCI { return ocix.New() }
 // so that no test shells out to a real cosign or reaches a real registry it
 // doesn't control.
 var newCosign = func() cosignx.Cosign { return cosignx.New() }
+
+// newRegistry builds the client search fetches the skill registry through.
+// Tests replace it, so no test reaches the real network. SKILLSCTL_REGISTRY_URL
+// overrides both the config file and the built-in default, mainly so tests
+// and self-hosted mirrors do not depend on GitHub.
+var newRegistry = func(cfg target.Config, storeRoot string) registry.Registry {
+	url := os.Getenv("SKILLSCTL_REGISTRY_URL")
+	if url == "" {
+		url = cfg.Registry.URL
+	}
+	return &registry.HTTP{URL: url, CachePath: filepath.Join(storeRoot, "registry-cache.json")}
+}
 
 // newPicker builds the chooser an install falls back to when it cannot tell
 // which skill was meant. Tests replace it, so that no test blocks reading a
@@ -93,4 +107,11 @@ func (e *env) channels() channel.Registry {
 		Local:  channel.NewLocal(e.store),
 		OCI:    channel.NewOCI(e.store, newOCI(), newCosign()),
 	}
+}
+
+// registry builds the client search fetches the skill registry through, bound
+// to this environment's config and store, the same way channels() is bound to
+// them.
+func (e *env) registry() registry.Registry {
+	return newRegistry(e.cfg, e.store.Root)
 }

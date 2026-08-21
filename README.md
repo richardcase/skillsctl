@@ -47,6 +47,9 @@ exact.
 
 - **One store, every agent.** A skill is fetched once and symlinked into Claude
   Code, Codex and Gemini. One copy to update, not three to keep in sync.
+- **Find a skill without knowing owner/repo.** `skillsctl search <query>`
+  matches against a curated registry by name, description and tags, printing
+  a source for each match that can be passed straight to `skillsctl install`.
 - **A receipt for every install.** `skillsctl list` shows what is installed, at
   which commit, and in which agents. `remove` unlinks exactly what was created —
   it never guesses.
@@ -643,6 +646,7 @@ to verify.
 
 | Command | Flags | Does |
 | --- | --- | --- |
+| `search <query>` | `--json` | Find skills in the registry by name, description or tag |
 | `install <source>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--dry-run` | Fetch one or more skills and link them into each agent |
 | `install <p>@<m>` | `-a/--agent`, `--as`, `--dry-run` | Install a Claude Code plugin through `claude plugin` |
 | `install oci://<ref>` | `--skill`, `--all`, `-a/--agent`, `--ref`, `--as`, `--pin`, `--verify-key`, `--verify-identity`, `--verify-issuer`, `--dry-run` | Install one or more skills from an OCI artifact |
@@ -805,6 +809,19 @@ a marketplace for itself. It gates installing a plugin, never seeing one: a
 naming only agents without it through `-a` is an error rather than a silent
 no-op — but it is precisely the agents *without* it that a plugin's skills are
 linked into.
+
+`skillsctl search` fetches its registry from GitHub, configurable via a
+`[registry]` table:
+
+```toml
+[registry]
+url = "https://raw.githubusercontent.com/richardcase/skillsctl/main/registry/skills.json"
+```
+
+`SKILLSCTL_REGISTRY_URL` overrides both the config file and the built-in
+default, mainly for testing against a self-hosted mirror. A successful fetch
+is cached at `<store root>/registry-cache.json`, used when the network or
+GitHub is unavailable.
 
 ## skills.toml
 
