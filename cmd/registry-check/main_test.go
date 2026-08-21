@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -105,6 +106,23 @@ func TestRunSkipsKnownCandidatesAndDedupes(t *testing.T) {
 	}
 }
 
+func TestRunReportsCandidateWithSameNameAsDifferentOwner(t *testing.T) {
+	// Registry has owner A's "pdf-tool"; the README links owner B's
+	// "pdf-tool", a distinct, unregistered skill. The bare-name "known"
+	// check used to swallow this silently — it must be reported.
+	path := writeRegistry(t, `[{"name":"pdf-tool","source":"ownerA/pdf-tool"}]`)
+	g := &fakeGit{resolve: func(context.Context, string, string) (string, error) { return "sha", nil }}
+	readme := `[ownerB/pdf-tool](https://agent-skill.co/ownerB/skills/pdf-tool) - a different owner's skill`
+
+	report, err := run(context.Background(), path, g, http.DefaultClient, readmeServer(t, readme))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(report, "New candidates") || !strings.Contains(report, "ownerB/pdf-tool") {
+		t.Errorf("report = %q, want ownerB/pdf-tool reported as a new candidate", report)
+	}
+}
+
 func TestRunReturnsEmptyReportWhenClean(t *testing.T) {
 	path := writeRegistry(t, `[{"name":"skill-creator","source":"anthropics/skills/skill-creator"}]`)
 	g := &fakeGit{resolve: func(context.Context, string, string) (string, error) { return "sha", nil }}
@@ -134,5 +152,37 @@ func TestRunListsDistinctCandidatesWithSameSkilName(t *testing.T) {
 	}
 	if strings.Count(report, "openai/pdf-tool") != 1 {
 		t.Errorf("report = %q, want openai/pdf-tool listed exactly once", report)
+	}
+}
+
+func TestReportCapsNewCandidates(t *testing.T) {
+	candidates := make([]string, 0, maxReportedCandidates+7)
+	for i := 0; i < maxReportedCandidates+7; i++ {
+		candidates = append(candidates, fmt.Sprintf("owner/skill-%02d", i))
+	}
+
+	out := report(nil, candidates)
+
+	if got := strings.Count(out, "owner/skill-"); got != maxReportedCandidates {
+		t.Errorf("listed %d candidates, want the cap of %d", got, maxReportedCandidates)
+	}
+	if !strings.Contains(out, "…and 7 more") {
+		t.Errorf("report = %q, want a trailing note for the 7 elided candidates", out)
+	}
+}
+
+func TestReportDoesNotCapBrokenEntries(t *testing.T) {
+	broken := make([]brokenEntry, 0, maxReportedCandidates+7)
+	for i := 0; i < maxReportedCandidates+7; i++ {
+		broken = append(broken, brokenEntry{Name: fmt.Sprintf("skill-%02d", i), Source: "owner/repo", Reason: "gone"})
+	}
+
+	out := report(broken, nil)
+
+	if got := strings.Count(out, "gone"); got != len(broken) {
+		t.Errorf("listed %d broken entries, want all %d uncapped", got, len(broken))
+	}
+	if strings.Contains(out, "more") {
+		t.Errorf("report = %q, broken entries should never be elided", out)
 	}
 }

@@ -90,10 +90,11 @@ func (h *HTTP) Fetch(ctx context.Context) ([]Entry, error) {
 		return nil, fmt.Errorf("fetch registry from %s: %w", h.url(), err)
 	}
 
+	// A cache write failure (read-only disk, full disk) doesn't invalidate a
+	// successful fetch: the cache is an optimization for the next call, not
+	// a requirement for this one, so it is silently best-effort here.
 	if h.CachePath != "" {
-		if werr := h.writeCache(cacheFile{FetchedAt: now, Entries: entries}); werr != nil {
-			return nil, fmt.Errorf("write registry cache %s: %w", h.CachePath, werr)
-		}
+		_ = h.writeCache(cacheFile{FetchedAt: now, Entries: entries})
 	}
 	return entries, nil
 }

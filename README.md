@@ -50,6 +50,8 @@ exact.
 - **Find a skill without knowing owner/repo.** `skillsctl search <query>`
   matches against a curated registry by name, description and tags, printing
   a source for each match that can be passed straight to `skillsctl install`.
+  The registry is newly introduced and starts empty — it fills up over time
+  through curation PRs, so an early `search` may turn up nothing yet.
 - **A receipt for every install.** `skillsctl list` shows what is installed, at
   which commit, and in which agents. `remove` unlinks exactly what was created —
   it never guesses.
@@ -533,6 +535,7 @@ Locations can be overridden with environment variables:
 | --- | --- | --- |
 | `SKILLSCTL_HOME` | the store | `$XDG_DATA_HOME/skillsctl`, then `~/.local/share/skillsctl` |
 | `SKILLSCTL_CONFIG` | the config file | `$XDG_CONFIG_HOME/skillsctl/config.toml`, then `~/.config/skillsctl/config.toml` |
+| `SKILLSCTL_REGISTRY_URL` | where `search` fetches the registry from | the config file's `[registry]` table, then the built-in default |
 
 ### Signing and verification
 

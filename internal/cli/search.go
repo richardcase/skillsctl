@@ -36,7 +36,7 @@ func runSearch(cmd *cobra.Command, query string, asJSON bool) error {
 
 	entries, err := e.registry().Fetch(cmd.Context())
 	if err != nil {
-		return fmt.Errorf("search: %w", err)
+		return fmt.Errorf("search: %w (check connectivity, or override the source with SKILLSCTL_REGISTRY_URL)", err)
 	}
 	matches := matchEntries(entries, query)
 
@@ -58,8 +58,8 @@ func runSearch(cmd *cobra.Command, query string, asJSON bool) error {
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "NAME\tSOURCE\tDESCRIPTION")
-	for _, e := range matches {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", e.Name, e.Source, e.Description)
+	for _, r := range matches {
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", r.Name, r.Source, r.Description)
 	}
 	return w.Flush()
 }

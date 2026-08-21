@@ -99,20 +99,28 @@ func newCandidates(ctx context.Context, client *http.Client, readmeURL string, e
 		return nil, err
 	}
 
+	// known is keyed on owner/name, not just the trailing skill name: two
+	// different owners can publish a skill with the same name, and the
+	// registry's owner is only a "known" match for that exact owner. The
+	// owner is the first path segment of Entry.Source, which is always a
+	// source.Parse-shaped "owner/repo[/subpath]" string.
 	known := make(map[string]bool, len(entries))
 	for _, e := range entries {
-		known[strings.ToLower(e.Name)] = true
+		owner, _, ok := strings.Cut(e.Source, "/")
+		if !ok {
+			continue
+		}
+		known[strings.ToLower(owner+"/"+e.Name)] = true
 	}
 
 	seen := make(map[string]bool)
 	var out []string
 	for _, m := range awesomeListLinkRe.FindAllStringSubmatch(body, -1) {
 		fullName := m[1]
-		// Extract just the skill name part (after the last slash)
-		parts := strings.Split(fullName, "/")
-		skillName := parts[len(parts)-1]
-		// Check registry membership using just the trailing skill name
-		if known[strings.ToLower(skillName)] {
+		// Check registry membership using the full owner/name: a bare
+		// skill-name match would treat a different owner's same-named skill
+		// as already known and drop it from the report.
+		if known[strings.ToLower(fullName)] {
 			continue
 		}
 		// Deduplicate using the full owner/name to preserve distinct candidates
@@ -148,6 +156,13 @@ func fetchReadme(ctx context.Context, client *http.Client, readmeURL string) (st
 	return string(blob), nil
 }
 
+// maxReportedCandidates caps how many new candidates report lists, so a
+// first run against an empty registry (or a long dry spell) doesn't dump
+// the awesome-list's hundreds of entries into one issue body. broken
+// entries stay uncapped: that list should stay small, and every one of
+// them matters.
+const maxReportedCandidates = 50
+
 // report renders broken entries and new candidates as Markdown for the
 // tracking issue, or "" when there is nothing to flag.
 func report(broken []brokenEntry, candidates []string) string {
@@ -168,8 +183,17 @@ func report(broken []brokenEntry, candidates []string) string {
 		b.WriteString("Seen in [heilcheng/awesome-agent-skills](https://github.com/heilcheng/awesome-agent-skills), " +
 			"not yet in `registry/skills.json`. Each needs a human to resolve its real " +
 			"`owner/repo[/subpath]` before it can be added.\n\n")
-		for _, c := range candidates {
+		shown := candidates
+		truncated := 0
+		if len(shown) > maxReportedCandidates {
+			truncated = len(shown) - maxReportedCandidates
+			shown = shown[:maxReportedCandidates]
+		}
+		for _, c := range shown {
 			fmt.Fprintf(&b, "- %s\n", c)
+		}
+		if truncated > 0 {
+			fmt.Fprintf(&b, "- …and %d more\n", truncated)
 		}
 	}
 	return b.String()
