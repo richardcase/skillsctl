@@ -184,8 +184,12 @@ skillsctl adopt                                    # take it over
 skillsctl gc                                       # reclaim disk nothing uses
 skillsctl gc --dry-run                             # show what it would free
 skillsctl bundle > skills.toml                     # write what's installed as a manifest
+skillsctl bundle --tag frontend > frontend.toml    # ...just the skills tagged frontend
 skillsctl sync skills.toml                         # install what it names, and report the rest
 skillsctl sync skills.toml --dry-run               # show what would change
+skillsctl sync team/skills-profile                 # sync from a git-hosted skills.toml
+skillsctl sync team/skills-profile --ref develop   # ...at a specific branch
+skillsctl list --tag frontend                      # only skills tagged frontend
 skillsctl version
 ```
 
@@ -554,7 +558,7 @@ to verify.
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `new <name>` | `-a/--agent`, `--description`, `--dry-run` | Scaffold a new skill and link it in place |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
-| `list` | `--json`, `--include-channel`, `--exclude-channel` | Show installed skills, versions and agents |
+| `list` | `--json`, `--include-channel`, `--exclude-channel`, `--tag` | Show installed skills, versions and agents |
 | `browse` | `--dry-run` | Pick installed skills interactively to update or remove |
 | `info <name>` | `--json` | Show one skill's receipt in full, and whether its links are live |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
@@ -564,8 +568,8 @@ to verify.
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
 | `doctor` | `--json` | Report where the receipts and the filesystem disagree |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
-| `bundle` | | Write the installed skills as a portable `skills.toml` |
-| `sync <file>` | `--dry-run` | Install the skills a manifest names, and report the rest |
+| `bundle` | `--tag` | Write the installed skills as a portable `skills.toml` |
+| `sync <file-or-source>` | `--ref`, `--dry-run` | Install the skills a manifest names, from a local file or a git-hosted profile repo, and report the rest |
 | `version` | | Print version, commit and build date |
 
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
@@ -746,6 +750,11 @@ agents = ['claude']
 - `local` skills — a directory you linked with `skillsctl link ./path` — are
   left out of a bundle and named on stderr, because an absolute path on one
   machine means nothing on another.
+- `tags` groups skills for `list --tag`/`bundle --tag` to filter by. A tag is
+  any string; skillsctl imposes no vocabulary. Tags are set from the manifest
+  only when `sync` installs a skill for the first time — like `agents`, they
+  are metadata rather than identity, so re-syncing a manifest with different
+  tags for an already-installed skill changes nothing.
 
 `sync` only ever adds:
 
@@ -762,6 +771,24 @@ It installs what is missing and links the agents an entry names. It never
 re-points a ref, never moves a pin and never removes a skill, so a second run
 changes nothing. A difference exits 2; a skill the manifest does not name is
 reported and changes the exit code not at all.
+
+### Syncing against a remote profile repo
+
+`<file-or-source>` is a local path if one exists there, and otherwise a git
+source — `owner/repo`, a full URL, or scp-form, the same shapes `install`
+accepts minus plugin and OCI, which name no file to read. `skills.toml` is
+always read from that repository's root:
+
+```
+$ skillsctl sync team/skills-profile
+$ skillsctl sync git@github.com:team/skills-profile.git --ref develop
+```
+
+`--ref` chooses the profile repository's branch, tag or sha (default: its
+HEAD) and is ignored when the argument is a local file. A profile repo that
+also hosts the skills it lists shares its mirror and revision cache with
+them, so a second sync against an unchanged profile touches neither the
+network nor the disk beyond one `ls-remote`.
 
 ## Status
 
