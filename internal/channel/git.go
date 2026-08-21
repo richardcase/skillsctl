@@ -364,6 +364,31 @@ func (c *Git) relink(ctx context.Context, r *state.Receipt, sha string, now time
 	return ops, receipt, nil
 }
 
+// Rollback swaps the receipt back onto the revision Previous* recorded — the
+// same relink Update would have done to reach it, run in reverse. It is a
+// toggle: the receipt's current triple becomes the new Previous*, so a
+// second Rollback undoes the first.
+func (c *Git) Rollback(ctx context.Context, r state.Receipt) (plan.Plan, Verdict, error) {
+	v := Verdict{Name: r.Name, Channel: r.Channel, Current: r.Resolved}
+
+	if r.PreviousResolved == "" {
+		return plan.Plan{}, v, ErrNothingToRollBackTo
+	}
+
+	ops, receipt, err := c.relink(ctx, &r, r.PreviousResolved, time.Now().UTC())
+	if err != nil {
+		return plan.Plan{}, v, err
+	}
+
+	var p plan.Plan
+	p.Add(ops...)
+	p.Add(plan.Record{Receipt: receipt})
+
+	v.Latest = r.PreviousResolved
+	v.Status = StatusUpdated
+	return p, v, nil
+}
+
 // slugFor is where in the store this receipt's revisions live. Receipts written
 // before the slug was recorded fall back to deriving it from the source, which
 // is what install did to produce it in the first place.
