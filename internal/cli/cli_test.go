@@ -899,3 +899,25 @@ func TestOutdatedEmpty(t *testing.T) {
 		t.Errorf("empty report should say so, got:\n%s", out)
 	}
 }
+
+func TestBundleFilterByTag(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"a/SKILL.md": "---\nname: a\ndescription: A\n---\n",
+		"b/SKILL.md": "---\nname: b\ndescription: B\n---\n",
+	})
+	if out, err := h.run(t, "sync", writeManifest(t,
+		"version = 1\n\n"+
+			"[[skill]]\nname = 'a'\nsource = '"+url+"'\nsubpath = 'a'\ntags = ['frontend']\n\n"+
+			"[[skill]]\nname = 'b'\nsource = '"+url+"'\nsubpath = 'b'\ntags = ['backend']\n")); err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+
+	stdout, _, err := h.runSplit(t, "bundle", "--tag", "frontend")
+	if err != nil {
+		t.Fatalf("bundle --tag frontend: %v", err)
+	}
+	if !strings.Contains(stdout, "name = 'a'") || strings.Contains(stdout, "name = 'b'") {
+		t.Errorf("bundle --tag frontend should emit only a, got:\n%s", stdout)
+	}
+}
