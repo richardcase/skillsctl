@@ -286,3 +286,31 @@ func TestFrontmatterEmptyBlock(t *testing.T) {
 		t.Errorf("got %+v, want a zero Meta", got)
 	}
 }
+
+func TestFrontmatterParsesAgents(t *testing.T) {
+	body := []byte("---\nname: demo\ndescription: A demo\nagents:\n  - claude\n  - codex\n---\n")
+
+	got, err := Frontmatter(body)
+	if err != nil {
+		t.Fatalf("Frontmatter: %v", err)
+	}
+	want := []string{"claude", "codex"}
+	if len(got.Agents) != len(want) {
+		t.Fatalf("Agents = %v, want %v", got.Agents, want)
+	}
+	for i, a := range want {
+		if got.Agents[i] != a {
+			t.Errorf("Agents[%d] = %q, want %q", i, got.Agents[i], a)
+		}
+	}
+}
+
+func TestFrontmatterWithNoAgentsIsUnrestricted(t *testing.T) {
+	got, err := Frontmatter([]byte("---\nname: demo\ndescription: A demo\n---\n"))
+	if err != nil {
+		t.Fatalf("Frontmatter: %v", err)
+	}
+	if len(got.Agents) != 0 {
+		t.Errorf("Agents = %v, want none: a skill with no agents field is unrestricted", got.Agents)
+	}
+}

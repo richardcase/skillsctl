@@ -33,6 +33,11 @@ var skipDirs = map[string]bool{".git": true, "node_modules": true}
 type Meta struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
+	// Agents declares which agents this skill was written for. Empty means
+	// unrestricted: every SKILL.md written before this field existed keeps
+	// installing exactly as it did before. A non-empty list is advisory —
+	// install still links into an agent that is not listed, but warns.
+	Agents []string `yaml:"agents,omitempty"`
 }
 
 // Skill is a discovered skill directory.
