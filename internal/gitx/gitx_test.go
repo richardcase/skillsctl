@@ -299,3 +299,77 @@ func TestDescribeRejectsSomethingThatIsNotARepository(t *testing.T) {
 		t.Errorf("Describe outside a repository = %v, want ErrNotRepo", err)
 	}
 }
+
+func TestDiffReportsTheChangeBetweenTwoShas(t *testing.T) {
+	url, first := testrepo.New(t, map[string]string{"a.txt": "one\n"})
+	second := testrepo.Commit(t, testrepo.Dir(url), map[string]string{"a.txt": "two\n"})
+
+	c := New()
+	mirror := filepath.Join(t.TempDir(), "mirror.git")
+	if err := c.Mirror(context.Background(), url, mirror); err != nil {
+		t.Fatalf("Mirror: %v", err)
+	}
+
+	out, err := c.Diff(context.Background(), mirror, first, second)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !strings.Contains(out, "-one") || !strings.Contains(out, "+two") {
+		t.Errorf("Diff output missing the expected change:\n%s", out)
+	}
+}
+
+func TestDiffOfIdenticalShasIsEmpty(t *testing.T) {
+	url, sha := testrepo.New(t, map[string]string{"a.txt": "one\n"})
+
+	c := New()
+	mirror := filepath.Join(t.TempDir(), "mirror.git")
+	if err := c.Mirror(context.Background(), url, mirror); err != nil {
+		t.Fatalf("Mirror: %v", err)
+	}
+
+	out, err := c.Diff(context.Background(), mirror, sha, sha)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if out != "" {
+		t.Errorf("Diff of identical shas = %q, want empty", out)
+	}
+}
+
+func TestDiffDirsReportsTheChangeBetweenTwoDirectories(t *testing.T) {
+	from, to := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(from, "a.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(to, "a.txt"), []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := New()
+	out, err := c.DiffDirs(context.Background(), from, to)
+	if err != nil {
+		t.Fatalf("DiffDirs: %v", err)
+	}
+	if !strings.Contains(out, "-one") || !strings.Contains(out, "+two") {
+		t.Errorf("DiffDirs output missing the expected change:\n%s", out)
+	}
+}
+
+func TestDiffDirsOfIdenticalDirectoriesIsEmpty(t *testing.T) {
+	from, to := t.TempDir(), t.TempDir()
+	for _, dir := range []string{from, to} {
+		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := New()
+	out, err := c.DiffDirs(context.Background(), from, to)
+	if err != nil {
+		t.Fatalf("DiffDirs: %v", err)
+	}
+	if out != "" {
+		t.Errorf("DiffDirs of identical directories = %q, want empty", out)
+	}
+}

@@ -26,6 +26,12 @@ type Git interface {
 	Extract(ctx context.Context, mirrorPath, sha, dest string) error
 	// Describe reports the working copy dir belongs to, or ErrNotRepo.
 	Describe(ctx context.Context, dir string) (Origin, error)
+	// Diff returns the unified diff between two shas in the mirror at
+	// mirrorPath, or "" if they are identical.
+	Diff(ctx context.Context, mirrorPath, fromSha, toSha string) (string, error)
+	// DiffDirs returns the unified diff between two directories with no git
+	// repository backing either of them, or "" if they are identical.
+	DiffDirs(ctx context.Context, from, to string) (string, error)
 }
 
 // ErrNotRepo reports that a directory is not inside a git working copy.
@@ -153,6 +159,44 @@ func (c *CLI) Extract(ctx context.Context, mirrorPath, sha, dest string) error {
 		return fmt.Errorf("git archive %s: %w: %s", sha, waitErr, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// Diff returns the unified diff between two shas in the mirror at
+// mirrorPath, or "" if they are identical.
+func (c *CLI) Diff(ctx context.Context, mirrorPath, fromSha, toSha string) (string, error) {
+	return c.diffOutput(ctx, mirrorPath, "diff", fromSha, toSha)
+}
+
+// DiffDirs returns the unified diff between two directories with no git
+// repository backing either of them, or "" if they are identical. It is
+// what lets an OCI revision be diffed: there is no mirror to compare shas
+// in, only two extracted trees, and `git diff --no-index` compares two
+// paths without needing either to be inside a repository.
+func (c *CLI) DiffDirs(ctx context.Context, from, to string) (string, error) {
+	return c.diffOutput(ctx, "", "diff", "--no-index", from, to)
+}
+
+// diffOutput runs a git diff variant. git exits 1 to report that it found
+// differences, which every other command here would treat as a failure —
+// here it is the answer, and only 2 or more is an actual error.
+func (c *CLI) diffOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, c.Bin, args...)
+	cmd.Dir = dir
+	cmd.Env = env()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return stdout.String(), nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.String(), nil
 }
 
 // Describe reports the working copy dir belongs to.
