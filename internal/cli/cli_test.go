@@ -773,8 +773,21 @@ func TestListFilterByTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list --tag frontend: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "a") || strings.Contains(out, "\nb\t") {
-		t.Errorf("--tag frontend should show only a, got:\n%s", out)
+	var sawA, sawB bool
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		switch fields[0] {
+		case "a":
+			sawA = true
+		case "b":
+			sawB = true
+		}
+	}
+	if !sawA || sawB {
+		t.Errorf("--tag frontend should show only a's row, got:\n%s", out)
 	}
 }
 
