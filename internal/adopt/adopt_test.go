@@ -18,8 +18,8 @@ import (
 const skillMD = "---\nname: demo\ndescription: A demo\n---\n\nBody.\n"
 
 // fakeGit answers Describe and Resolve from tables keyed by directory and
-// repo URL. Mirror and Extract still panic: adopt may look, live, at what a
-// lockfile names, but it must never write into the store.
+// repo URL. Mirror, Extract, Diff and DiffDirs still panic: adopt may look,
+// live, at what a lockfile names, but it must never write into the store.
 type fakeGit struct {
 	origins    map[string]gitx.Origin
 	resolved   map[string]string
@@ -50,6 +50,14 @@ func (f *fakeGit) Describe(_ context.Context, dir string) (gitx.Origin, error) {
 		return gitx.Origin{}, gitx.ErrNotRepo
 	}
 	return o, nil
+}
+
+func (f *fakeGit) Diff(context.Context, string, string, string) (string, error) {
+	panic("adopt must not diff")
+}
+
+func (f *fakeGit) DiffDirs(context.Context, string, string) (string, error) {
+	panic("adopt must not diff")
 }
 
 // fixture is one agent's skills directory plus somewhere for its links to point.
