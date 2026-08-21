@@ -354,6 +354,9 @@ func (c *Git) relink(ctx context.Context, r *state.Receipt, sha string, now time
 	// they installed it under, the agents they linked it into, the ref it
 	// tracks, and the pin. Only what the new revision decides changes.
 	receipt := *r
+	receipt.PreviousResolved = r.Resolved
+	receipt.PreviousRevPath = r.RevPath
+	receipt.PreviousContentHash = r.ContentHash
 	receipt.Resolved = sha
 	receipt.RevPath = revPath
 	receipt.ContentHash = hash
