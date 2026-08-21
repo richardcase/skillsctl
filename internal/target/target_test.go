@@ -225,3 +225,38 @@ func TestWithoutPluginsIsTheAgentsToFanOutTo(t *testing.T) {
 		t.Error("no agents means nothing to fan out to, not a panic")
 	}
 }
+
+func TestLoadParsesRegistryTable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := "[[target]]\nname = \"claude\"\ndir = \"" + filepath.Join(dir, "skills") + "\"\n\n" +
+		"[registry]\nurl = \"https://example.com/skills.json\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Registry.URL != "https://example.com/skills.json" {
+		t.Errorf("Registry.URL = %q, want %q", cfg.Registry.URL, "https://example.com/skills.json")
+	}
+}
+
+func TestLoadLeavesRegistryEmptyWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := "[[target]]\nname = \"claude\"\ndir = \"" + filepath.Join(dir, "skills") + "\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Registry.URL != "" {
+		t.Errorf("Registry.URL = %q, want empty", cfg.Registry.URL)
+	}
+}

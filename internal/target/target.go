@@ -22,9 +22,17 @@ type Target struct {
 	Plugins bool `toml:"plugins"`
 }
 
-// Config is the set of agents skillsctl knows about.
+// RegistryConfig configures where `skillsctl search` fetches the skill
+// registry from.
+type RegistryConfig struct {
+	URL string `toml:"url"`
+}
+
+// Config is the set of agents skillsctl knows about, plus where it fetches
+// the skill registry from.
 type Config struct {
-	Targets []Target `toml:"target"`
+	Targets  []Target       `toml:"target"`
+	Registry RegistryConfig `toml:"registry"`
 }
 
 // Default is the built-in agent table, used when no config file exists.
