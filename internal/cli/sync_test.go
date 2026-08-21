@@ -151,6 +151,28 @@ func TestSyncPrefersALocalFileEvenWhenItsNameLooksLikeASource(t *testing.T) {
 	}
 }
 
+// A missing local path that does not even parse as a git source (no slash,
+// so it matches none of owner/repo, scp, or plugin shape) must fail fast with
+// the plain "no such file" error rather than attempting a remote fetch. This
+// is the case source.Parse can actually tell apart from a real git shorthand;
+// a typo that happens to contain a slash is syntactically indistinguishable
+// from a real owner/repo source and still falls through to FetchRemote, which
+// then fails with git's own error instead.
+func TestSyncReportsMissingFileRatherThanGuessingRemote(t *testing.T) {
+	h := newHarness(t)
+
+	out, err := h.run(t, "sync", "nope-does-not-exist.toml")
+	if err == nil {
+		t.Fatalf("want an error, got success:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "no such file") {
+		t.Errorf("want a \"no such file\" error, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "ls-remote") || strings.Contains(err.Error(), "resolve") {
+		t.Errorf("want no sign of a remote fetch attempt, got: %v", err)
+	}
+}
+
 func TestSyncIsIdempotent(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})

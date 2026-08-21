@@ -51,6 +51,10 @@ func newSyncCmd() *cobra.Command {
 					return fmt.Errorf("%s: %w", args[0], err)
 				}
 			} else {
+				src, perr := source.Parse(args[0])
+				if perr != nil || src.Channel != source.ChannelGit {
+					return fmt.Errorf("%s: no such file, and not a git profile source: %w", args[0], statErr)
+				}
 				f, err = manifest.FetchRemote(cmd.Context(), args[0], ref, gitx.New(), e.store)
 				if err != nil {
 					return err

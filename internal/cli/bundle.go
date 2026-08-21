@@ -32,9 +32,15 @@ func newBundleCmd() *cobra.Command {
 			}
 			defer func() { _ = h.Close() }()
 
+			// bundle wants the present set itself, not a resolution that can
+			// fail: it has receipts on disk and is perfectly able to describe
+			// them even when no agent directory exists yet on this machine.
 			receipts := filterByTags(h.DB.List(), tags)
 			f, excluded := manifest.FromReceipts(receipts, e.channels(), e.cfg.Present())
 
+			// cmd.Print and friends resolve to stderr unless a writer was set,
+			// so the manifest is written to stdout by hand. It is the command's
+			// product: `bundle > skills.toml` has to capture it, and only it.
 			if err := manifest.Encode(cmd.OutOrStdout(), f); err != nil {
 				return err
 			}
