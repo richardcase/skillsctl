@@ -1,8 +1,11 @@
 // Package diff compares an installed skill's revision against another one —
 // what update would move to, or what rollback would move back to — and
 // returns the unified diff between them. Like outdated, it performs no
-// mutation of its own: comparing two revisions is read-only, so this
-// package produces no plan.Plan.
+// mutation an install or update would: no receipt changes, no symlink
+// changes, so this package produces no plan.Plan. Comparing against Latest is
+// not purely read-only, though — it fetches into the local mirror cache to
+// see the tracked ref's true upstream head, the same cache install and
+// update populate.
 package diff
 
 import (
