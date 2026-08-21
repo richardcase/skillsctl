@@ -111,11 +111,17 @@ func newCandidates(ctx context.Context, client *http.Client, readmeURL string, e
 		// Extract just the skill name part (after the last slash)
 		parts := strings.Split(fullName, "/")
 		skillName := parts[len(parts)-1]
-		key := strings.ToLower(skillName)
-		if known[key] || seen[key] {
+		// Check registry membership using just the trailing skill name
+		if known[strings.ToLower(skillName)] {
 			continue
 		}
-		seen[key] = true
+		// Deduplicate using the full owner/name to preserve distinct candidates
+		// from different owners that share a trailing skill name
+		seenKey := strings.ToLower(fullName)
+		if seen[seenKey] {
+			continue
+		}
+		seen[seenKey] = true
 		out = append(out, fullName)
 	}
 	sort.Strings(out)

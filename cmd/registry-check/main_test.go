@@ -118,3 +118,21 @@ func TestRunReturnsEmptyReportWhenClean(t *testing.T) {
 		t.Errorf("report = %q, want empty when nothing to flag", report)
 	}
 }
+
+func TestRunListsDistinctCandidatesWithSameSkilName(t *testing.T) {
+	path := writeRegistry(t, `[]`)
+	g := &fakeGit{resolve: func(context.Context, string, string) (string, error) { return "sha", nil }}
+	readme := `[anthropics/pdf-tool](https://agent-skill.co/anthropics/skills/pdf-tool) - anthropics version
+[openai/pdf-tool](https://agent-skill.co/openai/skills/pdf-tool) - openai version`
+
+	report, err := run(context.Background(), path, g, http.DefaultClient, readmeServer(t, readme))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Count(report, "anthropics/pdf-tool") != 1 {
+		t.Errorf("report = %q, want anthropics/pdf-tool listed exactly once", report)
+	}
+	if strings.Count(report, "openai/pdf-tool") != 1 {
+		t.Errorf("report = %q, want openai/pdf-tool listed exactly once", report)
+	}
+}
