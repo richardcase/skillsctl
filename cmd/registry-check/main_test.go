@@ -23,7 +23,9 @@ type fakeGit struct {
 func (f *fakeGit) Resolve(ctx context.Context, repoURL, ref string) (string, error) {
 	return f.resolve(ctx, repoURL, ref)
 }
+
 func (f *fakeGit) Mirror(context.Context, string, string) error { panic("not used by registry-check") }
+
 func (f *fakeGit) Extract(context.Context, string, string, string) error {
 	panic("not used by registry-check")
 }
