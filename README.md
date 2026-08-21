@@ -77,6 +77,14 @@ exact.
   `skillsctl sync skills.toml` installs it somewhere else, pins and all. `sync`
   only ever adds — it reports a difference or a skill the manifest does not
   name, and never removes anything.
+- **Sync against a team's shared manifest.** `skillsctl sync owner/team-skills`
+  reads `skills.toml` straight out of a git profile repository — the same
+  shapes `install` accepts for a skill — instead of a local file, so a team can
+  keep one canonical list and every machine stays in sync with it. `--ref`
+  chooses the branch, tag or sha to read.
+- **Tag skills to manage them in groups.** A `tags` list on a manifest entry is
+  carried onto the receipt; `list --tag` and `bundle --tag` filter to skills
+  carrying any of the given tags, for working with one slice of a large set.
 - **Reach an agent you installed something before you had.**
   `skillsctl link avoid-ai-writing -a gemini` adds a link to the revision that
   skill is already on, without fetching anything or disturbing a pin. It is the
@@ -195,8 +203,8 @@ skillsctl version
 
 ```
 $ skillsctl list
-NAME              CHANNEL  VERSION           AGENTS         TAGS
-avoid-ai-writing  git      a1b2c3d           claude,codex   frontend
+NAME              CHANNEL  VERSION           AGENTS        TAGS
+avoid-ai-writing  git      a1b2c3d           claude,codex  frontend
 brainstorming     git      9f8e7d6 (pinned)  claude
 superpowers       plugin   6.3.0             claude,codex
 my-skill          local    -                 claude
@@ -731,6 +739,7 @@ name = 'beta'
 source = 'https://github.com/owner/repo.git'
 ref = 'develop'
 agents = ['claude']
+tags = ['frontend']
 ```
 
 - `ref` is the branch or tag a skill tracks, or the frozen sha when `pinned` is
