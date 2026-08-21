@@ -756,6 +756,28 @@ func TestListFilterByChannel(t *testing.T) {
 	})
 }
 
+func TestListFilterByTag(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"a/SKILL.md": "---\nname: a\ndescription: A\n---\n",
+		"b/SKILL.md": "---\nname: b\ndescription: B\n---\n",
+	})
+	if out, err := h.run(t, "sync", writeManifest(t,
+		"version = 1\n\n"+
+			"[[skill]]\nname = 'a'\nsource = '"+url+"'\nsubpath = 'a'\ntags = ['frontend']\n\n"+
+			"[[skill]]\nname = 'b'\nsource = '"+url+"'\nsubpath = 'b'\ntags = ['backend']\n")); err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+
+	out, err := h.run(t, "list", "--tag", "frontend")
+	if err != nil {
+		t.Fatalf("list --tag frontend: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "a") || strings.Contains(out, "\nb\t") {
+		t.Errorf("--tag frontend should show only a, got:\n%s", out)
+	}
+}
+
 func TestOutdatedReportsAMovedRef(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
