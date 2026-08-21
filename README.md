@@ -124,6 +124,11 @@ exact.
 - **Pick skills interactively instead of naming them one at a time.**
   `skillsctl browse` lists what is installed, with its outdated status, and
   lets you tick several to update or remove in one batch.
+- **Catch a broken `SKILL.md` before you publish it.** `skillsctl lint <path>`
+  checks a skill's frontmatter the way `install` reads it, but strictly: a
+  missing or empty name or description fails the check, and a name that
+  would not match its directory is a warning. Point it at a directory of
+  several skills and it checks every one.
 - **One static binary.** No runtime dependency beyond `git`, and `claude` only
   if you install plugins.
 
@@ -163,6 +168,8 @@ skillsctl install oci://ghcr.io/owner/skills:v1 \
 skillsctl link ./my-skill                          # a skill you are writing
 skillsctl install ./my-skill                       # the same thing
 skillsctl new my-skill                             # scaffold a skill and link it, in one step
+skillsctl lint ./my-skill                          # check its SKILL.md before publishing
+skillsctl lint ./my-skills-repo                    # check every skill under a directory
 skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
 skillsctl browse                                   # pick installed skills to update or remove
 skillsctl list                                     # what's installed
@@ -553,6 +560,7 @@ to verify.
 | `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
 | `new <name>` | `-a/--agent`, `--description`, `--dry-run` | Scaffold a new skill and link it in place |
+| `lint <path>` | `--json` | Validate a skill's `SKILL.md` before publishing it |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
 | `list` | `--json`, `--include-channel`, `--exclude-channel` | Show installed skills, versions and agents |
 | `browse` | `--dry-run` | Pick installed skills interactively to update or remove |

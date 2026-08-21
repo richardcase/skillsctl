@@ -24,6 +24,7 @@ func NewRootCmd() *cobra.Command {
 		newInfoCmd(),
 		newInstallCmd(),
 		newLinkCmd(),
+		newLintCmd(),
 		newListCmd(),
 		newNewCmd(),
 		newOutdatedCmd(),
