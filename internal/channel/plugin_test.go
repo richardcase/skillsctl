@@ -50,6 +50,14 @@ func pluginRequest() Request {
 	return Request{Source: src, Targets: pluginCfg.Targets}
 }
 
+func TestPluginRollbackRefuses(t *testing.T) {
+	c := NewPlugin(&fakeClaude{}, target.Config{})
+	_, _, err := c.Rollback(context.Background(), state.Receipt{Name: "demo"})
+	if !errors.Is(err, ErrRollbackUnsupported) {
+		t.Errorf("Rollback error = %v, want ErrRollbackUnsupported", err)
+	}
+}
+
 func TestPluginOwnershipIsTheAgents(t *testing.T) {
 	c, _ := newPluginChannel()
 	if c.Ownership() != AgentOwned {

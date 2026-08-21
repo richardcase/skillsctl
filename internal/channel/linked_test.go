@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -181,6 +183,14 @@ func TestLinkPathForRejectsNamesThatLeaveTheDirectory(t *testing.T) {
 
 // Guards the ordering assumption the whole design rests on: the timestamp a
 // link writes has to be readable as "later than install".
+func TestLinkedRollbackRefuses(t *testing.T) {
+	c := &Local{}
+	_, _, err := c.Rollback(context.Background(), state.Receipt{Name: "demo"})
+	if !errors.Is(err, ErrRollbackUnsupported) {
+		t.Errorf("Rollback error = %v, want ErrRollbackUnsupported", err)
+	}
+}
+
 func TestLinkStampsAFreshUpdatedAt(t *testing.T) {
 	r, _, codex := linkFixture(t)
 	r.InstalledAt = time.Now().UTC().Add(-time.Hour)

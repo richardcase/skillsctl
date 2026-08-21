@@ -392,6 +392,12 @@ func targetNames(ts []target.Target) []string {
 	return names
 }
 
+// Rollback refuses: an agent-owned plugin has no revision history skillsctl
+// can swap back to — claude decides which version is installed.
+func (c *Plugin) Rollback(context.Context, state.Receipt) (plan.Plan, Verdict, error) {
+	return plan.Plan{}, Verdict{}, ErrRollbackUnsupported
+}
+
 // Agents names the agents this plugin is live in: the one that installed it,
 // which only the config knows, together with the ones its skills were linked
 // into, which only the receipt knows. Neither answers alone any more — claude

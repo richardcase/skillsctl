@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,6 +123,13 @@ func linkPathFor(t target.Target, name string) (string, error) {
 		return "", fmt.Errorf("refusing to link %q: it would resolve outside %s", name, t.Dir)
 	}
 	return linkPath, nil
+}
+
+// Rollback refuses: this channel's files are the user's own, with no
+// revision history skillsctl can swap back to. Git and OCI, which embed
+// linked too, override this with the real thing.
+func (linked) Rollback(context.Context, state.Receipt) (plan.Plan, Verdict, error) {
+	return plan.Plan{}, Verdict{}, ErrRollbackUnsupported
 }
 
 // Agents reads the links, which are the record of where this skill was put.
