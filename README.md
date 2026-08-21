@@ -14,7 +14,7 @@ deterministic. One store, symlinked into every agent you use.
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <p align="center">
-  <img src="assets/demo.gif" alt="skillsctl demo: install, list, info, update --dry-run, remove" width="720">
+  <img src="assets/demo.gif" alt="skillsctl demo: the categorised install tree, install, list, update --dry-run, remove" width="820">
 </p>
 
 ## Table of Contents
