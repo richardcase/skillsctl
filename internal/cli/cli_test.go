@@ -261,6 +261,40 @@ func TestInstallListRemoveRoundTrip(t *testing.T) {
 	}
 }
 
+func TestInstallWarnsOnAnUndeclaredAgentButStillLinks(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"SKILL.md": "---\nname: demo-skill\ndescription: A demo\nagents:\n  - claude\n---\n\nBody.\n",
+	})
+
+	out, err := h.run(t, "install", url)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "codex") || !strings.Contains(out, "demo-skill") {
+		t.Errorf("install did not warn about the undeclared agent:\n%s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(h.codex, "demo-skill")); err != nil {
+		t.Errorf("install should still link into codex despite the warning: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(h.claude, "demo-skill")); err != nil {
+		t.Errorf("install should link into the declared agent claude: %v", err)
+	}
+}
+
+func TestInstallWithNoAgentsFieldWarnsAboutNothing(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+
+	out, err := h.run(t, "install", url)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "warning:") {
+		t.Errorf("a skill with no agents field should warn about nothing:\n%s", out)
+	}
+}
+
 func TestInstallFallsBackToRepoNameWithoutFrontmatter(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": "# No frontmatter\n"})

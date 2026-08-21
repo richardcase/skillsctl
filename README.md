@@ -129,6 +129,10 @@ exact.
   writes `./my-skill/SKILL.md` with valid frontmatter and links it into every
   agent found in the same step — the create-and-link equivalent of
   `skillsctl link ./my-skill` for a skill you have not written yet.
+- **Declare which agents a skill was written for.** `agents:` in a `SKILL.md`'s
+  frontmatter is an optional YAML list (`agents: [claude, codex]`). Installing
+  into an agent not in the list still links it — this is advisory, not a
+  refusal — but prints a warning naming the skill and the undeclared agent.
 - **Pick skills interactively instead of naming them one at a time.**
   `skillsctl browse` lists what is installed, with its outdated status, and
   lets you tick several to update or remove in one batch.

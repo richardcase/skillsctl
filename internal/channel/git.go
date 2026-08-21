@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/richardcase/skillsctl/internal/discover"
@@ -92,7 +93,7 @@ func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 	}
 
 	cands, err := c.candidates(chosen, revRoot, sha)
-	return cands, nil, err
+	return cands, agentWarnings(chosen, req.Targets), err
 }
 
 // narrow reduces the discovered skills to the ones the request asked for.
@@ -147,6 +148,31 @@ func (c *Git) candidates(sels []selection, revRoot, sha string) ([]Candidate, er
 		})
 	}
 	return out, nil
+}
+
+// agentWarnings reports which of targets a chosen skill did not declare
+// itself compatible with. A skill with no Agents in its frontmatter is
+// unrestricted, so it warns about nothing: this is advisory only, and every
+// SKILL.md written before the field existed must keep installing silently.
+func agentWarnings(sels []selection, targets []target.Target) []string {
+	var warnings []string
+	for _, s := range sels {
+		if len(s.skill.Agents) == 0 {
+			continue
+		}
+		declared := make(map[string]bool, len(s.skill.Agents))
+		for _, a := range s.skill.Agents {
+			declared[a] = true
+		}
+		for _, t := range targets {
+			if !declared[t.Name] {
+				warnings = append(warnings, fmt.Sprintf(
+					"warning: %s declares agents: %s, which does not include %s",
+					s.name, strings.Join(s.skill.Agents, ", "), t.Name))
+			}
+		}
+	}
+	return warnings
 }
 
 // brief renders selections for a listing, which needs no revision path and no

@@ -104,6 +104,7 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 	}
 
 	cands, err := c.candidates(chosen, revRoot, digest)
+	warnings = append(warnings, agentWarnings(chosen, req.Targets)...)
 	return cands, warnings, err
 }
 
