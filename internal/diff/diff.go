@@ -57,7 +57,17 @@ func Check(ctx context.Context, g gitx.Git, o ocix.OCI, st *store.Store, r *stat
 		if err != nil {
 			return "", err
 		}
-		return g.Diff(ctx, st.MirrorPath(slug), r.Resolved, toSha)
+		mirror := st.MirrorPath(slug)
+		// Previous's sha was already fetched when it was installed or
+		// updated onto, so the mirror already holds it. Latest's sha was
+		// only just read from the remote's refs and may not be: bring the
+		// mirror's objects up to date before asking it for a diff.
+		if against != Previous {
+			if err := g.Mirror(ctx, r.Source, mirror); err != nil {
+				return "", fmt.Errorf("update mirror for %s: %w", r.Name, err)
+			}
+		}
+		return g.Diff(ctx, mirror, r.Resolved, toSha)
 
 	case string(source.ChannelOCI):
 		src, err := ociSourceOf(r)
