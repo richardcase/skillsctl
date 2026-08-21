@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/richardcase/skillsctl/internal/channel"
+	"github.com/richardcase/skillsctl/internal/gitx"
 	"github.com/richardcase/skillsctl/internal/manifest"
 	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
@@ -16,30 +17,44 @@ import (
 
 func newSyncCmd() *cobra.Command {
 	var dryRun bool
+	var ref string
 
 	cmd := &cobra.Command{
-		Use:   "sync <file>",
+		Use:   "sync <file-or-source>",
 		Short: "Install the skills a skills.toml names",
 		Long: "Read a manifest and add what this machine is missing: skills it does not have,\n" +
 			"and links into the agents an entry names.\n\n" +
+			"<file-or-source> is a local path if one exists there, and otherwise a git\n" +
+			"source (owner/repo, a git URL, or scp-form) whose repository root holds\n" +
+			"skills.toml — the same shapes install already accepts for a skill, minus\n" +
+			"plugin and OCI sources, which name no file to read. --ref chooses that\n" +
+			"repository's branch, tag or sha and is ignored for a local file.\n\n" +
 			"sync only ever adds. It never re-points a ref, never moves a pin and never\n" +
 			"removes a skill, so running it twice changes nothing the second time. A\n" +
 			"difference between the manifest and an install is reported rather than\n" +
 			"resolved, and so is a skill installed here that the manifest never mentions.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			blob, err := os.ReadFile(args[0])
-			if err != nil {
-				return fmt.Errorf("read %s: %w", args[0], err)
-			}
-			f, err := manifest.Decode(blob)
-			if err != nil {
-				return fmt.Errorf("%s: %w", args[0], err)
-			}
-
 			e, err := newEnv()
 			if err != nil {
 				return err
+			}
+
+			var f manifest.File
+			if _, statErr := os.Stat(args[0]); statErr == nil {
+				blob, rerr := os.ReadFile(args[0])
+				if rerr != nil {
+					return fmt.Errorf("read %s: %w", args[0], rerr)
+				}
+				f, err = manifest.Decode(blob)
+				if err != nil {
+					return fmt.Errorf("%s: %w", args[0], err)
+				}
+			} else {
+				f, err = manifest.FetchRemote(cmd.Context(), args[0], ref, gitx.New(), e.store)
+				if err != nil {
+					return err
+				}
 			}
 
 			// The state lock is taken before anything is written to the store
@@ -105,6 +120,7 @@ func newSyncCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without changing it")
+	cmd.Flags().StringVar(&ref, "ref", "", "branch, tag or sha the profile repository tracks (default: its HEAD); ignored for a local file")
 	return cmd
 }
 

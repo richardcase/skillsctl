@@ -565,7 +565,7 @@ to verify.
 | `doctor` | `--json` | Report where the receipts and the filesystem disagree |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `bundle` | | Write the installed skills as a portable `skills.toml` |
-| `sync <file>` | `--dry-run` | Install the skills a manifest names, and report the rest |
+| `sync <file-or-source>` | `--ref`, `--dry-run` | Install the skills a manifest names, and report the rest |
 | `version` | | Print version, commit and build date |
 
 `remove` also answers to `uninstall` and `rm`. Removing from some agents keeps
@@ -711,6 +711,19 @@ linked into.
 `skillsctl bundle` writes the skills you have installed as a manifest, and
 `skillsctl sync` installs one. It is meant to be read and edited by hand, and
 committed.
+
+`sync` reads its argument as a local path if one exists there, and otherwise
+as a git source — `owner/repo`, a git URL, or scp-form — whose repository root
+holds `skills.toml`. That lets a team keep a profile repository and point
+every machine at it directly:
+
+```
+skillsctl sync owner/team-skills-profile
+skillsctl sync owner/team-skills-profile --ref v2
+```
+
+`--ref` chooses that repository's branch, tag or sha and is ignored when the
+argument resolves to a local file.
 
 ```toml
 version = 1
