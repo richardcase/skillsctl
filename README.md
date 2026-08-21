@@ -195,8 +195,8 @@ skillsctl version
 
 ```
 $ skillsctl list
-NAME              CHANNEL  VERSION           AGENTS
-avoid-ai-writing  git      a1b2c3d           claude,codex
+NAME              CHANNEL  VERSION           AGENTS         TAGS
+avoid-ai-writing  git      a1b2c3d           claude,codex   frontend
 brainstorming     git      9f8e7d6 (pinned)  claude
 superpowers       plugin   6.3.0             claude,codex
 my-skill          local    -                 claude
