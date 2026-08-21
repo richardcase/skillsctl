@@ -194,6 +194,8 @@ skillsctl pin brainstorming                        # freeze it where it is
 skillsctl unpin brainstorming                      # let it follow its ref again
 skillsctl unpin brainstorming --ref develop        # ...this ref, from now on
 skillsctl remove avoid-ai-writing                  # unlink everywhere
+skillsctl rollback avoid-ai-writing                # swap back to before the last update
+skillsctl rollback avoid-ai-writing                # run it again to toggle back
 skillsctl adopt --dry-run                          # what is already in your agents
 skillsctl adopt                                    # take it over
 skillsctl gc                                       # reclaim disk nothing uses
@@ -582,6 +584,7 @@ to verify.
 | `pin <name>...` | `--dry-run` | Freeze skills at the revision they are installed at |
 | `unpin <name>...` | `--ref`, `--dry-run` | Release the pin, so `update` moves them again |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
+| `rollback <name>...` | `--dry-run` | Swap a skill back onto the revision it was on before its last update (a toggle: running it twice undoes itself) |
 | `doctor` | `--json` | Report where the receipts and the filesystem disagree |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `bundle` | `--tag` | Write the installed skills as a portable `skills.toml` |

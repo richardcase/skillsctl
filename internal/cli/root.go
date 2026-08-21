@@ -31,6 +31,7 @@ func NewRootCmd() *cobra.Command {
 		newPackageCmd(),
 		newPinCmd(),
 		newRemoveCmd(),
+		newRollbackCmd(),
 		newSyncCmd(),
 		newUnpinCmd(),
 		newUpdateCmd(),
