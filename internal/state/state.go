@@ -25,20 +25,31 @@ type Link struct {
 
 // Receipt records how a skill was installed.
 type Receipt struct {
-	Name        string    `json:"name"`
-	Channel     string    `json:"channel"`
-	Source      string    `json:"source"`
-	Slug        string    `json:"slug,omitempty"`
-	Subpath     string    `json:"subpath,omitempty"`
-	Ref         string    `json:"ref,omitempty"`
-	Resolved    string    `json:"resolved"`
-	Pinned      bool      `json:"pinned,omitempty"`
-	Tags        []string  `json:"tags,omitempty"`
-	RevPath     string    `json:"revPath"`
-	ContentHash string    `json:"contentHash,omitempty"`
-	Links       []Link    `json:"links"`
-	InstalledAt time.Time `json:"installedAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	Name        string   `json:"name"`
+	Channel     string   `json:"channel"`
+	Source      string   `json:"source"`
+	Slug        string   `json:"slug,omitempty"`
+	Subpath     string   `json:"subpath,omitempty"`
+	Ref         string   `json:"ref,omitempty"`
+	Resolved    string   `json:"resolved"`
+	Pinned      bool     `json:"pinned,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	RevPath     string   `json:"revPath"`
+	ContentHash string   `json:"contentHash,omitempty"`
+	// PreviousResolved, PreviousRevPath and PreviousContentHash are what
+	// Resolved, RevPath and ContentHash held before the last relink — the
+	// git and OCI channels populate them, so rollback has something to
+	// swap back to. Empty until a skill has been updated at least once.
+	//
+	// Only PreviousResolved is load-bearing: rollback resolves and re-extracts
+	// that revision, recomputing the path and the hash rather than trusting
+	// the two recorded alongside it, which are there to be read.
+	PreviousResolved    string    `json:"previousResolved,omitempty"`
+	PreviousRevPath     string    `json:"previousRevPath,omitempty"`
+	PreviousContentHash string    `json:"previousContentHash,omitempty"`
+	Links               []Link    `json:"links"`
+	InstalledAt         time.Time `json:"installedAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 // DB is the in-memory receipt set.

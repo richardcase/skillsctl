@@ -12,8 +12,8 @@ import (
 )
 
 // fakeGit answers Resolve from a table keyed by repoURL + "\x00" + ref, and
-// counts the calls so the dedup behaviour can be asserted. Mirror and Extract
-// are never reached: outdated must not fetch anything.
+// counts the calls so the dedup behaviour can be asserted. Mirror, Extract,
+// Diff and DiffDirs are never reached: outdated must not fetch anything.
 type fakeGit struct {
 	shas  map[string]string
 	calls int
@@ -38,6 +38,14 @@ func (f *fakeGit) Extract(context.Context, string, string, string) error {
 
 func (f *fakeGit) Describe(context.Context, string) (gitx.Origin, error) {
 	panic("outdated must not describe a working copy")
+}
+
+func (f *fakeGit) Diff(context.Context, string, string, string, ...string) (string, error) {
+	panic("outdated must not diff")
+}
+
+func (f *fakeGit) DiffDirs(context.Context, string, string) (string, error) {
+	panic("outdated must not diff")
 }
 
 func TestCheckReportsAMovedRefAsOutdated(t *testing.T) {

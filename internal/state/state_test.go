@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -143,5 +144,66 @@ func TestListIsSortedByName(t *testing.T) {
 		if r.Name != want[i] {
 			t.Fatalf("List()[%d] = %q, want %q", i, r.Name, want[i])
 		}
+	}
+}
+
+func TestCommitThenReopenRoundTripsPreviousRevision(t *testing.T) {
+	p := statePath(t)
+	now := time.Date(2026, 8, 13, 9, 0, 0, 0, time.UTC)
+
+	h, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	h.DB.Receipts["avoid-ai-writing"] = &Receipt{
+		Name:                "avoid-ai-writing",
+		Channel:             "git",
+		Source:              "https://github.com/conorbronsdon/avoid-ai-writing.git",
+		Slug:                "github.com/conorbronsdon/avoid-ai-writing",
+		Ref:                 "main",
+		Resolved:            "b2c3d4e",
+		PreviousResolved:    "a1b2c3d",
+		PreviousRevPath:     "/store/rev/x/a1b2c3d",
+		PreviousContentHash: "cafef00d",
+		RevPath:             "/store/rev/x/b2c3d4e",
+		ContentHash:         "deadbeef",
+		InstalledAt:         now,
+		UpdatedAt:           now,
+	}
+	if err := h.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	h2, err := Open(p)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = h2.Close() }()
+
+	got, ok := h2.DB.Receipts["avoid-ai-writing"]
+	if !ok {
+		t.Fatal("receipt did not survive the round trip")
+	}
+	if got.PreviousResolved != "a1b2c3d" {
+		t.Errorf("PreviousResolved = %q, want a1b2c3d", got.PreviousResolved)
+	}
+	if got.PreviousRevPath != "/store/rev/x/a1b2c3d" {
+		t.Errorf("PreviousRevPath = %q, want /store/rev/x/a1b2c3d", got.PreviousRevPath)
+	}
+	if got.PreviousContentHash != "cafef00d" {
+		t.Errorf("PreviousContentHash = %q, want cafef00d", got.PreviousContentHash)
+	}
+}
+
+func TestReceiptWithNoPreviousRevisionOmitsTheFieldsFromJSON(t *testing.T) {
+	blob, err := json.Marshal(Receipt{Name: "fresh", Resolved: "abc", RevPath: "/x"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(blob), "previousResolved") {
+		t.Errorf("a receipt with no previous revision should omit it from JSON, got: %s", blob)
 	}
 }

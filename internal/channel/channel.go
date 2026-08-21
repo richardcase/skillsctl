@@ -249,12 +249,34 @@ type Channel interface {
 	// symlinks reads the receipt's links; one whose agent installs for itself
 	// answers from the config.
 	Agents(r state.Receipt) []string
+
+	// Rollback swaps a receipt back onto the revision Previous* recorded,
+	// undoing its last update. A channel with no revision history refuses
+	// with ErrRollbackUnsupported; a receipt that has never been updated
+	// refuses with ErrNothingToRollBackTo; a skill edited through its
+	// symlink refuses with ErrEditedSinceInstall unless force, the same
+	// bargain Update's UpdateOptions.Force strikes.
+	Rollback(ctx context.Context, r state.Receipt, force bool) (plan.Plan, Verdict, error)
 }
 
 // ErrUnsupported reports a channel that skillsctl can parse but cannot yet
 // install. Sources are parsed long before their channel is built, so this is
 // the difference between "that is not a source" and "not yet".
 var ErrUnsupported = errors.New("not supported yet")
+
+// ErrRollbackUnsupported reports a channel with no revision history to swap
+// back to: its files are the user's own, or the agent's.
+var ErrRollbackUnsupported = errors.New("rollback is not supported for this channel")
+
+// ErrNothingToRollBackTo reports a receipt that has never been updated, so
+// its Previous* fields carry nothing to swap back to.
+var ErrNothingToRollBackTo = errors.New("nothing to roll back to: install or update this skill first")
+
+// ErrEditedSinceInstall reports a skill whose linked subtree no longer
+// matches the hash recorded for it, so rolling it back would discard edits
+// made through the symlink. Update refuses the same case for the same
+// reason, and --force is the same escape hatch.
+var ErrEditedSinceInstall = errors.New("edited since it was installed: pass --force to roll it back anyway")
 
 // Registry resolves a channel by name.
 type Registry struct {

@@ -145,6 +145,12 @@ func TestPlanRelinksEveryLinkOfAMovedRef(t *testing.T) {
 		t.Errorf("recorded Ref = %q, want the tracked ref to survive", rec.Receipt.Ref)
 	case len(rec.Receipt.Links) != 2:
 		t.Errorf("recorded %d links, want the install's two to survive", len(rec.Receipt.Links))
+	case rec.Receipt.PreviousResolved != f.first:
+		t.Errorf("recorded PreviousResolved = %q, want the sha it moved from (%q)", rec.Receipt.PreviousResolved, f.first)
+	case rec.Receipt.PreviousRevPath != f.receipt.RevPath:
+		t.Errorf("recorded PreviousRevPath = %q, want the revision path it moved from (%q)", rec.Receipt.PreviousRevPath, f.receipt.RevPath)
+	case rec.Receipt.PreviousContentHash != f.receipt.ContentHash:
+		t.Errorf("recorded PreviousContentHash = %q, want the hash it moved from (%q)", rec.Receipt.PreviousContentHash, f.receipt.ContentHash)
 	}
 }
 

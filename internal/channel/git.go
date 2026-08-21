@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/richardcase/skillsctl/internal/discover"
@@ -92,7 +93,7 @@ func (c *Git) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 	}
 
 	cands, err := c.candidates(chosen, revRoot, sha)
-	return cands, nil, err
+	return cands, agentWarnings(chosen, req.Targets), err
 }
 
 // narrow reduces the discovered skills to the ones the request asked for.
@@ -147,6 +148,31 @@ func (c *Git) candidates(sels []selection, revRoot, sha string) ([]Candidate, er
 		})
 	}
 	return out, nil
+}
+
+// agentWarnings reports which of targets a chosen skill did not declare
+// itself compatible with. A skill with no Agents in its frontmatter is
+// unrestricted, so it warns about nothing: this is advisory only, and every
+// SKILL.md written before the field existed must keep installing silently.
+func agentWarnings(sels []selection, targets []target.Target) []string {
+	var warnings []string
+	for _, s := range sels {
+		if len(s.skill.Agents) == 0 {
+			continue
+		}
+		declared := make(map[string]bool, len(s.skill.Agents))
+		for _, a := range s.skill.Agents {
+			declared[a] = true
+		}
+		for _, t := range targets {
+			if !declared[t.Name] {
+				warnings = append(warnings, fmt.Sprintf(
+					"warning: %s declares agents: %s, which does not include %s",
+					s.name, strings.Join(s.skill.Agents, ", "), t.Name))
+			}
+		}
+	}
+	return warnings
 }
 
 // brief renders selections for a listing, which needs no revision path and no
@@ -354,11 +380,53 @@ func (c *Git) relink(ctx context.Context, r *state.Receipt, sha string, now time
 	// they installed it under, the agents they linked it into, the ref it
 	// tracks, and the pin. Only what the new revision decides changes.
 	receipt := *r
+	receipt.PreviousResolved = r.Resolved
+	receipt.PreviousRevPath = r.RevPath
+	receipt.PreviousContentHash = r.ContentHash
 	receipt.Resolved = sha
 	receipt.RevPath = revPath
 	receipt.ContentHash = hash
 	receipt.UpdatedAt = now
 	return ops, receipt, nil
+}
+
+// Rollback swaps the receipt back onto the revision Previous* recorded — the
+// same relink Update would have done to reach it, run in reverse. It is a
+// toggle: the receipt's current triple becomes the new Previous*, so a
+// second Rollback undoes the first.
+//
+// A skill edited through its symlink is refused unless force, the same check
+// Update makes and for the same reason: the edits would be discarded, and the
+// edited tree would become PreviousRevPath, which the next gc reclaims.
+func (c *Git) Rollback(ctx context.Context, r state.Receipt, force bool) (plan.Plan, Verdict, error) {
+	v := Verdict{Name: r.Name, Channel: r.Channel, Current: r.Resolved}
+
+	if r.PreviousResolved == "" {
+		return plan.Plan{}, v, ErrNothingToRollBackTo
+	}
+
+	dirty, note, err := inspect(&r)
+	if err != nil {
+		return plan.Plan{}, v, err
+	}
+	if dirty && !force {
+		v.Status = StatusDirty
+		return plan.Plan{}, v, ErrEditedSinceInstall
+	}
+	v.Note = note
+
+	ops, receipt, err := c.relink(ctx, &r, r.PreviousResolved, time.Now().UTC())
+	if err != nil {
+		return plan.Plan{}, v, err
+	}
+
+	var p plan.Plan
+	p.Add(ops...)
+	p.Add(plan.Record{Receipt: receipt})
+
+	v.Latest = r.PreviousResolved
+	v.Status = StatusUpdated
+	return p, v, nil
 }
 
 // slugFor is where in the store this receipt's revisions live. Receipts written

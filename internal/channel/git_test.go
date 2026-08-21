@@ -8,6 +8,7 @@ import (
 	"github.com/richardcase/skillsctl/internal/discover"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
+	"github.com/richardcase/skillsctl/internal/target"
 )
 
 func skill(rel, name, desc string) discover.Skill {
@@ -246,5 +247,40 @@ func TestBriefSortsCandidatesByName(t *testing.T) {
 	}
 	if strings.Join(gotNames, ",") != strings.Join(want, ",") {
 		t.Errorf("brief order = %v, want %v: a picker list should not depend on filesystem walk order", gotNames, want)
+	}
+}
+
+func TestAgentWarningsFlagsAnUndeclaredTarget(t *testing.T) {
+	sels := []selection{
+		{name: "demo", skill: discover.Skill{Meta: discover.Meta{Agents: []string{"claude"}}}},
+	}
+	targets := []target.Target{{Name: "claude"}, {Name: "codex"}}
+
+	got := agentWarnings(sels, targets)
+	if len(got) != 1 {
+		t.Fatalf("got %d warnings, want 1: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], "codex") || !strings.Contains(got[0], "demo") {
+		t.Errorf("warning = %q, want it to name the skill and the undeclared agent", got[0])
+	}
+}
+
+func TestAgentWarningsEmptyWhenUnrestricted(t *testing.T) {
+	sels := []selection{{name: "demo", skill: discover.Skill{}}}
+	targets := []target.Target{{Name: "claude"}, {Name: "codex"}}
+
+	if got := agentWarnings(sels, targets); len(got) != 0 {
+		t.Errorf("got %v, want no warnings for a skill with no agents declared", got)
+	}
+}
+
+func TestAgentWarningsEmptyWhenEveryTargetIsDeclared(t *testing.T) {
+	sels := []selection{
+		{name: "demo", skill: discover.Skill{Meta: discover.Meta{Agents: []string{"claude", "codex"}}}},
+	}
+	targets := []target.Target{{Name: "claude"}, {Name: "codex"}}
+
+	if got := agentWarnings(sels, targets); len(got) != 0 {
+		t.Errorf("got %v, want no warnings when every target is declared", got)
 	}
 }

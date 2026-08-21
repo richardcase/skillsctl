@@ -81,7 +81,7 @@ func (c *Local) Prepare(_ context.Context, req Request) ([]Candidate, []string, 
 	}
 
 	cands, err := localCandidates(chosen, root)
-	return cands, nil, err
+	return cands, agentWarnings(chosen, req.Targets), err
 }
 
 // resolve turns whatever the user typed into an absolute directory, and refuses
