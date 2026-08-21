@@ -89,6 +89,90 @@ func TestBundleSyncRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSyncFromARemoteProfileRepo(t *testing.T) {
+	h := newHarness(t)
+	skillURL, skillSHA := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+	manifestBody := "version = 1\n\n[[skill]]\nname = 'demo-skill'\nsource = '" + skillURL + "'\n"
+	profileURL, _ := testrepo.New(t, map[string]string{"skills.toml": manifestBody})
+
+	out, err := h.run(t, "sync", profileURL)
+	if err != nil {
+		t.Fatalf("sync %s: %v\n%s", profileURL, err, out)
+	}
+
+	for _, dir := range []string{h.claude, h.codex} {
+		dest, rerr := os.Readlink(filepath.Join(dir, "demo-skill"))
+		if rerr != nil {
+			t.Fatalf("link missing after remote sync: %v", rerr)
+		}
+		if !strings.Contains(dest, skillSHA) {
+			t.Errorf("link points at %q, want the fetched sha %s", dest, skillSHA)
+		}
+	}
+}
+
+func TestSyncRefSelectsTheProfileReposBranch(t *testing.T) {
+	h := newHarness(t)
+	profileURL, sha1 := testrepo.New(t, map[string]string{"skills.toml": "version = 1\n"})
+	dir := testrepo.Dir(profileURL)
+	skillURL, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
+	testrepo.Commit(t, dir, map[string]string{
+		"skills.toml": "version = 1\n\n[[skill]]\nname = 'demo-skill'\nsource = '" + skillURL + "'\n",
+	})
+
+	out, err := h.run(t, "sync", profileURL, "--ref", sha1)
+	if err != nil {
+		t.Fatalf("sync --ref %s: %v\n%s", sha1, err, out)
+	}
+	if !strings.Contains(out, "Everything the manifest names is already installed.") {
+		t.Errorf("syncing the old sha should have found an empty manifest, got:\n%s", out)
+	}
+}
+
+// A relative filename that also happens to look like an owner/repo source
+// still reads as a local file: os.Stat is tried first and always wins.
+func TestSyncPrefersALocalFileEvenWhenItsNameLooksLikeASource(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "owner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "owner", "repo"), []byte("version = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := h.run(t, "sync", "owner/repo")
+	if err != nil {
+		t.Fatalf("sync owner/repo: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Everything the manifest names is already installed.") {
+		t.Errorf("want the local (empty) manifest read, not a remote fetch attempted, got:\n%s", out)
+	}
+}
+
+// A missing local path that does not even parse as a git source (no slash,
+// so it matches none of owner/repo, scp, or plugin shape) must fail fast with
+// the plain "no such file" error rather than attempting a remote fetch. This
+// is the case source.Parse can actually tell apart from a real git shorthand;
+// a typo that happens to contain a slash is syntactically indistinguishable
+// from a real owner/repo source and still falls through to FetchRemote, which
+// then fails with git's own error instead.
+func TestSyncReportsMissingFileRatherThanGuessingRemote(t *testing.T) {
+	h := newHarness(t)
+
+	out, err := h.run(t, "sync", "nope-does-not-exist.toml")
+	if err == nil {
+		t.Fatalf("want an error, got success:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "no such file") {
+		t.Errorf("want a \"no such file\" error, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "ls-remote") || strings.Contains(err.Error(), "resolve") {
+		t.Errorf("want no sign of a remote fetch attempt, got: %v", err)
+	}
+}
+
 func TestSyncIsIdempotent(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})

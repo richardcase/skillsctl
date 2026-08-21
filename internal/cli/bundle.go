@@ -8,12 +8,16 @@ import (
 )
 
 func newBundleCmd() *cobra.Command {
-	return &cobra.Command{
+	var tags []string
+
+	cmd := &cobra.Command{
 		Use:   "bundle",
 		Short: "Write the installed skills as a portable skills.toml",
 		Long: "Project the current receipts into the skills.toml manifest format and write it\n" +
 			"to stdout, so that `skillsctl bundle > skills.toml` on one machine and\n" +
 			"`skillsctl sync skills.toml` on another install the same set.\n\n" +
+			"--tag keeps only receipts carrying at least one of the given tags, for\n" +
+			"writing a scoped manifest out of a larger set.\n\n" +
 			"A local skill is left out and named on stderr: its source is a path on this\n" +
 			"machine, which means nothing on another.",
 		Args: cobra.NoArgs,
@@ -31,7 +35,8 @@ func newBundleCmd() *cobra.Command {
 			// bundle wants the present set itself, not a resolution that can
 			// fail: it has receipts on disk and is perfectly able to describe
 			// them even when no agent directory exists yet on this machine.
-			f, excluded := manifest.FromReceipts(h.DB.List(), e.channels(), e.cfg.Present())
+			receipts := filterByTags(h.DB.List(), tags)
+			f, excluded := manifest.FromReceipts(receipts, e.channels(), e.cfg.Present())
 
 			// cmd.Print and friends resolve to stderr unless a writer was set,
 			// so the manifest is written to stdout by hand. It is the command's
@@ -47,4 +52,7 @@ func newBundleCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringSliceVar(&tags, "tag", nil, "only bundle skills carrying any of these tags (repeatable)")
+	return cmd
 }

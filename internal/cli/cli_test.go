@@ -756,6 +756,41 @@ func TestListFilterByChannel(t *testing.T) {
 	})
 }
 
+func TestListFilterByTag(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"a/SKILL.md": "---\nname: a\ndescription: A\n---\n",
+		"b/SKILL.md": "---\nname: b\ndescription: B\n---\n",
+	})
+	if out, err := h.run(t, "sync", writeManifest(t,
+		"version = 1\n\n"+
+			"[[skill]]\nname = 'a'\nsource = '"+url+"'\nsubpath = 'a'\ntags = ['frontend']\n\n"+
+			"[[skill]]\nname = 'b'\nsource = '"+url+"'\nsubpath = 'b'\ntags = ['backend']\n")); err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+
+	out, err := h.run(t, "list", "--tag", "frontend")
+	if err != nil {
+		t.Fatalf("list --tag frontend: %v\n%s", err, out)
+	}
+	var sawA, sawB bool
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		switch fields[0] {
+		case "a":
+			sawA = true
+		case "b":
+			sawB = true
+		}
+	}
+	if !sawA || sawB {
+		t.Errorf("--tag frontend should show only a's row, got:\n%s", out)
+	}
+}
+
 func TestOutdatedReportsAMovedRef(t *testing.T) {
 	h := newHarness(t)
 	url, _ := testrepo.New(t, map[string]string{"SKILL.md": skillMD})
@@ -862,5 +897,27 @@ func TestOutdatedEmpty(t *testing.T) {
 	}
 	if !strings.Contains(out, "No skills installed") {
 		t.Errorf("empty report should say so, got:\n%s", out)
+	}
+}
+
+func TestBundleFilterByTag(t *testing.T) {
+	h := newHarness(t)
+	url, _ := testrepo.New(t, map[string]string{
+		"a/SKILL.md": "---\nname: a\ndescription: A\n---\n",
+		"b/SKILL.md": "---\nname: b\ndescription: B\n---\n",
+	})
+	if out, err := h.run(t, "sync", writeManifest(t,
+		"version = 1\n\n"+
+			"[[skill]]\nname = 'a'\nsource = '"+url+"'\nsubpath = 'a'\ntags = ['frontend']\n\n"+
+			"[[skill]]\nname = 'b'\nsource = '"+url+"'\nsubpath = 'b'\ntags = ['backend']\n")); err != nil {
+		t.Fatalf("sync: %v\n%s", err, out)
+	}
+
+	stdout, _, err := h.runSplit(t, "bundle", "--tag", "frontend")
+	if err != nil {
+		t.Fatalf("bundle --tag frontend: %v", err)
+	}
+	if !strings.Contains(stdout, "name = 'a'") || strings.Contains(stdout, "name = 'b'") {
+		t.Errorf("bundle --tag frontend should emit only a, got:\n%s", stdout)
 	}
 }

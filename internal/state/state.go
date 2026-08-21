@@ -33,6 +33,7 @@ type Receipt struct {
 	Ref         string    `json:"ref,omitempty"`
 	Resolved    string    `json:"resolved"`
 	Pinned      bool      `json:"pinned,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
 	RevPath     string    `json:"revPath"`
 	ContentHash string    `json:"contentHash,omitempty"`
 	Links       []Link    `json:"links"`

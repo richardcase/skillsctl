@@ -14,6 +14,7 @@ import (
 func newListCmd() *cobra.Command {
 	var asJSON bool
 	var includeChannel, excludeChannel []string
+	var tags []string
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -46,6 +47,7 @@ func newListCmd() *cobra.Command {
 				}
 				receipts = filterReceipts(receipts, func(c string) bool { return !set[source.Channel(c)] })
 			}
+			receipts = filterByTags(receipts, tags)
 
 			// cmd.Print and friends resolve to stderr unless a writer was
 			// set, so everything list produces is written to stdout by hand.
@@ -70,7 +72,7 @@ func newListCmd() *cobra.Command {
 			reg := e.channels()
 
 			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS")
+			_, _ = fmt.Fprintln(w, "NAME\tCHANNEL\tVERSION\tAGENTS\tTAGS")
 			for _, r := range receipts {
 				agents := reg.Agents(r)
 				version := shortSha(r.Resolved)
@@ -82,7 +84,7 @@ func newListCmd() *cobra.Command {
 				if r.Pinned {
 					version += " (pinned)"
 				}
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Name, r.Channel, version, strings.Join(agents, ","))
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Channel, version, strings.Join(agents, ","), strings.Join(r.Tags, ","))
 			}
 			return w.Flush()
 		},
@@ -91,6 +93,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the receipts as JSON")
 	cmd.Flags().StringSliceVar(&includeChannel, "include-channel", nil, "only list skills from these channels (git, plugin, local)")
 	cmd.Flags().StringSliceVar(&excludeChannel, "exclude-channel", nil, "omit skills from these channels (git, plugin, local)")
+	cmd.Flags().StringSliceVar(&tags, "tag", nil, "only list skills carrying any of these tags (repeatable)")
 	cmd.MarkFlagsMutuallyExclusive("include-channel", "exclude-channel")
 	return cmd
 }
@@ -121,6 +124,34 @@ func filterReceipts(receipts []*state.Receipt, keep func(channel string) bool) [
 		}
 	}
 	return kept
+}
+
+// filterByTags keeps receipts carrying at least one of tags, preserving
+// order. An empty tags is a no-op, so a caller can call this unconditionally.
+func filterByTags(receipts []*state.Receipt, tags []string) []*state.Receipt {
+	if len(tags) == 0 {
+		return receipts
+	}
+	kept := receipts[:0:0]
+	for _, r := range receipts {
+		if hasAnyTag(r, tags) {
+			kept = append(kept, r)
+		}
+	}
+	return kept
+}
+
+// hasAnyTag reports whether r carries at least one of tags — OR semantics,
+// the same rule --include-channel applies to a set of channels.
+func hasAnyTag(r *state.Receipt, tags []string) bool {
+	for _, have := range r.Tags {
+		for _, want := range tags {
+			if have == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // shortSha abbreviates a commit sha and leaves everything else alone. It is

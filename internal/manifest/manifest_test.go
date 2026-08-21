@@ -192,3 +192,21 @@ func TestEntryParseAcceptsAgreeingSubpaths(t *testing.T) {
 		t.Errorf("Subpath = %q, want %q", got.Subpath, "skills/alpha")
 	}
 }
+
+func TestEntryTagsRoundTripThroughTOML(t *testing.T) {
+	want := File{Version: SchemaVersion, Skills: []Entry{
+		{Name: "alpha", Source: "https://github.com/owner/repo.git", Tags: []string{"frontend", "team-a"}},
+	}}
+
+	var buf bytes.Buffer
+	if err := Encode(&buf, want); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	got, err := Decode(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Decode: %v\n%s", err, buf.String())
+	}
+	if strings.Join(got.Skills[0].Tags, ",") != "frontend,team-a" {
+		t.Errorf("Tags = %v, want [frontend team-a]\n%s", got.Skills[0].Tags, buf.String())
+	}
+}

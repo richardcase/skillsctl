@@ -130,6 +130,9 @@ func planMissing(ctx context.Context, reg channel.Registry, e Entry, targets []t
 	if err != nil {
 		return errorVerdict(e, err), plan.Plan{}
 	}
+	if len(e.Tags) > 0 {
+		applyTags(&p, e.Tags)
+	}
 
 	v := Verdict{Name: e.Name, Status: StatusInstalled, Skipped: skips}
 	if len(receipts) == 1 {
@@ -306,4 +309,19 @@ func missingLinks(r *state.Receipt, targets []target.Target) []target.Target {
 
 func errorVerdict(e Entry, err error) Verdict {
 	return Verdict{Name: e.Name, Status: StatusError, Detail: err.Error()}
+}
+
+// applyTags stamps tags onto every Record op an install just planned. Tags
+// are manifest metadata with no channel-specific meaning, so this stays
+// entirely inside the manifest package rather than teaching every channel
+// about a field install itself never sets.
+func applyTags(p *plan.Plan, tags []string) {
+	for i, op := range p.Ops {
+		rec, ok := op.(plan.Record)
+		if !ok {
+			continue
+		}
+		rec.Receipt.Tags = tags
+		p.Ops[i] = rec
+	}
 }

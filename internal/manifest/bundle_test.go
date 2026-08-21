@@ -191,3 +191,16 @@ func TestFromReceiptsCarriesTheSubpath(t *testing.T) {
 		t.Errorf("subpath = %q, want it carried", f.Skills[0].Subpath)
 	}
 }
+
+func TestFromReceiptsCarriesTagsIntoTheEntry(t *testing.T) {
+	r := gitReceipt("alpha", "claude", "codex")
+	r.Tags = []string{"frontend"}
+
+	f, _ := FromReceipts([]*state.Receipt{r}, registry(t), present())
+	if len(f.Skills) != 1 {
+		t.Fatalf("got %d skills, want 1", len(f.Skills))
+	}
+	if strings.Join(f.Skills[0].Tags, ",") != "frontend" {
+		t.Errorf("Tags = %v, want [frontend]", f.Skills[0].Tags)
+	}
+}
