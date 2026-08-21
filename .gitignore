@@ -6,3 +6,6 @@
 # mise.toml is committed; per-machine overrides are not.
 mise.local.toml
 .mise.local.toml
+
+# Subagent-driven-development scratch workspaces (ledgers, briefs, review packages).
+/.superpowers/
