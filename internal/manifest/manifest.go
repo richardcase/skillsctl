@@ -37,6 +37,7 @@ type Entry struct {
 	Ref     string   `toml:"ref,omitempty"`
 	Pinned  bool     `toml:"pinned,omitempty"`
 	Agents  []string `toml:"agents,omitempty"`
+	Tags    []string `toml:"tags,omitempty"`
 }
 
 // File is a whole skills.toml.

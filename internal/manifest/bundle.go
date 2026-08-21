@@ -45,6 +45,7 @@ func entryFor(r *state.Receipt, reg channel.Registry, present []target.Target) E
 		Subpath: r.Subpath,
 		Ref:     r.Ref,
 		Pinned:  r.Pinned,
+		Tags:    r.Tags,
 	}
 	// A pinned receipt records no ref, so its revision lives only in Resolved.
 	// Dropping it would carry the pin across as a freeze at whatever HEAD the
