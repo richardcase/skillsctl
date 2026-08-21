@@ -60,6 +60,15 @@ exact.
   head of the ref it tracks, keeping the name you installed it under, the agents
   you linked it into, and its pin. A skill you edited through its symlink is
   reported rather than overwritten.
+- **See the change before you take it.** `skillsctl diff <name>` prints the
+  unified diff between the revision you have installed and the one `update`
+  would move to — or, with `--against previous`, the one `rollback` would move
+  back to. It is scoped to the skill you installed, not the whole repository,
+  and it installs nothing.
+- **Undo an update.** `skillsctl rollback <name>` swaps a skill back onto the
+  revision it was on before its last update, keeping its name, its agents and
+  its pin. It is a toggle, so running it again returns to where you were, and a
+  skill you edited through its symlink is reported rather than reverted.
 - **Pin to an immutable commit.** `--ref v1.2.0 --pin` freezes the resolved sha
   so a later update skips it. `skillsctl pin` and `skillsctl unpin` add and
   remove a pin after the fact, without a remove and reinstall.
@@ -202,6 +211,7 @@ skillsctl unpin brainstorming --ref develop        # ...this ref, from now on
 skillsctl remove avoid-ai-writing                  # unlink everywhere
 skillsctl rollback avoid-ai-writing                # swap back to before the last update
 skillsctl rollback avoid-ai-writing                # run it again to toggle back
+skillsctl rollback avoid-ai-writing --force        # ...even if you edited it in place
 skillsctl adopt --dry-run                          # what is already in your agents
 skillsctl adopt                                    # take it over
 skillsctl gc                                       # reclaim disk nothing uses
@@ -361,6 +371,31 @@ note: 1 update available
 Pinned skills are listed and marked, so a pin never hides the fact that something
 moved, but they do not set that exit code on their own — `update` skips them.
 
+`diff` shows the change itself rather than the two shas, so you can read what an
+update would bring in before you take it. It is scoped to the installed skill:
+in a repository of many, only that skill's own subdirectory is compared.
+
+```
+$ skillsctl diff brainstorming
+diff --git a/SKILL.md b/SKILL.md
+index 525e31b..9071811 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -12,6 +12,8 @@ description: Explores user intent before implementation.
+ Ask what problem is being solved.
++Ask who else has to live with the answer.
+
+$ skillsctl diff brainstorming --against previous
+no changes
+```
+
+`--against latest` (the default) fetches the tracked ref into the local mirror
+cache so it compares against the remote's true head — nothing is installed, no
+symlink moves and no receipt is written, but it does touch the network.
+`--against previous` compares against the revision `rollback` would swap back
+to, which was already fetched when it was installed or updated onto, so it needs
+no network at all. Either way, identical revisions print `no changes`.
+
 `update` re-points each symlink at the new revision and rewrites the receipt,
 keeping the name, the agents and the pin:
 
@@ -378,6 +413,39 @@ symlink is spotted by re-hashing it against what was recorded at install time,
 and skipped rather than overwritten — `--force` updates it anyway, discarding
 the edit. The old revision stays on disk until `skillsctl gc`, so a failed
 update leaves the previous one linked and the receipt untouched.
+
+`rollback` undoes an update: the receipt remembers the revision it was on before
+its last one, and rollback swaps back onto it, keeping the name, the agents and
+the pin. It is a toggle — running it again returns to the revision the first
+rollback moved away from:
+
+```
+$ skillsctl rollback avoid-ai-writing
+rolled back avoid-ai-writing to 3c0fd8a
+
+$ skillsctl rollback avoid-ai-writing
+rolled back avoid-ai-writing to 9071811
+```
+
+A skill that has never been updated has nothing recorded to swap back to, and a
+skill edited through its symlink is skipped rather than silently reverted — the
+same check `update` makes, with the same escape hatch:
+
+```
+$ skillsctl rollback my-notes
+skipped my-notes: nothing to roll back to: install or update this skill first
+
+$ skillsctl rollback brainstorming
+skipped brainstorming: edited since it was installed: pass --force to roll it back anyway
+
+$ skillsctl rollback brainstorming --force
+rolled back brainstorming to 525e31b
+```
+
+`skillsctl diff <name> --against previous` shows what a rollback would undo
+before you run it, and `--dry-run` prints the `relink` and `record` ops it would
+apply. Only skills fetched from git or from an OCI registry have a revision
+history to swap back to; a local skill or a plugin is refused by name.
 
 A pin can be added and removed after the fact, so changing your mind costs one
 command rather than a remove and a reinstall:
@@ -411,8 +479,10 @@ agent's skills directory, so one copy serves Claude Code, Codex and Gemini.
 ```
 
 A receipt records the source, channel, requested ref, resolved sha, whether it
-is pinned, the revision path, a content hash of the tree, and every symlink the
-install created — which is what makes `remove` deterministic.
+is pinned, the revision path, a content hash of the tree, what those last three
+held before its most recent update (which is what `rollback` swaps back onto),
+and every symlink the install created — which is what makes `remove`
+deterministic.
 
 A local skill is recorded but never copied: the receipt holds the directory you
 gave and the symlinks point straight at it, so edits are live and there is
@@ -591,7 +661,7 @@ to verify.
 | `pin <name>...` | `--dry-run` | Freeze skills at the revision they are installed at |
 | `unpin <name>...` | `--ref`, `--dry-run` | Release the pin, so `update` moves them again |
 | `remove <name>` | `-a/--agent`, `--dry-run` | Unlink from every agent, or just the named ones |
-| `rollback <name>...` | `--dry-run` | Swap a skill back onto the revision it was on before its last update (a toggle: running it twice undoes itself) |
+| `rollback <name>...` | `--force`, `--dry-run` | Swap a skill back onto the revision it was on before its last update (a toggle: running it twice undoes itself) |
 | `doctor` | `--json` | Report where the receipts and the filesystem disagree |
 | `gc` | `--dry-run`, `--json` | Delete revisions and mirrors no receipt references |
 | `bundle` | `--tag` | Write the installed skills as a portable `skills.toml` |
