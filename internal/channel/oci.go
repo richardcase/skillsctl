@@ -326,6 +326,9 @@ func (c *OCI) relink(ctx context.Context, r *state.Receipt, src source.Source, r
 	}
 
 	receipt := *r
+	receipt.PreviousResolved = r.Resolved
+	receipt.PreviousRevPath = r.RevPath
+	receipt.PreviousContentHash = r.ContentHash
 	receipt.Resolved = digest
 	receipt.RevPath = revPath
 	receipt.ContentHash = hash

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/richardcase/skillsctl/internal/cosignx"
+	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/source"
 	"github.com/richardcase/skillsctl/internal/state"
 	"github.com/richardcase/skillsctl/internal/store"
@@ -133,6 +134,20 @@ func TestOCIUpdateRelinksWhenTheDigestMoved(t *testing.T) {
 	}
 	if p.IsEmpty() {
 		t.Error("expected a non-empty plan for a moved digest")
+	}
+
+	var rec plan.Record
+	for _, op := range p.Ops {
+		if r, ok := op.(plan.Record); ok {
+			rec = r
+			break
+		}
+	}
+	if rec.Receipt.Resolved != "sha256:aaa" {
+		t.Errorf("recorded Resolved = %q, want the new digest", rec.Receipt.Resolved)
+	}
+	if rec.Receipt.PreviousResolved != "sha256:old" {
+		t.Errorf("recorded PreviousResolved = %q, want the digest it moved from", rec.Receipt.PreviousResolved)
 	}
 }
 
