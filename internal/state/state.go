@@ -36,9 +36,16 @@ type Receipt struct {
 	Tags        []string  `json:"tags,omitempty"`
 	RevPath     string    `json:"revPath"`
 	ContentHash string    `json:"contentHash,omitempty"`
-	Links       []Link    `json:"links"`
-	InstalledAt time.Time `json:"installedAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	// PreviousResolved, PreviousRevPath and PreviousContentHash are what
+	// Resolved, RevPath and ContentHash held before the last relink — the
+	// git and OCI channels populate them, so rollback has something to
+	// swap back to. Empty until a skill has been updated at least once.
+	PreviousResolved    string    `json:"previousResolved,omitempty"`
+	PreviousRevPath     string    `json:"previousRevPath,omitempty"`
+	PreviousContentHash string    `json:"previousContentHash,omitempty"`
+	Links               []Link    `json:"links"`
+	InstalledAt         time.Time `json:"installedAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 // DB is the in-memory receipt set.
