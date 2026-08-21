@@ -16,6 +16,8 @@ import (
 	"github.com/richardcase/skillsctl/internal/ocix"
 	"github.com/richardcase/skillsctl/internal/outdated"
 	"github.com/richardcase/skillsctl/internal/prompt"
+	"github.com/richardcase/skillsctl/internal/registry"
+	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/richardcase/skillsctl/internal/testrepo"
 )
 
@@ -46,6 +48,11 @@ type harness struct {
 	// bargain h.oci makes: it defaults to a fake that refuses, so a test that
 	// means to exercise signing or verification must set h.cosign.
 	cosign cosignx.Cosign
+
+	// registry answers every registry.Fetch call for the duration of the
+	// test. It defaults to a fake that refuses, so a test that means to
+	// exercise search must say so by setting h.registry.
+	registry registry.Registry
 }
 
 // refusingOCI is newHarness's default: any call fails loudly, so a test that
@@ -119,14 +126,15 @@ func newHarness(t *testing.T) *harness {
 	root := t.TempDir()
 	agents := t.TempDir()
 	h := &harness{
-		root:    filepath.Join(root, "store"),
-		agents:  agents,
-		claude:  filepath.Join(agents, ".claude", "skills"),
-		codex:   filepath.Join(agents, ".codex", "skills"),
-		plugins: &fakePlugins{root: filepath.Join(root, "plugins")},
-		picker:  &fakePicker{},
-		oci:     refusingOCI{},
-		cosign:  refusingCosign{},
+		root:     filepath.Join(root, "store"),
+		agents:   agents,
+		claude:   filepath.Join(agents, ".claude", "skills"),
+		codex:    filepath.Join(agents, ".codex", "skills"),
+		plugins:  &fakePlugins{root: filepath.Join(root, "plugins")},
+		picker:   &fakePicker{},
+		oci:      refusingOCI{},
+		cosign:   refusingCosign{},
+		registry: refusingRegistry{},
 	}
 
 	// Swapping the five seams for the whole test, restored by t.Cleanup. A
@@ -136,11 +144,12 @@ func newHarness(t *testing.T) *harness {
 	// block on a terminal. The OCI seam is the same again: a test that means
 	// to exercise it sets h.oci, and one that does not gets refusingOCI. The
 	// cosign seam follows suit with h.cosign and refusingCosign.
-	realPlugins, realRunner, realPicker, realOCI, realCosign := newPlugins, newRunner, newPicker, newOCI, newCosign
+	realPlugins, realRunner, realPicker, realOCI, realCosign, realRegistry := newPlugins, newRunner, newPicker, newOCI, newCosign, newRegistry
 	newPlugins = func() claudex.Plugins { return h.plugins }
 	newPicker = func() picker { return h.picker }
 	newOCI = func() ocix.OCI { return h.oci }
 	newCosign = func() cosignx.Cosign { return h.cosign }
+	newRegistry = func(target.Config, string) registry.Registry { return h.registry }
 	newRunner = func() func(context.Context, []string) error {
 		return func(_ context.Context, argv []string) error {
 			h.ran = append(h.ran, argv)
@@ -148,7 +157,7 @@ func newHarness(t *testing.T) *harness {
 		}
 	}
 	t.Cleanup(func() {
-		newPlugins, newRunner, newPicker, newOCI, newCosign = realPlugins, realRunner, realPicker, realOCI, realCosign
+		newPlugins, newRunner, newPicker, newOCI, newCosign, newRegistry = realPlugins, realRunner, realPicker, realOCI, realCosign, realRegistry
 	})
 
 	// Both agent parent directories exist, so both are "present".

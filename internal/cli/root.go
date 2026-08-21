@@ -33,6 +33,7 @@ func NewRootCmd() *cobra.Command {
 		newPinCmd(),
 		newRemoveCmd(),
 		newRollbackCmd(),
+		newSearchCmd(),
 		newSyncCmd(),
 		newUnpinCmd(),
 		newUpdateCmd(),
