@@ -40,7 +40,7 @@ func (f *fakeGit) Describe(context.Context, string) (gitx.Origin, error) {
 	panic("outdated must not describe a working copy")
 }
 
-func (f *fakeGit) Diff(context.Context, string, string, string) (string, error) {
+func (f *fakeGit) Diff(context.Context, string, string, string, ...string) (string, error) {
 	panic("outdated must not diff")
 }
 

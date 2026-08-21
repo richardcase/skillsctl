@@ -52,7 +52,7 @@ func (f *fakeGit) Describe(_ context.Context, dir string) (gitx.Origin, error) {
 	return o, nil
 }
 
-func (f *fakeGit) Diff(context.Context, string, string, string) (string, error) {
+func (f *fakeGit) Diff(context.Context, string, string, string, ...string) (string, error) {
 	panic("adopt must not diff")
 }
 

@@ -27,8 +27,10 @@ type Git interface {
 	// Describe reports the working copy dir belongs to, or ErrNotRepo.
 	Describe(ctx context.Context, dir string) (Origin, error)
 	// Diff returns the unified diff between two shas in the mirror at
-	// mirrorPath, or "" if they are identical.
-	Diff(ctx context.Context, mirrorPath, fromSha, toSha string) (string, error)
+	// mirrorPath, or "" if they are identical. Any paths given narrow the
+	// diff to those pathspecs, which is how a skill installed from a
+	// subdirectory is diffed without the rest of the repository.
+	Diff(ctx context.Context, mirrorPath, fromSha, toSha string, paths ...string) (string, error)
 	// DiffDirs returns the unified diff between two directories with no git
 	// repository backing either of them, or "" if they are identical.
 	DiffDirs(ctx context.Context, from, to string) (string, error)
@@ -162,9 +164,16 @@ func (c *CLI) Extract(ctx context.Context, mirrorPath, sha, dest string) error {
 }
 
 // Diff returns the unified diff between two shas in the mirror at
-// mirrorPath, or "" if they are identical.
-func (c *CLI) Diff(ctx context.Context, mirrorPath, fromSha, toSha string) (string, error) {
-	return c.diffOutput(ctx, mirrorPath, "diff", fromSha, toSha)
+// mirrorPath, or "" if they are identical. Any paths given become a
+// pathspec, so a skill that lives in a subdirectory of a multi-skill
+// repository is diffed on its own rather than alongside its neighbours.
+func (c *CLI) Diff(ctx context.Context, mirrorPath, fromSha, toSha string, paths ...string) (string, error) {
+	args := []string{"diff", "--no-ext-diff", fromSha, toSha}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
+	}
+	return c.diffOutput(ctx, mirrorPath, args...)
 }
 
 // DiffDirs returns the unified diff between two directories with no git
@@ -173,7 +182,7 @@ func (c *CLI) Diff(ctx context.Context, mirrorPath, fromSha, toSha string) (stri
 // in, only two extracted trees, and `git diff --no-index` compares two
 // paths without needing either to be inside a repository.
 func (c *CLI) DiffDirs(ctx context.Context, from, to string) (string, error) {
-	return c.diffOutput(ctx, "", "diff", "--no-index", from, to)
+	return c.diffOutput(ctx, "", "diff", "--no-ext-diff", "--no-index", from, to)
 }
 
 // diffOutput runs a git diff variant. git exits 1 to report that it found

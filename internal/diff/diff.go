@@ -70,6 +70,12 @@ func Check(ctx context.Context, g gitx.Git, o ocix.OCI, st *store.Store, r *stat
 				return "", fmt.Errorf("update mirror for %s: %w", r.Name, err)
 			}
 		}
+		// A skill installed from a subdirectory of a multi-skill repository
+		// is only that subdirectory: diffing the whole revision would report
+		// changes to skills the user never installed.
+		if r.Subpath != "" {
+			return g.Diff(ctx, mirror, r.Resolved, toSha, r.Subpath)
+		}
 		return g.Diff(ctx, mirror, r.Resolved, toSha)
 
 	case string(source.ChannelOCI):
@@ -81,11 +87,21 @@ func Check(ctx context.Context, g gitx.Git, o ocix.OCI, st *store.Store, r *stat
 		if slug == "" {
 			slug = src.Slug()
 		}
-		fromDir, err := st.EnsureOCI(ctx, o, slug, ociDigestRef(src, r.Resolved), r.Resolved)
+		fromRoot, err := st.EnsureOCI(ctx, o, slug, ociDigestRef(src, r.Resolved), r.Resolved)
 		if err != nil {
 			return "", err
 		}
-		toDir, err := st.EnsureOCI(ctx, o, slug, ociDigestRef(src, toSha), toSha)
+		toRoot, err := st.EnsureOCI(ctx, o, slug, ociDigestRef(src, toSha), toSha)
+		if err != nil {
+			return "", err
+		}
+		// The same narrowing the git branch does with a pathspec, and the
+		// same containment check every other resolution of a subpath makes.
+		fromDir, err := store.Join(fromRoot, r.Subpath)
+		if err != nil {
+			return "", err
+		}
+		toDir, err := store.Join(toRoot, r.Subpath)
 		if err != nil {
 			return "", err
 		}
