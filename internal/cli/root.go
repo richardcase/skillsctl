@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.AddCommand(
 		newAdoptCmd(),
+		newBrowseCmd(),
 		newBundleCmd(),
 		newDoctorCmd(),
 		newGCCmd(),
@@ -24,6 +25,7 @@ func NewRootCmd() *cobra.Command {
 		newInstallCmd(),
 		newLinkCmd(),
 		newListCmd(),
+		newNewCmd(),
 		newOutdatedCmd(),
 		newPackageCmd(),
 		newPinCmd(),

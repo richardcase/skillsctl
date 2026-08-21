@@ -28,79 +28,86 @@ func newUpdateCmd() *cobra.Command {
 			"has been edited through its symlink is skipped unless --force, since updating it\n" +
 			"would discard the edit. The old revision stays on disk until `skillsctl gc`.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			e, err := newEnv()
-			if err != nil {
-				return err
-			}
-
-			// The state lock is taken before anything is written to the store
-			// and held until this command exits, so a concurrent gc can never
-			// collect the revision this update is about to link.
-			h, err := e.openState()
-			if err != nil {
-				return err
-			}
-			defer func() { _ = h.Close() }()
-
-			receipts := h.DB.List()
-			if len(receipts) == 0 {
-				cmd.Println("No skills installed.")
-				return nil
-			}
-
-			entries, p, err := update.Plan(cmd.Context(), e.channels(), receipts,
-				update.Options{Names: args, Force: force})
-			if err != nil {
-				return err
-			}
-
-			if dryRun {
-				for _, line := range p.Describe() {
-					cmd.Println(line)
-				}
-				reportUpdate(cmd, entries, dryRun)
-				return updateExit(entries)
-			}
-
-			var serr error
-			var linkSkips []string
-			if !p.IsEmpty() {
-				ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
-				if err := ex.Apply(cmd.Context(), p); err != nil {
-					return err
-				}
-
-				// A channel whose agent chooses the version can only be asked
-				// once it has run, so the entries are corrected before they are
-				// reported rather than after.
-				entries, linkSkips, serr = settleUpdated(cmd.Context(), ex, e, h.DB, entries)
-
-				if err := h.Commit(); err != nil {
-					return fmt.Errorf("%w\nthe skills were re-linked but the receipts were not saved; re-run this command to repair", err)
-				}
-			}
-
-			reportUpdate(cmd, entries, dryRun)
-			reportSkipped(cmd, linkSkips)
-			if !p.IsEmpty() {
-				hintReclaimable(cmd, e, h.DB)
-			}
-			if serr != nil {
-				cmd.Printf("warning: %v\n", serr)
-			}
-			if err := updateExit(entries); err != nil {
-				return err
-			}
-			if serr != nil {
-				return partialf("the update ran, but a version could not be read back")
-			}
-			return nil
+			return runUpdate(cmd, args, force, dryRun)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "update even a skill that has been edited since it was installed")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without changing it")
 	return cmd
+}
+
+// runUpdate is `update`'s body, factored out so `browse` can move a chosen
+// batch of names through the exact same plan/settle/report/exit path instead
+// of a copy of it.
+func runUpdate(cmd *cobra.Command, names []string, force, dryRun bool) error {
+	e, err := newEnv()
+	if err != nil {
+		return err
+	}
+
+	// The state lock is taken before anything is written to the store
+	// and held until this command exits, so a concurrent gc can never
+	// collect the revision this update is about to link.
+	h, err := e.openState()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = h.Close() }()
+
+	receipts := h.DB.List()
+	if len(receipts) == 0 {
+		cmd.Println("No skills installed.")
+		return nil
+	}
+
+	entries, p, err := update.Plan(cmd.Context(), e.channels(), receipts,
+		update.Options{Names: names, Force: force})
+	if err != nil {
+		return err
+	}
+
+	if dryRun {
+		for _, line := range p.Describe() {
+			cmd.Println(line)
+		}
+		reportUpdate(cmd, entries, dryRun)
+		return updateExit(entries)
+	}
+
+	var serr error
+	var linkSkips []string
+	if !p.IsEmpty() {
+		ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
+		if err := ex.Apply(cmd.Context(), p); err != nil {
+			return err
+		}
+
+		// A channel whose agent chooses the version can only be asked
+		// once it has run, so the entries are corrected before they are
+		// reported rather than after.
+		entries, linkSkips, serr = settleUpdated(cmd.Context(), ex, e, h.DB, entries)
+
+		if err := h.Commit(); err != nil {
+			return fmt.Errorf("%w\nthe skills were re-linked but the receipts were not saved; re-run this command to repair", err)
+		}
+	}
+
+	reportUpdate(cmd, entries, dryRun)
+	reportSkipped(cmd, linkSkips)
+	if !p.IsEmpty() {
+		hintReclaimable(cmd, e, h.DB)
+	}
+	if serr != nil {
+		cmd.Printf("warning: %v\n", serr)
+	}
+	if err := updateExit(entries); err != nil {
+		return err
+	}
+	if serr != nil {
+		return partialf("the update ran, but a version could not be read back")
+	}
+	return nil
 }
 
 // linkedTargets is the agents a receipt already reaches, as targets, for the

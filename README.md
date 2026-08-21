@@ -25,6 +25,7 @@ deterministic. One store, symlinked into every agent you use.
 - [Use](#use)
 - [How it works](#how-it-works)
 - [Commands](#commands)
+- [Shell completion](#shell-completion)
 - [Configuration](#configuration)
 - [skills.toml](#skillstoml)
 - [Status](#status)
@@ -116,6 +117,13 @@ exact.
 - **Scriptable.** `skillsctl list --json` emits the raw receipts, `info --json`
   emits one of them with everything derived from it, and a partial install exits
   `2` so a script can tell it from having installed nothing.
+- **Scaffold a skill and start editing immediately.** `skillsctl new my-skill`
+  writes `./my-skill/SKILL.md` with valid frontmatter and links it into every
+  agent found in the same step — the create-and-link equivalent of
+  `skillsctl link ./my-skill` for a skill you have not written yet.
+- **Pick skills interactively instead of naming them one at a time.**
+  `skillsctl browse` lists what is installed, with its outdated status, and
+  lets you tick several to update or remove in one batch.
 - **One static binary.** No runtime dependency beyond `git`, and `claude` only
   if you install plugins.
 
@@ -154,7 +162,9 @@ skillsctl install oci://ghcr.io/owner/skills:v1 \
   --verify-identity signer@example.com --verify-issuer https://accounts.google.com  # verify a keyless signature
 skillsctl link ./my-skill                          # a skill you are writing
 skillsctl install ./my-skill                       # the same thing
+skillsctl new my-skill                             # scaffold a skill and link it, in one step
 skillsctl link avoid-ai-writing -a gemini          # into an agent that missed it
+skillsctl browse                                   # pick installed skills to update or remove
 skillsctl list                                     # what's installed
 skillsctl list --json                              # the raw receipts
 skillsctl list --include-channel git               # only skills fetched via git
@@ -542,8 +552,10 @@ to verify.
 | `package <source-dir> <oci-ref>` | `--sign-key`, `--sign-keyless`, `--dry-run` | Package a directory of skills into an OCI artifact and push it |
 | `link <name>` | `-a/--agent`, `--dry-run` | Link an installed skill into another agent |
 | `link <path>` | `-a/--agent`, `--skill`, `--all`, `--as`, `--dry-run` | Link a skill you are working on, where it already is |
+| `new <name>` | `-a/--agent`, `--description`, `--dry-run` | Scaffold a new skill and link it in place |
 | `adopt` | `-a/--agent`, `--dry-run`, `--json` | Record the skills already in an agent's skills directory |
 | `list` | `--json`, `--include-channel`, `--exclude-channel` | Show installed skills, versions and agents |
+| `browse` | `--dry-run` | Pick installed skills interactively to update or remove |
 | `info <name>` | `--json` | Show one skill's receipt in full, and whether its links are live |
 | `outdated` | `--json` | Report skills whose tracked ref has moved |
 | `update [name...]` | `--force`, `--dry-run` | Move skills to the head of the ref they track |
@@ -652,6 +664,21 @@ than a verdict on the work:
 `3` means `outdated` ran to completion and something has moved, and `4` that
 `doctor` ran to completion and something is wrong. A stale plugin does not set
 `3`: it is not an available update, and `skillsctl update` repairs it on its own.
+
+## Shell completion
+
+`skillsctl` generates a completion script for bash, zsh, fish and PowerShell —
+this comes from Cobra, the CLI framework skillsctl is built on, so it needs no
+setup beyond sourcing it:
+
+```bash
+# zsh
+echo 'source <(skillsctl completion zsh)' >> ~/.zshrc
+# bash
+echo 'source <(skillsctl completion bash)' >> ~/.bashrc
+```
+
+`skillsctl completion --help` lists every shell and the exact setup for each.
 
 ## Configuration
 
