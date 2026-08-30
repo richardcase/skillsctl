@@ -196,3 +196,18 @@ func Load(path string) ([]Entry, error) {
 	}
 	return entries, nil
 }
+
+// Save writes entries to path as indented JSON, the counterpart to Load. It
+// is what registry-check's --fix mode uses to propose a diff for a pull
+// request to review — nothing in this package ever pushes that diff to a
+// branch itself.
+func Save(path string, entries []Entry) error {
+	blob, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, append(blob, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
