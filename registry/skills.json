@@ -1,1 +1,252 @@
-[]
+[
+  {
+    "name": "frontend-dev",
+    "source": "MiniMax-AI/frontend-dev",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "minimax-pdf",
+    "source": "MiniMax-AI/minimax-pdf",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "wp-block-development",
+    "source": "WordPress/wp-block-development",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "wp-playground",
+    "source": "WordPress/wp-playground",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "wp-plugin-development",
+    "source": "WordPress/wp-plugin-development",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "algorithmic-art",
+    "source": "anthropics/algorithmic-art",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "brand-guidelines",
+    "source": "anthropics/brand-guidelines",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "canvas-design",
+    "source": "anthropics/canvas-design",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "doc-coauthoring",
+    "source": "anthropics/doc-coauthoring",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "docx",
+    "source": "anthropics/docx",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "frontend-design",
+    "source": "anthropics/frontend-design",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "internal-comms",
+    "source": "anthropics/internal-comms",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "mcp-builder",
+    "source": "anthropics/mcp-builder",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "pdf",
+    "source": "anthropics/pdf",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "pptx",
+    "source": "anthropics/pptx",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "skill-creator",
+    "source": "anthropics/skill-creator",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "slack-gif-creator",
+    "source": "anthropics/slack-gif-creator",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "template",
+    "source": "anthropics/template",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "theme-factory",
+    "source": "anthropics/theme-factory",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "web-artifacts-builder",
+    "source": "anthropics/web-artifacts-builder",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "webapp-testing",
+    "source": "anthropics/webapp-testing",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "xlsx",
+    "source": "anthropics/xlsx",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "best-practices",
+    "source": "better-auth/best-practices",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "create-auth",
+    "source": "better-auth/create-auth",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "twoFactor",
+    "source": "better-auth/twoFactor",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "crypto-market-rank",
+    "source": "binance/crypto-market-rank",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "query-token-audit",
+    "source": "binance/query-token-audit",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "trading-signal",
+    "source": "binance/trading-signal",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "github",
+    "source": "callstackincubator/github",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "react-native-best-practices",
+    "source": "callstackincubator/react-native-best-practices",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "upgrading-react-native",
+    "source": "callstackincubator/upgrading-react-native",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "clickhouse-best-practices",
+    "source": "clickhouse/clickhouse-best-practices",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "agents-sdk",
+    "source": "cloudflare/agents-sdk",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "building-ai-agent-on-cloudflare",
+    "source": "cloudflare/building-ai-agent-on-cloudflare",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "building-mcp-server-on-cloudflare",
+    "source": "cloudflare/building-mcp-server-on-cloudflare",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "durable-objects",
+    "source": "cloudflare/durable-objects",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "web-perf",
+    "source": "cloudflare/web-perf",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "wrangler",
+    "source": "cloudflare/wrangler",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "composio",
+    "source": "composiohq/composio",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "attach-db",
+    "source": "duckdb/attach-db",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "duckdb-docs",
+    "source": "duckdb/duckdb-docs",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "query",
+    "source": "duckdb/query",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "building-native-ui",
+    "source": "expo/building-native-ui",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "expo-api-routes",
+    "source": "expo/expo-api-routes",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "expo-deployment",
+    "source": "expo/expo-deployment",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "upgrading-expo",
+    "source": "expo/upgrading-expo",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "use-dom",
+    "source": "expo/use-dom",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "fal-generate",
+    "source": "fal-ai-community/fal-generate",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "fal-realtime",
+    "source": "fal-ai-community/fal-realtime",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  },
+  {
+    "name": "fal-upscale",
+    "source": "fal-ai-community/fal-upscale",
+    "description": "TODO: added automatically by registry-refresh — verify the source (it may need a /subpath), then fill in description, tags and agents before merging."
+  }
+]
