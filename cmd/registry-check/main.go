@@ -1,10 +1,12 @@
 // Command registry-check validates registry/skills.json against the network
 // and reports candidate skills seen in heilcheng/awesome-agent-skills but not
 // yet in the registry, for the scheduled registry-refresh workflow to turn
-// into a tracking issue. It never modifies registry/skills.json: resolving a
-// candidate name to a real owner/repo stays a human, PR-reviewed decision,
-// since several of that list's entries are monorepo subpaths a name alone
-// cannot disambiguate.
+// into a pull request. By default it never modifies registry/skills.json.
+// With --fix it writes a proposed fix — broken entries dropped, new
+// candidates appended as stub entries — but that write only ever lands on a
+// PR branch for a human to review: resolving a candidate name to a real
+// owner/repo stays a human decision, since several of that list's entries
+// are monorepo subpaths a name alone cannot disambiguate.
 package main
 
 import (
@@ -28,9 +30,10 @@ const awesomeListReadmeURL = "https://raw.githubusercontent.com/heilcheng/awesom
 
 func main() {
 	registryPath := flag.String("registry", "registry/skills.json", "path to the registry file to check")
+	fix := flag.Bool("fix", false, "write broken-entry removals and new-candidate stubs back to the registry file")
 	flag.Parse()
 
-	report, err := run(context.Background(), *registryPath, gitx.New(), http.DefaultClient, awesomeListReadmeURL)
+	report, err := run(context.Background(), *registryPath, gitx.New(), http.DefaultClient, awesomeListReadmeURL, *fix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "registry-check: %v\n", err)
 		os.Exit(1)
@@ -40,8 +43,10 @@ func main() {
 
 // run loads registryPath, validates every entry's source against the
 // network via g, finds candidates in the README at readmeURL not already
-// present, and renders both as a Markdown report.
-func run(ctx context.Context, registryPath string, g gitx.Git, client *http.Client, readmeURL string) (string, error) {
+// present, and renders both as a Markdown report. When fix is true, it also
+// writes registryPath: broken entries removed, new candidates appended as
+// stub entries for a human to complete.
+func run(ctx context.Context, registryPath string, g gitx.Git, client *http.Client, readmeURL string, fix bool) (string, error) {
 	entries, err := registry.Load(registryPath)
 	if err != nil {
 		return "", fmt.Errorf("load %s: %w", registryPath, err)
@@ -53,7 +58,53 @@ func run(ctx context.Context, registryPath string, g gitx.Git, client *http.Clie
 		return "", fmt.Errorf("find new candidates: %w", err)
 	}
 
+	if fix {
+		if err := registry.Save(registryPath, fixedEntries(entries, broken, candidates)); err != nil {
+			return "", fmt.Errorf("write %s: %w", registryPath, err)
+		}
+	}
+
 	return report(broken, candidates), nil
+}
+
+// stubDescription flags a candidate entry as machine-generated and
+// incomplete: registry-check only ever scrapes an owner/repo name from the
+// awesome-list, never a description, tags, agents, or confirmation that the
+// source isn't actually a subpath within a monorepo.
+const stubDescription = "TODO: added automatically by registry-refresh — verify the source " +
+	"(it may need a /subpath), then fill in description, tags and agents before merging."
+
+// fixedEntries returns entries with every broken one dropped and one stub
+// entry appended per candidate (capped at maxReportedCandidates, the same
+// bound the report applies, so one run can't balloon the file). Order among
+// the surviving original entries is preserved; stub entries are appended in
+// the same sorted order newCandidates already returns.
+func fixedEntries(entries []registry.Entry, broken []brokenEntry, candidates []string) []registry.Entry {
+	isBroken := make(map[string]bool, len(broken))
+	for _, b := range broken {
+		isBroken[b.Name+"\x00"+b.Source] = true
+	}
+
+	fixed := make([]registry.Entry, 0, len(entries))
+	for _, e := range entries {
+		if isBroken[e.Name+"\x00"+e.Source] {
+			continue
+		}
+		fixed = append(fixed, e)
+	}
+
+	if len(candidates) > maxReportedCandidates {
+		candidates = candidates[:maxReportedCandidates]
+	}
+	for _, c := range candidates {
+		_, name, _ := strings.Cut(c, "/")
+		fixed = append(fixed, registry.Entry{
+			Name:        name,
+			Source:      c,
+			Description: stubDescription,
+		})
+	}
+	return fixed
 }
 
 // brokenEntry is a registry entry whose source no longer resolves.
