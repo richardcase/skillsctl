@@ -173,6 +173,7 @@ or build from source with `go install github.com/richardcase/skillsctl/cmd/skill
 ## Use
 
 ```bash
+skillsctl search research                          # find skills by name, description or tag
 skillsctl install conorbronsdon/avoid-ai-writing   # link into every agent found
 skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
 skillsctl install owner/repo//path/to/skill        # the same, boundary spelled out
@@ -238,6 +239,22 @@ avoid-ai-writing  git      a1b2c3d           claude,codex  frontend
 brainstorming     git      9f8e7d6 (pinned)  claude
 superpowers       plugin   6.3.0             claude,codex
 my-skill          local    -                 claude
+```
+
+`search` matches a query against the registry's name, description and tags,
+printing a source for each hit that can be passed straight to `install`:
+
+```
+$ skillsctl search research
+NAME          SOURCE                                 DESCRIPTION
+web-research  vercel-labs/agent-skills/web-research  Research a topic against primary sources
+```
+
+No match is not an error — it just says so:
+
+```
+$ skillsctl search nonexistent
+No skills found matching "nonexistent".
 ```
 
 `info` prints everything the receipt records, together with the description from
