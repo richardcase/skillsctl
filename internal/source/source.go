@@ -275,6 +275,14 @@ func (s Source) OCIRef(tag string) string {
 // write it into a manifest and sync can parse it back.
 func (s Source) OCISource(tag string) string { return OCIScheme + s.OCIRef(tag) }
 
+// OCIDigestRef renders this source's immutable registry/repository@digest
+// reference. Unlike OCIRef, a digest reference cannot move between when it is
+// resolved and when it is used, so verification and pulling both go through
+// this rather than the tag form.
+func (s Source) OCIDigestRef(digest string) string {
+	return fmt.Sprintf("%s/%s@%s", s.Registry, s.Repository, digest)
+}
+
 func splitOwnerRepo(p string) (owner, repo string) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	if len(parts) == 1 {

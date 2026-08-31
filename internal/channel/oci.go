@@ -65,7 +65,10 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 		return nil, nil, err
 	}
 
-	revRoot, err := c.store.EnsureOCI(ctx, c.oci, src.Slug(), ref, digest)
+	// Pulled by the digest just verified, not the tag: a tag that moved
+	// between Resolve and here must not land different bytes under the path
+	// named for the digest a signature vouched for.
+	revRoot, err := c.store.EnsureOCI(ctx, c.oci, src.Slug(), src.OCIDigestRef(digest), digest)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -121,7 +124,7 @@ func (c *OCI) Prepare(ctx context.Context, req Request) ([]Candidate, []string, 
 // signed is genuinely unknown, so the install proceeds exactly as it did
 // before signing existed.
 func (c *OCI) checkSignature(ctx context.Context, src source.Source, digest, verifyKey, verifyIdentity, verifyIssuer string) ([]string, error) {
-	digestRef := fmt.Sprintf("%s/%s@%s", src.Registry, src.Repository, digest)
+	digestRef := src.OCIDigestRef(digest)
 
 	if verifyKey != "" {
 		if err := c.cosign.Verify(ctx, digestRef, verifyKey); err != nil {
@@ -276,7 +279,7 @@ func (c *OCI) Update(ctx context.Context, rs []*state.Receipt, o UpdateOptions) 
 		}
 		v.Note = note
 
-		ops, receipt, err := c.relink(ctx, r, src, ref, got.sha, now)
+		ops, receipt, err := c.relink(ctx, r, src, got.sha, now)
 		if err != nil {
 			verdicts = append(verdicts, fail(v, err))
 			continue
@@ -297,13 +300,17 @@ func (c *OCI) Settle(context.Context, []state.Receipt) ([]state.Receipt, error) 
 	return nil, nil
 }
 
-func (c *OCI) relink(ctx context.Context, r *state.Receipt, src source.Source, ref, digest string, now time.Time) ([]plan.Op, state.Receipt, error) {
+// relink pulls by digest, never by the tag that produced it: a tag can move
+// between when a caller resolves it and when relink runs, and re-pulling
+// through it could silently land bytes for a different digest under the path
+// named for this one.
+func (c *OCI) relink(ctx context.Context, r *state.Receipt, src source.Source, digest string, now time.Time) ([]plan.Op, state.Receipt, error) {
 	slug := r.Slug
 	if slug == "" {
 		slug = src.Slug()
 	}
 
-	revRoot, err := c.store.EnsureOCI(ctx, c.oci, slug, ref, digest)
+	revRoot, err := c.store.EnsureOCI(ctx, c.oci, slug, src.OCIDigestRef(digest), digest)
 	if err != nil {
 		return nil, state.Receipt{}, err
 	}
@@ -339,11 +346,6 @@ func (c *OCI) relink(ctx context.Context, r *state.Receipt, src source.Source, r
 
 // Rollback swaps the receipt back onto the digest Previous* recorded.
 //
-// Unlike Update, which resolves against the tag the receipt tracks, this
-// pins the reference to the exact previous digest
-// (registry/repository@digest) rather than the tag: a tag can have moved
-// since, and a rollback that re-pulled through it could silently land on
-// neither the old digest nor the new one.
 // A skill edited through its symlink is refused unless force, the same check
 // Update makes and for the same reason.
 func (c *OCI) Rollback(ctx context.Context, r state.Receipt, force bool) (plan.Plan, Verdict, error) {
@@ -367,9 +369,7 @@ func (c *OCI) Rollback(ctx context.Context, r state.Receipt, force bool) (plan.P
 	if err != nil {
 		return plan.Plan{}, v, err
 	}
-	ref := fmt.Sprintf("%s/%s@%s", src.Registry, src.Repository, r.PreviousResolved)
-
-	ops, receipt, err := c.relink(ctx, &r, src, ref, r.PreviousResolved, time.Now().UTC())
+	ops, receipt, err := c.relink(ctx, &r, src, r.PreviousResolved, time.Now().UTC())
 	if err != nil {
 		return plan.Plan{}, v, err
 	}
