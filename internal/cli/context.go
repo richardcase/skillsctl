@@ -93,8 +93,8 @@ func (e *env) targets(names []string) ([]target.Target, error) {
 }
 
 // openState acquires the receipts database.
-func (e *env) openState() (*state.Handle, error) {
-	return state.Open(e.store.StatePath())
+func (e *env) openState(ctx context.Context) (*state.Handle, error) {
+	return state.Open(ctx, e.store.StatePath(), os.Stderr)
 }
 
 // channels is the registry every command dispatches through. It is built per

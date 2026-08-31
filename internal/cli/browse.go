@@ -35,7 +35,7 @@ func runBrowse(cmd *cobra.Command, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

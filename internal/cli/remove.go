@@ -38,7 +38,7 @@ func runRemove(cmd *cobra.Command, name string, agents []string, dryRun bool) er
 	if err != nil {
 		return err
 	}
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

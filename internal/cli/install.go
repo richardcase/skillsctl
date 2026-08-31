@@ -98,7 +98,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	// revision directory exists without its creator holding the lock until
 	// the receipt that makes it live has been committed, so a concurrent gc
 	// can never collect an extraction that is about to be recorded.
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

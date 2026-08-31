@@ -64,7 +64,7 @@ func newSyncCmd() *cobra.Command {
 			// The state lock is taken before anything is written to the store
 			// and held until this command exits, so a concurrent gc can never
 			// collect a revision this sync is about to link.
-			h, err := e.openState()
+			h, err := e.openState(cmd.Context())
 			if err != nil {
 				return err
 			}

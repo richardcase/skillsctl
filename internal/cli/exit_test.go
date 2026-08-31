@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func exitCode(t *testing.T, args ...string) (int, string) {
 	root.SetOut(&buf)
 	root.SetErr(&buf)
 	root.SetArgs(args)
-	return run(root), buf.String()
+	return run(context.Background(), root), buf.String()
 }
 
 // TestExitPartialWhenGCFreesSomeOfWhatItFound makes one dead revision

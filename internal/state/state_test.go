@@ -1,12 +1,17 @@
 package state
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 func statePath(t *testing.T) string {
@@ -15,7 +20,7 @@ func statePath(t *testing.T) string {
 }
 
 func TestOpenMissingFileGivesEmptyDB(t *testing.T) {
-	h, err := Open(statePath(t))
+	h, err := Open(context.Background(), statePath(t), nil)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -33,7 +38,7 @@ func TestCommitThenReopenRoundTrips(t *testing.T) {
 	p := statePath(t)
 	now := time.Date(2026, 8, 13, 9, 0, 0, 0, time.UTC)
 
-	h, err := Open(p)
+	h, err := Open(context.Background(), p, nil)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -57,7 +62,7 @@ func TestCommitThenReopenRoundTrips(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	h2, err := Open(p)
+	h2, err := Open(context.Background(), p, nil)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -81,13 +86,13 @@ func TestCommitThenReopenRoundTrips(t *testing.T) {
 func TestCloseWithoutCommitDiscardsChanges(t *testing.T) {
 	p := statePath(t)
 
-	h, _ := Open(p)
+	h, _ := Open(context.Background(), p, nil)
 	h.DB.Receipts["ghost"] = &Receipt{Name: "ghost"}
 	if err := h.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
-	h2, err := Open(p)
+	h2, err := Open(context.Background(), p, nil)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -107,7 +112,7 @@ func TestOpenRejectsNewerSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := Open(p); err == nil {
+	if _, err := Open(context.Background(), p, nil); err == nil {
 		t.Fatal("Open accepted a newer schema version; want an error telling the user to upgrade")
 	}
 }
@@ -121,7 +126,7 @@ func TestOpenAcceptsVersionlessFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := Open(p)
+	h, err := Open(context.Background(), p, nil)
 	if err != nil {
 		t.Fatalf("Open rejected a file with no version field: %v", err)
 	}
@@ -151,7 +156,7 @@ func TestCommitThenReopenRoundTripsPreviousRevision(t *testing.T) {
 	p := statePath(t)
 	now := time.Date(2026, 8, 13, 9, 0, 0, 0, time.UTC)
 
-	h, err := Open(p)
+	h, err := Open(context.Background(), p, nil)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -177,7 +182,7 @@ func TestCommitThenReopenRoundTripsPreviousRevision(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	h2, err := Open(p)
+	h2, err := Open(context.Background(), p, nil)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -205,5 +210,100 @@ func TestReceiptWithNoPreviousRevisionOmitsTheFieldsFromJSON(t *testing.T) {
 	}
 	if strings.Contains(string(blob), "previousResolved") {
 		t.Errorf("a receipt with no previous revision should omit it from JSON, got: %s", blob)
+	}
+}
+
+// shrinkLockWait lowers lockTimeout and lockPollInterval for a test so it
+// does not have to wait out the real defaults, restoring them afterwards.
+func shrinkLockWait(t *testing.T) {
+	t.Helper()
+	oldTimeout, oldPoll := lockTimeout, lockPollInterval
+	lockTimeout, lockPollInterval = 200*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { lockTimeout, lockPollInterval = oldTimeout, oldPoll })
+}
+
+func TestOpenTimesOutWithUsefulMessageWhenLockIsHeld(t *testing.T) {
+	shrinkLockWait(t)
+	p := statePath(t)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	held := flock.New(p + ".lock")
+	ok, err := held.TryLock()
+	if err != nil || !ok {
+		t.Fatalf("TryLock: ok=%v err=%v", ok, err)
+	}
+	defer func() { _ = held.Unlock() }()
+
+	var notify bytes.Buffer
+	start := time.Now()
+	_, err = Open(context.Background(), p, &notify)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Open succeeded against a held lock; want a timeout error")
+	}
+	if !strings.Contains(err.Error(), p+".lock") {
+		t.Errorf("error %q does not name the lock file %s.lock", err, p)
+	}
+	if elapsed > time.Second {
+		t.Errorf("Open took %s; want it bounded by the shrunk lockTimeout", elapsed)
+	}
+	if !strings.Contains(notify.String(), "waiting for the skillsctl lock") {
+		t.Errorf("notify = %q, want a waiting message", notify.String())
+	}
+}
+
+func TestOpenHonoursContextCancellation(t *testing.T) {
+	shrinkLockWait(t)
+	// A longer timeout than shrinkLockWait sets, so a pass proves
+	// cancellation cut the wait short rather than the timeout doing it.
+	lockTimeout = time.Minute
+	p := statePath(t)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	held := flock.New(p + ".lock")
+	ok, err := held.TryLock()
+	if err != nil || !ok {
+		t.Fatalf("TryLock: ok=%v err=%v", ok, err)
+	}
+	defer func() { _ = held.Unlock() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(20*time.Millisecond, cancel)
+
+	start := time.Now()
+	_, err = Open(ctx, p, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Open succeeded against a held lock; want a cancellation error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want it to wrap context.Canceled", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("Open took %s; want cancellation to cut the wait short", elapsed)
+	}
+}
+
+func TestOpenReportsHoldingPID(t *testing.T) {
+	p := statePath(t)
+
+	h, err := Open(context.Background(), p, nil)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = h.Close() }()
+
+	got, found := readHolder(p + ".lock")
+	if !found {
+		t.Fatal("readHolder found no holder info after Open")
+	}
+	if got.PID != os.Getpid() {
+		t.Errorf("holder PID = %d, want %d", got.PID, os.Getpid())
 	}
 }

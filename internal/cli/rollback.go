@@ -53,7 +53,7 @@ func runRollback(cmd *cobra.Command, names []string, force, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

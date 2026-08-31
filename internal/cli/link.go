@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -37,7 +38,7 @@ func newLinkCmd() *cobra.Command {
 			"Which form you meant is decided by looking the argument up in the receipts.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			miss, err := lookup(args[0])
+			miss, err := lookup(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -78,12 +79,12 @@ func newLinkCmd() *cobra.Command {
 // forever. The path form takes its own handle a moment later, and the name form
 // looks the receipt up again under the handle it keeps — that second lookup is
 // the one that decides, so nothing rests on what this saw.
-func lookup(arg string) (*state.NotInstalledError, error) {
+func lookup(ctx context.Context, arg string) (*state.NotInstalledError, error) {
 	e, err := newEnv()
 	if err != nil {
 		return nil, err
 	}
-	h, err := e.openState()
+	h, err := e.openState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +108,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 	if err != nil {
 		return err
 	}
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

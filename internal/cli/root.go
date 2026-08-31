@@ -2,7 +2,11 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -61,15 +65,20 @@ func silenceUsageOnceRunning(cmd *cobra.Command) {
 	}
 }
 
-// Execute runs the command tree and returns the process exit code.
+// Execute runs the command tree and returns the process exit code. The
+// context is canceled on SIGINT/SIGTERM so a command waiting on something
+// cancellable — such as a contended state lock — stops promptly on Ctrl-C
+// instead of leaving the OS's default disposition as the only way out.
 func Execute() int {
-	return run(NewRootCmd())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return run(ctx, NewRootCmd())
 }
 
 // run executes a command tree and maps its error to an exit code. It is split
 // from Execute so tests can drive it with their own args and buffers.
-func run(root *cobra.Command) int {
-	cmd, err := root.ExecuteC()
+func run(ctx context.Context, root *cobra.Command) int {
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return ExitOK
 	}
