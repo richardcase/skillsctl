@@ -960,7 +960,8 @@ Issues and pull requests are welcome. Before opening one, run `make test`,
 changelog is generated from them.
 
 [AGENTS.md](AGENTS.md) has the full conventions, architecture map and commit
-rules, for both human contributors and AI agents.
+rules, for both human contributors and AI agents. [CONTRIBUTING.md](CONTRIBUTING.md)
+covers getting set up and the pull request process.
 
 ## License
 
