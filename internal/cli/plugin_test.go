@@ -26,6 +26,10 @@ type fakePlugins struct {
 	listErr error
 	// calls counts List, so "one call for the whole batch" can be asserted.
 	calls int
+	// failOn fails exec for this one plugin id, standing in for a batch
+	// update where one plugin's `claude plugin update` fails part-way
+	// through while the others genuinely succeed.
+	failOn string
 
 	// root is a real directory each install path is built under, and skills
 	// names the skills a plugin ships there. Without a tree on disk there is
@@ -60,6 +64,10 @@ func (f *fakePlugins) exec(argv []string) error {
 		return fmt.Errorf("unexpected command %v", argv)
 	}
 	verb, id := argv[2], argv[3]
+
+	if id == f.failOn {
+		return fmt.Errorf("claude: %s failed", id)
+	}
 
 	switch verb {
 	case "install", "update":
@@ -464,6 +472,60 @@ func TestUpdatePluginReportsOnlyWhatMoved(t *testing.T) {
 			t.Errorf("resolved = %v, want the new version read back", got)
 		}
 	})
+}
+
+// This pins issue #35: a batch update spanning two plugins where the second
+// one's `claude plugin update` fails must not leave the first plugin's
+// receipt disagreeing with what claude actually has. Before the fix, the
+// first plugin's in-memory Record from the failed batch either vanished
+// silently (rollback discarded it, never re-settled) or, via settle's own
+// second Apply, could commit a partial view of the batch.
+func TestUpdatePluginBatchPartialFailureAgreesWithClaudeAfterward(t *testing.T) {
+	const otherPluginID = "extra@claude-plugins-official"
+
+	h := newHarness(t)
+	h.plugins.next = "1.0.0"
+	if out, err := h.run(t, "install", pluginID); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if out, err := h.run(t, "install", otherPluginID); err != nil {
+		t.Fatalf("install other: %v\n%s", err, out)
+	}
+
+	h.plugins.next = "2.0.0"
+	// The batch plan visits skills in name order ("extra" before
+	// "superpowers"), and Apply stops at the first op that fails, so the
+	// plugin that fails must be the later one in that order for the earlier
+	// one to have genuinely run first.
+	h.plugins.failOn = pluginID
+	h.ran = nil
+
+	code, out := exitCode(t, "update")
+	if code != ExitError {
+		t.Fatalf("exit = %d, want %d: a batch that failed part-way is not a success\n%s", code, ExitError, out)
+	}
+
+	// claude really did update the first plugin before the second failed.
+	installed := map[string]string{}
+	for _, p := range h.plugins.installed {
+		installed[p.ID] = p.Version
+	}
+	if installed[otherPluginID] != "2.0.0" {
+		t.Fatalf("claude has %s @ %s, want 2.0.0: the first update genuinely ran", otherPluginID, installed[otherPluginID])
+	}
+	if installed[pluginID] != "1.0.0" {
+		t.Fatalf("claude has %s @ %s, want 1.0.0: the second update failed", pluginID, installed[pluginID])
+	}
+
+	// The receipts skillsctl committed must agree with claude's real state,
+	// not with what the failed plan wished for.
+	receipts := h.receipts(t)
+	if got := receipts["extra"]["resolved"]; got != "2.0.0" {
+		t.Errorf("extra resolved = %v, want 2.0.0: it really moved, so the receipt must say so", got)
+	}
+	if got := receipts["superpowers"]["resolved"]; got != "1.0.0" {
+		t.Errorf("superpowers resolved = %v, want 1.0.0: it never moved, so the receipt must not claim otherwise", got)
+	}
 }
 
 func TestUpdatePluginDryRunSaysTheVersionIsNotKnowableYet(t *testing.T) {

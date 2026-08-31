@@ -75,14 +75,18 @@ func runUpdate(cmd *cobra.Command, names []string, force, dryRun bool) error {
 		return updateExit(entries)
 	}
 
-	var serr error
+	var serr, aerr error
 	var linkSkips []string
 	if !p.IsEmpty() {
 		ex := &plan.Executor{DB: h.DB, Out: cmd.OutOrStdout(), Run: newRunner()}
-		if err := ex.Apply(cmd.Context(), p); err != nil {
-			return err
-		}
+		aerr = ex.Apply(cmd.Context(), p)
 
+		// A failed Apply is rolled back in memory, but an Exec it already
+		// ran (a plugin's agent-owned update) has no compensating action —
+		// the agent may already have moved. Settle is queried regardless of
+		// aerr so those receipts are recorded from what the agent actually
+		// has rather than left to say what the rolled-back plan wished for.
+		//
 		// A channel whose agent chooses the version can only be asked
 		// once it has run, so the entries are corrected before they are
 		// reported rather than after.
@@ -100,6 +104,9 @@ func runUpdate(cmd *cobra.Command, names []string, force, dryRun bool) error {
 	}
 	if serr != nil {
 		cmd.Printf("warning: %v\n", serr)
+	}
+	if aerr != nil {
+		return aerr
 	}
 	if err := updateExit(entries); err != nil {
 		return err
