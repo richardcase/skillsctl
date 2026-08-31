@@ -77,6 +77,63 @@ func TestNewRefusesAnExistingDirectory(t *testing.T) {
 	}
 }
 
+// TestNewRefusesADirectoryCreatedAfterItsOwnStatCheck simulates the TOCTOU
+// race the issue describes: something else wins the race to create the
+// destination between new's own early os.Stat and its actual claim of the
+// directory. The atomic os.Mkdir behind plan.Mkdir must be what refuses it,
+// not the earlier advisory check, and the competitor's content must survive
+// untouched.
+func TestNewRefusesADirectoryCreatedAfterItsOwnStatCheck(t *testing.T) {
+	h := newHarness(t)
+	t.Chdir(t.TempDir())
+
+	if err := os.Mkdir("racer", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("racer", "not-skillsctl.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := h.run(t, "new", "racer")
+	if err == nil {
+		t.Fatalf("new accepted a directory that already exists\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error = %v, want it to say the directory already exists", err)
+	}
+	if _, statErr := os.Stat(filepath.Join("racer", "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Error("new wrote into a directory it did not create")
+	}
+	body, rerr := os.ReadFile(filepath.Join("racer", "not-skillsctl.txt"))
+	if rerr != nil || string(body) != "mine" {
+		t.Errorf("new disturbed a competing process's file: %v, %q", rerr, body)
+	}
+}
+
+// TestNewLeavesScaffoldOnInstallFailure proves the fix's behavioral core: a
+// failure downstream of a successful scaffold write (here, an unknown -a
+// agent, which install validates after the scaffold already exists) must
+// not delete the scaffold. Deleting it there is what left dangling links
+// behind before this fix, when a later, unrelated failure still triggered a
+// RemoveAll of a directory that was by then a legitimate, linked artifact.
+func TestNewLeavesScaffoldOnInstallFailure(t *testing.T) {
+	h := newHarness(t)
+	t.Chdir(t.TempDir())
+
+	out, err := h.run(t, "new", "half-done", "-a", "bogus-agent")
+	if err == nil {
+		t.Fatalf("new accepted an unknown agent\n%s", out)
+	}
+
+	body, rerr := os.ReadFile(filepath.Join("half-done", "SKILL.md"))
+	if rerr != nil {
+		t.Fatalf("scaffold was removed after an install failure: %v", rerr)
+	}
+	if !strings.Contains(string(body), `name: "half-done"`) {
+		t.Errorf("SKILL.md = %q, want the scaffold's own content preserved", body)
+	}
+}
+
 func TestNewRejectsAnInvalidName(t *testing.T) {
 	h := newHarness(t)
 	t.Chdir(t.TempDir())
@@ -98,7 +155,10 @@ func TestNewDryRunChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new --dry-run: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "write preview-only/SKILL.md") {
+	if !strings.Contains(out, "mkdir   preview-only") {
+		t.Errorf("output = %q, want it to describe the directory it would claim", out)
+	}
+	if !strings.Contains(out, "write   preview-only/SKILL.md") {
 		t.Errorf("output = %q, want it to describe the scaffold it would write", out)
 	}
 	if !strings.Contains(out, "skillsctl link ./preview-only") {

@@ -43,6 +43,79 @@ func TestApplyLinksAndRecords(t *testing.T) {
 	}
 }
 
+func TestApplyMkdirAndWriteFile(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "skill")
+
+	e := newExecutor()
+	var p Plan
+	p.Add(
+		Mkdir{Path: dir},
+		WriteFile{Path: filepath.Join(dir, "SKILL.md"), Content: []byte("hello")},
+	)
+
+	if err := e.Apply(context.Background(), p); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil || string(body) != "hello" {
+		t.Errorf("SKILL.md = %q, %v; want %q", body, err, "hello")
+	}
+}
+
+func TestApplyMkdirFailsWhenPathExists(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "not-ours.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e := newExecutor()
+	var p Plan
+	p.Add(Mkdir{Path: dir})
+
+	if err := e.Apply(context.Background(), p); err == nil {
+		t.Fatal("Apply succeeded despite an existing directory")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "not-ours.txt"))
+	if err != nil || string(body) != "mine" {
+		t.Errorf("a failed Mkdir disturbed the pre-existing directory: %v, %q", err, body)
+	}
+}
+
+func TestApplyRollsBackMkdirOnLaterFailure(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "skill")
+	rev := filepath.Join(root, "rev")
+	if err := os.MkdirAll(rev, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A real directory at the link path makes the Link op fail.
+	link := filepath.Join(root, "a", "skills", "foo")
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	e := newExecutor()
+	var p Plan
+	p.Add(
+		Mkdir{Path: dir},
+		WriteFile{Path: filepath.Join(dir, "SKILL.md"), Content: []byte("hello")},
+		Link{Target: "claude", LinkPath: link, RevPath: rev},
+	)
+
+	if err := e.Apply(context.Background(), p); err == nil {
+		t.Fatal("Apply succeeded despite a failing Link op")
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Error("the directory this apply created must be rolled back when a later op fails")
+	}
+}
+
 func TestApplyRollsBackLinksOnFailure(t *testing.T) {
 	root := t.TempDir()
 	rev := filepath.Join(root, "rev")

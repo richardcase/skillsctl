@@ -52,6 +52,32 @@ func (o Unlink) Describe() string {
 	return fmt.Sprintf("unlink  %s [%s]", o.LinkPath, o.Target)
 }
 
+// Mkdir claims a brand new directory. It is always os.Mkdir, never
+// MkdirAll: callers only ever build this op for a single path element (a
+// skill name, validated by target.ValidateSkillName), so the atomic
+// create-exclusive primitive is both sufficient and the ownership signal
+// itself — success means this apply is the one that created it, and
+// os.IsExist means something else already occupies the path, ours or a
+// competing process's, and must not be touched.
+type Mkdir struct {
+	Path string
+}
+
+// Describe renders a user-visible description of the Mkdir op.
+func (o Mkdir) Describe() string { return "mkdir   " + o.Path }
+
+// WriteFile writes a brand new file. It assumes the file does not already
+// exist: rolling it back deletes it rather than restoring prior content,
+// which is only safe because every caller pairs it with a preceding Mkdir
+// of the file's own new directory.
+type WriteFile struct {
+	Path    string
+	Content []byte
+}
+
+// Describe renders a user-visible description of the WriteFile op.
+func (o WriteFile) Describe() string { return "write   " + o.Path }
+
 // Record writes a receipt.
 type Record struct {
 	Receipt state.Receipt

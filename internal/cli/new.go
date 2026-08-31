@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/richardcase/skillsctl/internal/plan"
 	"github.com/richardcase/skillsctl/internal/target"
 	"github.com/spf13/cobra"
 )
@@ -72,6 +74,13 @@ func runNew(cmd *cobra.Command, name, description string, o installOpts) error {
 		description = "TODO: describe what this skill does"
 	}
 
+	body := fmt.Sprintf(newSkillTemplate, yamlQuote(name), yamlQuote(description), name)
+	var p plan.Plan
+	p.Add(
+		plan.Mkdir{Path: name},
+		plan.WriteFile{Path: filepath.Join(name, "SKILL.md"), Content: []byte(body)},
+	)
+
 	if o.dryRun {
 		e, err := newEnv()
 		if err != nil {
@@ -80,25 +89,27 @@ func runNew(cmd *cobra.Command, name, description string, o installOpts) error {
 		if _, err := e.targets(o.agents); err != nil {
 			return err
 		}
-		cmd.Printf("write %s/SKILL.md\n", name)
-		cmd.Printf("run: skillsctl link ./%s%s\n", name, agentSuffix(o.agents))
+		p.Add(plan.Note{Text: fmt.Sprintf("run: skillsctl link ./%s%s", name, agentSuffix(o.agents))})
+		for _, line := range p.Describe() {
+			cmd.Println(line)
+		}
 		return nil
 	}
 
-	if err := os.MkdirAll(name, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", name, err)
-	}
-	body := fmt.Sprintf(newSkillTemplate, yamlQuote(name), yamlQuote(description), name)
-	if err := os.WriteFile(filepath.Join(name, "SKILL.md"), []byte(body), 0o644); err != nil {
-		_ = os.RemoveAll(name)
-		return fmt.Errorf("write %s/SKILL.md: %w", name, err)
-	}
-
-	if err := runInstall(cmd, "./"+name, o); err != nil {
-		_ = os.RemoveAll(name)
+	ex := &plan.Executor{Out: cmd.OutOrStdout()}
+	if err := ex.Apply(cmd.Context(), p); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%s already exists: choose a different name, or run `skillsctl link ./%s` on it directly", name, name)
+		}
 		return err
 	}
-	return nil
+
+	// The scaffold now legitimately exists on disk: a failure from here on is
+	// runInstall's alone to report. Rollback stays local to the step that
+	// failed rather than reaching back to delete an already-successful step —
+	// exactly what left dangling links behind before this fix, when a late
+	// install/commit failure still triggered a RemoveAll of the scaffold.
+	return runInstall(cmd, "./"+name, o)
 }
 
 // agentSuffix renders the -a flag a dry run's suggested link command would
