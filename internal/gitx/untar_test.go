@@ -119,6 +119,29 @@ func TestUntarRejectsMaliciousEntries(t *testing.T) {
 				return []string{filepath.Join(dest, "link")}
 			},
 		},
+		{
+			// The chained-symlink ZipSlip variant from CodeQL's
+			// go/unsafe-unzip-symlink advisory: "subdir/parent" is a
+			// symlink to ".." that syntactically resolves to dest itself,
+			// then "escape" is a symlink to "subdir/parent/.." which
+			// syntactically cleans to "subdir" — still inside dest — but
+			// actually resolving through "parent" walks one directory
+			// further than the syntactic check accounts for, landing one
+			// level above dest. A purely syntactic containment check (the
+			// old safeJoin) allows both symlinks; only resolving them
+			// against the real filesystem, as os.Root does, catches the
+			// escape when the third entry writes through "escape".
+			name: "regular file written through a chained symlink escape",
+			entries: []tarEntry{
+				{name: "subdir", typeflag: tar.TypeDir},
+				{name: "subdir/parent", typeflag: tar.TypeSymlink, linkname: ".."},
+				{name: "escape", typeflag: tar.TypeSymlink, linkname: "subdir/parent/.."},
+				{name: "escape/evil.txt", typeflag: tar.TypeReg, body: "pwned"},
+			},
+			mustNotExist: func(dest string) []string {
+				return []string{filepath.Join(filepath.Dir(dest), "evil.txt")}
+			},
+		},
 	}
 
 	for _, tc := range tests {
