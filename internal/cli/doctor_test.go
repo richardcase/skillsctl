@@ -254,7 +254,10 @@ func TestDoctorChangesNothing(t *testing.T) {
 }
 
 // tree renders every path under each root with its mode and size, so a test can
-// assert that nothing moved, grew or vanished.
+// assert that nothing moved, grew or vanished. A state lock file is skipped:
+// state.Open rewrites its holder metadata (pid and a nanosecond timestamp)
+// on every legitimate open, including a read-only one, so its byte size
+// varies from run to run and is not evidence that anything else changed.
 func tree(t *testing.T, roots ...string) string {
 	t.Helper()
 	var b strings.Builder
@@ -262,6 +265,9 @@ func tree(t *testing.T, roots ...string) string {
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
+			}
+			if strings.HasSuffix(path, ".lock") {
+				return nil
 			}
 			rel, rerr := filepath.Rel(root, path)
 			if rerr != nil {
