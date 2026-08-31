@@ -39,7 +39,26 @@ func NewRootCmd() *cobra.Command {
 		newUpdateCmd(),
 		newVersionCmd(),
 	)
+	silenceUsageOnceRunning(root)
 	return root
+}
+
+// silenceUsageOnceRunning marks a command's own SilenceUsage true only once
+// its RunE begins. Cobra validates args and flags (including required-flag
+// and mutually-exclusive-flag checks) before RunE ever runs, so an error
+// from those checks always finds SilenceUsage still false: that is what
+// lets run distinguish a usage mistake, which should show help, from a
+// command's own runtime failure, which should not.
+func silenceUsageOnceRunning(cmd *cobra.Command) {
+	if inner := cmd.RunE; inner != nil {
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
+			return inner(cmd, args)
+		}
+	}
+	for _, c := range cmd.Commands() {
+		silenceUsageOnceRunning(c)
+	}
 }
 
 // Execute runs the command tree and returns the process exit code.
@@ -50,7 +69,7 @@ func Execute() int {
 // run executes a command tree and maps its error to an exit code. It is split
 // from Execute so tests can drive it with their own args and buffers.
 func run(root *cobra.Command) int {
-	err := root.Execute()
+	cmd, err := root.ExecuteC()
 	if err == nil {
 		return ExitOK
 	}
@@ -74,5 +93,9 @@ func run(root *cobra.Command) int {
 	}
 
 	root.PrintErrf("error: %v\n", err)
+	if !cmd.SilenceUsage {
+		cmd.Println()
+		_ = cmd.Help()
+	}
 	return ExitError
 }
