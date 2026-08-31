@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 
 	"github.com/richardcase/skillsctl/internal/state"
@@ -50,6 +51,14 @@ func (e *Executor) Apply(ctx context.Context, p Plan) error {
 	for _, op := range p.Ops {
 		var err error
 		switch o := op.(type) {
+		case Mkdir:
+			if err = os.Mkdir(o.Path, 0o755); err == nil {
+				undo = append(undo, undoStep{path: o.Path, fn: func() error { return os.RemoveAll(o.Path) }})
+			}
+		case WriteFile:
+			if err = os.WriteFile(o.Path, o.Content, 0o644); err == nil {
+				undo = append(undo, undoStep{path: o.Path, fn: func() error { return os.Remove(o.Path) }})
+			}
 		case Link:
 			var created bool
 			created, err = target.Link(o.LinkPath, o.RevPath)
