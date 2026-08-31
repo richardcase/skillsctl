@@ -60,8 +60,24 @@ func Untar(r io.Reader, dest string) error {
 			if err := os.Symlink(hdr.Linkname, target); err != nil {
 				return fmt.Errorf("symlink %s: %w", target, err)
 			}
+		case tar.TypeLink:
+			// Unlike a symlink target, a hardlink's Linkname is relative to
+			// the archive root rather than to hdr.Name's directory.
+			linkTarget, err := safeJoin(dest, hdr.Linkname)
+			if err != nil {
+				return fmt.Errorf("hardlink %s escapes the revision directory", hdr.Name)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			if err := os.Link(linkTarget, target); err != nil {
+				return fmt.Errorf("link %s: %w", target, err)
+			}
+		case tar.TypeXHeader, tar.TypeXGlobalHeader:
+			// archive/tar already consumes pax extended/global headers and
+			// merges them into the following entry's Header; nothing to do.
 		default:
-			// Skip anything else: skills are files, directories and symlinks.
+			return fmt.Errorf("entry %s: unsupported tar type %q", hdr.Name, hdr.Typeflag)
 		}
 	}
 }

@@ -32,7 +32,8 @@ func buildTar(t *testing.T, entries []tarEntry) []byte {
 			hdr.Mode = 0o755
 			hdr.Size = 0
 		}
-		if e.typeflag == tar.TypeSymlink {
+		switch e.typeflag {
+		case tar.TypeSymlink, tar.TypeLink, tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
 			hdr.Size = 0
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
@@ -109,6 +110,15 @@ func TestUntarRejectsMaliciousEntries(t *testing.T) {
 				return []string{filepath.Join(dest, "link")}
 			},
 		},
+		{
+			name: "hardlink whose linkname escapes relatively",
+			entries: []tarEntry{
+				{name: "link", typeflag: tar.TypeLink, linkname: "../../escape"},
+			},
+			mustNotExist: func(dest string) []string {
+				return []string{filepath.Join(dest, "link")}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -143,6 +153,7 @@ func TestUntarExtractsWellBehavedEntries(t *testing.T) {
 		{name: "a", typeflag: tar.TypeDir},
 		{name: "a/b.md", typeflag: tar.TypeReg, body: "hello"},
 		{name: "a/link", typeflag: tar.TypeSymlink, linkname: "b.md"},
+		{name: "a/hardlink", typeflag: tar.TypeLink, linkname: "a/b.md"},
 	}
 
 	if err := Untar(bytes.NewReader(buildTar(t, entries)), dest); err != nil {
@@ -170,5 +181,68 @@ func TestUntarExtractsWellBehavedEntries(t *testing.T) {
 	}
 	if string(resolved) != "hello" {
 		t.Errorf("a/link resolves to %q, want %q", resolved, "hello")
+	}
+
+	original, err := os.Stat(filepath.Join(dest, "a", "b.md"))
+	if err != nil {
+		t.Fatalf("a/b.md missing: %v", err)
+	}
+	hardlink, err := os.Stat(filepath.Join(dest, "a", "hardlink"))
+	if err != nil {
+		t.Fatalf("a/hardlink missing: %v", err)
+	}
+	if !os.SameFile(original, hardlink) {
+		t.Errorf("a/hardlink is not the same file as a/b.md")
+	}
+}
+
+// TestUntarEntryTypes proves every tar entry type skillsctl distinguishes is
+// handled deliberately: representable types extract, and types with no
+// filesystem representation (device nodes, FIFOs) fail loudly instead of
+// being silently dropped.
+func TestUntarEntryTypes(t *testing.T) {
+	tests := []struct {
+		name      string
+		typeflag  byte
+		wantError bool
+	}{
+		{name: "regular file", typeflag: tar.TypeReg},
+		{name: "directory", typeflag: tar.TypeDir},
+		{name: "symlink", typeflag: tar.TypeSymlink},
+		{name: "hardlink", typeflag: tar.TypeLink},
+		{name: "character device", typeflag: tar.TypeChar, wantError: true},
+		{name: "block device", typeflag: tar.TypeBlock, wantError: true},
+		{name: "fifo", typeflag: tar.TypeFifo, wantError: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := t.TempDir()
+			entries := []tarEntry{
+				{name: "base", typeflag: tar.TypeReg, body: "hello"},
+			}
+			switch tc.typeflag {
+			case tar.TypeDir:
+				entries = []tarEntry{{name: "entry", typeflag: tar.TypeDir}}
+			case tar.TypeSymlink, tar.TypeLink:
+				entries = append(entries, tarEntry{name: "entry", typeflag: tc.typeflag, linkname: "base"})
+			default:
+				entries = append(entries, tarEntry{name: "entry", typeflag: tc.typeflag})
+			}
+
+			err := Untar(bytes.NewReader(buildTar(t, entries)), dest)
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("untar accepted a %s entry", tc.name)
+				}
+				if _, statErr := os.Lstat(filepath.Join(dest, "entry")); statErr == nil {
+					t.Errorf("untar created %s for a %s entry it should have rejected", filepath.Join(dest, "entry"), tc.name)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("untar of a %s entry failed: %v", tc.name, err)
+			}
+		})
 	}
 }
