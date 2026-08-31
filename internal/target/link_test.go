@@ -218,6 +218,18 @@ func TestRelinkRefusesToClobber(t *testing.T) {
 	}
 }
 
+func TestOccupiedRejectsEscapingNames(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"../escape", "a/b", `a\b`, ".."} {
+		if !Occupied(dir, name) {
+			t.Errorf("Occupied(%q, %q) = false, want true for an invalid name", dir, name)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(dir), "escape")); !os.IsNotExist(err) {
+		t.Error("Occupied must not touch anything outside dir")
+	}
+}
+
 func TestValidateSkillName(t *testing.T) {
 	tests := []struct {
 		name    string

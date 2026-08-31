@@ -29,8 +29,14 @@ func ValidateSkillName(name string) error {
 // Occupied reports whether dir/name already has something at it — a
 // receipt's own symlink, a foreign symlink, or anything else. It is what
 // Link would refuse to overwrite, checked before offering the name as a
-// choice rather than after.
+// choice rather than after. name can originate in a repository's SKILL.md,
+// so an invalid name is reported occupied rather than joined into a path:
+// callers already validate before reaching here, but the check belongs next
+// to the path it guards rather than solely in a caller that could forget it.
 func Occupied(dir, name string) bool {
+	if ValidateSkillName(name) != nil {
+		return true
+	}
 	_, err := os.Lstat(filepath.Join(dir, name))
 	return err == nil
 }
