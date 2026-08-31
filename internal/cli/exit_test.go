@@ -79,6 +79,39 @@ func TestExitErrorOnFailure(t *testing.T) {
 	if !strings.Contains(out, "error:") {
 		t.Errorf("a failure should be reported as an error:\n%s", out)
 	}
+	if strings.Contains(out, "Usage:") {
+		t.Errorf("a runtime failure is not a usage mistake and should not show help:\n%s", out)
+	}
+}
+
+// A usage mistake — here, package's required args are missing — should show
+// the command's help underneath the error, unlike a runtime failure.
+func TestExitErrorOnUsageMistakeShowsHelp(t *testing.T) {
+	newHarness(t)
+
+	code, out := exitCode(t, "package")
+	if code != ExitError {
+		t.Errorf("exit = %d, want %d", code, ExitError)
+	}
+	if !strings.Contains(out, "error: accepts 2 arg(s)") {
+		t.Errorf("want the arg-count error, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "Package walks") {
+		t.Errorf("a usage mistake should show the command's help:\n%s", out)
+	}
+}
+
+// An unknown flag is also a usage mistake caught before RunE runs.
+func TestExitErrorOnUnknownFlagShowsHelp(t *testing.T) {
+	newHarness(t)
+
+	code, out := exitCode(t, "list", "--nope")
+	if code != ExitError {
+		t.Errorf("exit = %d, want %d", code, ExitError)
+	}
+	if !strings.Contains(out, "Usage:") {
+		t.Errorf("an unknown flag should show the command's help:\n%s", out)
+	}
 }
 
 func TestExitPartialOnAPartialInstall(t *testing.T) {
