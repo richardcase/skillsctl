@@ -119,6 +119,22 @@ func TestUntarRejectsMaliciousEntries(t *testing.T) {
 				return []string{filepath.Join(dest, "link")}
 			},
 		},
+		{
+			// subdir/parent -> ".." is a syntactically-safe symlink to dest
+			// itself. subdir/parent/escape -> "../.." then cleans to "."
+			// under pure string algebra (parent cancels the first ".."), so
+			// a syntactic check alone accepts it -- but subdir/parent is a
+			// real symlink to dest, so the second entry actually resolves
+			// two levels above dest.
+			name: "symlink chain escapes via a previously extracted symlink",
+			entries: []tarEntry{
+				{name: "subdir/parent", typeflag: tar.TypeSymlink, linkname: ".."},
+				{name: "subdir/parent/escape", typeflag: tar.TypeSymlink, linkname: "../.."},
+			},
+			mustNotExist: func(dest string) []string {
+				return []string{filepath.Join(filepath.Dir(filepath.Dir(dest)), "escape")}
+			},
+		},
 	}
 
 	for _, tc := range tests {
