@@ -5,8 +5,7 @@
 Please do not report security vulnerabilities through public GitHub issues.
 
 Instead, report them privately using
-[GitHub's private vulnerability reporting](https://github.com/richardcase/skillsctl/security/advisories/new),
-or by emailing richmcase@gmail.com.
+[GitHub's private vulnerability reporting](https://github.com/richardcase/skillsctl/security/advisories/new).
 
 Please include as much of the following as you can:
 
