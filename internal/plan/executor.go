@@ -11,8 +11,10 @@ import (
 )
 
 // Executor applies a plan. Receipt changes land in DB but are not persisted:
-// the caller commits the state handle only after Apply returns nil, so a
-// failed apply leaves the on-disk receipts untouched.
+// the caller commits the state handle only after Apply returns nil. If an op
+// partway through the plan fails, every change this call made — filesystem
+// links and DB.Receipts alike — is undone before the error is returned, so a
+// failed apply leaves both the filesystem and DB exactly as they were found.
 type Executor struct {
 	DB  *state.DB
 	Out io.Writer
@@ -29,9 +31,11 @@ type undoStep struct {
 	fn   func() error
 }
 
-// Apply runs every op in order. If one fails, the filesystem changes this apply
-// made are undone before the error is returned: a symlink it created is
-// removed, and one it re-pointed goes back to the revision it came from.
+// Apply runs every op in order. If one fails, the changes this apply made are
+// undone before the error is returned: a symlink it created is removed, one
+// it re-pointed goes back to the revision it came from, and a receipt it
+// recorded or forgot goes back to what it was. Exec has no compensating
+// action — an op that already ran an external command stays run.
 func (e *Executor) Apply(ctx context.Context, p Plan) error {
 	var undo []undoStep
 
@@ -70,9 +74,25 @@ func (e *Executor) Apply(ctx context.Context, p Plan) error {
 			err = target.Unlink(o.LinkPath)
 		case Record:
 			r := o.Receipt
+			previous, existed := e.DB.Receipts[r.Name]
 			e.DB.Receipts[r.Name] = &r
+			undo = append(undo, undoStep{path: r.Name, fn: func() error {
+				if existed {
+					e.DB.Receipts[r.Name] = previous
+				} else {
+					delete(e.DB.Receipts, r.Name)
+				}
+				return nil
+			}})
 		case Forget:
+			previous, existed := e.DB.Receipts[o.Name]
 			delete(e.DB.Receipts, o.Name)
+			if existed {
+				undo = append(undo, undoStep{path: o.Name, fn: func() error {
+					e.DB.Receipts[o.Name] = previous
+					return nil
+				}})
+			}
 		case Exec:
 			err = e.run(ctx, o.Argv)
 		case Note:
