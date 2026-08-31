@@ -49,7 +49,7 @@ func runUpdate(cmd *cobra.Command, names []string, force, dryRun bool) error {
 	// The state lock is taken before anything is written to the store
 	// and held until this command exits, so a concurrent gc can never
 	// collect the revision this update is about to link.
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

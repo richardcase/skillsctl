@@ -61,7 +61,7 @@ func runAdopt(cmd *cobra.Command, agents []string, dryRun, asJSON bool) error {
 	// Held until the command exits, for the same reason install holds it: what
 	// the scan decided about a name must still be true when the receipt for it
 	// is committed.
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

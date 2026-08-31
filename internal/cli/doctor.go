@@ -32,7 +32,7 @@ func newDoctorCmd() *cobra.Command {
 			// The state lock is held across the whole scan, so a concurrent
 			// install cannot extract a revision between the receipt pass and
 			// the store pass and be reported as an orphan.
-			h, err := e.openState()
+			h, err := e.openState(cmd.Context())
 			if err != nil {
 				return err
 			}

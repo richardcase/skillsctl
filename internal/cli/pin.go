@@ -86,7 +86,7 @@ func runPin(cmd *cobra.Command, names []string, o pinOpts) error {
 
 	// Nothing on disk changes, but the receipts do, so the lock is held for the
 	// whole read-modify-write like every other command that writes one.
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}

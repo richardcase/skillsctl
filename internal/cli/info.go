@@ -77,7 +77,7 @@ func newInfoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			h, err := e.openState()
+			h, err := e.openState(cmd.Context())
 			if err != nil {
 				return err
 			}

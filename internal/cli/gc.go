@@ -35,7 +35,7 @@ func newGCCmd() *cobra.Command {
 			// install extracts its revision before committing the receipt
 			// that makes it live, and this is what stops a collection from
 			// landing in between.
-			h, err := e.openState()
+			h, err := e.openState(cmd.Context())
 			if err != nil {
 				return err
 			}

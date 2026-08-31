@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -100,7 +101,7 @@ func TestLintJSON(t *testing.T) {
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
 	root.SetArgs([]string{"lint", dir, "--json"})
-	_ = run(root)
+	_ = run(context.Background(), root)
 
 	var findings []lint.Finding
 	if err := json.Unmarshal([]byte(stdout.String()), &findings); err != nil {

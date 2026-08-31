@@ -47,7 +47,7 @@ func runDiff(cmd *cobra.Command, name, against string) error {
 	if err != nil {
 		return err
 	}
-	h, err := e.openState()
+	h, err := e.openState(cmd.Context())
 	if err != nil {
 		return err
 	}
