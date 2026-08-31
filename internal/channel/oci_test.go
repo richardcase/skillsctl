@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,29 +20,60 @@ import (
 
 // fakeOCI is a fixed single-skill image at one digest, with a call counter
 // so a test can assert Resolve is cheap. byRef answers per reference, for the
-// tests about which reference was asked for; asked records them all.
+// tests about which reference was asked for; asked and pulled record every
+// reference Resolve and Pull were called with, respectively.
+//
+// movedDigest and content simulate a tag moving between Resolve and Pull, the
+// way a real registry can: if movedDigest is set, digest advances to it the
+// instant Resolve returns, as though someone repointed the tag. Pull then
+// answers like a real registry would — a digest-pinned ref (name@sha256:...)
+// always serves the content recorded for that exact digest, while a
+// tag-shaped ref serves whatever digest currently holds, moved or not. content
+// maps a digest to the skill name Pull writes for it; a digest with no entry
+// falls back to "alpha", so tests that don't care about the moved-tag
+// scenario are unaffected by these fields' zero values.
 type fakeOCI struct {
 	digest      string
+	movedDigest string
+	content     map[string]string
 	byRef       map[string]string
 	asked       []string
+	pulled      []string
 	resolveHits int
 }
 
 func (f *fakeOCI) Resolve(_ context.Context, ref string) (string, error) {
 	f.resolveHits++
 	f.asked = append(f.asked, ref)
-	if d, ok := f.byRef[ref]; ok {
-		return d, nil
+	d := f.digest
+	if got, ok := f.byRef[ref]; ok {
+		d = got
 	}
-	return f.digest, nil
+	if f.movedDigest != "" {
+		f.digest = f.movedDigest
+	}
+	return d, nil
 }
 
-func (f *fakeOCI) Pull(_ context.Context, _, dest string) error {
-	dir := filepath.Join(dest, "alpha")
+func (f *fakeOCI) Pull(_ context.Context, ref, dest string) error {
+	f.pulled = append(f.pulled, ref)
+
+	digest := f.digest
+	if i := strings.LastIndex(ref, "@"); i != -1 {
+		digest = ref[i+1:]
+	}
+
+	name := "alpha"
+	if n, ok := f.content[digest]; ok {
+		name = n
+	}
+
+	dir := filepath.Join(dest, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: alpha\ndescription: a skill\n---\n"), 0o644)
+	body := fmt.Sprintf("---\nname: %s\ndescription: a skill\n---\n", name)
+	return os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644)
 }
 
 func (f *fakeOCI) Push(context.Context, string, io.Reader) error { return nil }
@@ -65,6 +97,34 @@ func TestOCIPrepareFindsTheSkillAtTheResolvedDigest(t *testing.T) {
 	}
 	if cands[0].Version != "sha256:aaa" {
 		t.Errorf("Version = %q, want the resolved digest", cands[0].Version)
+	}
+}
+
+func TestOCIPreparePullsTheVerifiedDigestEvenIfTheTagMovesAfterResolve(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{
+		digest:      "sha256:aaa",
+		movedDigest: "sha256:bbb",
+		content:     map[string]string{"sha256:aaa": "alpha", "sha256:bbb": "mallory"},
+	}
+	c := NewOCI(st, o, &fakeCosign{})
+
+	src, err := source.Parse("oci://ghcr.io/owner/skills:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cands, _, err := c.Prepare(context.Background(), Request{Source: src, All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cands) != 1 || cands[0].Name != "alpha" {
+		t.Fatalf("Prepare() = %+v, want the verified digest's skill (alpha), not the moved tag's (mallory)", cands)
+	}
+	for _, ref := range o.pulled {
+		if !strings.HasSuffix(ref, "@sha256:aaa") {
+			t.Errorf("Pull was called with %q, want a reference pinned to the verified digest sha256:aaa", ref)
+		}
 	}
 }
 
@@ -148,6 +208,47 @@ func TestOCIUpdateRelinksWhenTheDigestMoved(t *testing.T) {
 	}
 	if rec.Receipt.PreviousResolved != "sha256:old" {
 		t.Errorf("recorded PreviousResolved = %q, want the digest it moved from", rec.Receipt.PreviousResolved)
+	}
+}
+
+func TestOCIUpdateRelinksToTheVerifiedDigestEvenIfTheTagMovesAfterResolve(t *testing.T) {
+	st := store.New(t.TempDir())
+	o := &fakeOCI{
+		digest:      "sha256:aaa",
+		movedDigest: "sha256:bbb",
+		content:     map[string]string{"sha256:aaa": "alpha", "sha256:bbb": "mallory"},
+	}
+	c := NewOCI(st, o, &fakeCosign{})
+
+	r := &state.Receipt{
+		Name: "alpha", Channel: "oci", Source: "oci://ghcr.io/owner/skills:v1",
+		Slug: "oci/ghcr.io/owner/skills", Ref: "v1", Resolved: "sha256:old",
+		Subpath: "alpha",
+		RevPath: filepath.Join(t.TempDir(), "gone"),
+	}
+
+	verdicts, p, err := c.Update(context.Background(), []*state.Receipt{r}, UpdateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdicts) != 1 || verdicts[0].Status != StatusUpdated || verdicts[0].Latest != "sha256:aaa" {
+		t.Fatalf("verdicts = %+v, want one StatusUpdated at the verified digest sha256:aaa", verdicts)
+	}
+
+	var rec plan.Record
+	for _, op := range p.Ops {
+		if r, ok := op.(plan.Record); ok {
+			rec = r
+			break
+		}
+	}
+	if rec.Receipt.Resolved != "sha256:aaa" {
+		t.Errorf("recorded Resolved = %q, want the verified digest sha256:aaa, not the moved tag's sha256:bbb", rec.Receipt.Resolved)
+	}
+	for _, ref := range o.pulled {
+		if !strings.HasSuffix(ref, "@sha256:aaa") {
+			t.Errorf("Pull was called with %q, want a reference pinned to the verified digest sha256:aaa", ref)
+		}
 	}
 }
 
