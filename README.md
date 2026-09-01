@@ -4,9 +4,6 @@ Homebrew for agent skills: install, update and remove agent skills from git
 repositories, Claude plugins, OCI images with a receipt for every install so update and removal are
 deterministic. One store, symlinked into every agent you use.
 
-See [how skillsctl compares to `npx skills`](https://github.com/richardcase/skillsctl/wiki/skillsctl-vs-npx-skills)
-in the wiki.
-
 [![CI](https://github.com/richardcase/skillsctl/actions/workflows/ci.yml/badge.svg)](https://github.com/richardcase/skillsctl/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/richardcase/skillsctl?sort=semver)](https://github.com/richardcase/skillsctl/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/richardcase/skillsctl/total)](https://github.com/richardcase/skillsctl/releases)
@@ -46,6 +43,9 @@ any of it came from, which commit you took, or what to delete to undo it.
 `skillsctl` makes that a package-manager problem instead: one fetch, one copy on
 disk, symlinks into every agent, and a receipt that makes the reverse operation
 exact.
+
+See [how skillsctl compares to `npx skills`](https://github.com/richardcase/skillsctl/wiki/skillsctl-vs-npx-skills)
+in the wiki.
 
 ## Features
 
