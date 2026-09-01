@@ -2,7 +2,7 @@
 # Drives skillsctl for the README demo recording.
 #
 #   go build -o skillsctl ./cmd/skillsctl
-#   asciinema rec -c "$(pwd)/assets/demo_script.sh" assets/demo.cast --overwrite
+#   asciinema rec --window-size 112x46 -c "$(pwd)/assets/demo_script.sh" assets/demo.cast --overwrite
 #   agg assets/demo.cast assets/demo.gif
 #
 # Installs from a real clone of https://github.com/mattpocock/skills into a
@@ -25,6 +25,18 @@ dir = "$DEMO/agents/claude"
 [[target]]
 name = "codex"
 dir = "$DEMO/agents/codex"
+
+[[target]]
+name = "gemini"
+dir = "$DEMO/agents/gemini"
+
+[[target]]
+name = "cursor"
+dir = "$DEMO/agents/cursor"
+
+[[target]]
+name = "windsurf"
+dir = "$DEMO/agents/windsurf"
 EOF
 
 prompt() {
@@ -40,12 +52,33 @@ run() {
   sleep 2
 }
 
-run "skillsctl install mattpocock/skills" \
-  "$SKILLSCTL" install mattpocock/skills </dev/null
-sleep 1
+prompt "skillsctl install mattpocock/skills"
+expect <<EXPECT
+set timeout 15
+log_user 0
+spawn $SKILLSCTL install mattpocock/skills
+log_user 1
+expect "agents to install into:"
+after 800
+send "j"
+after 500
+send "j"
+after 500
+send " "
+after 800
+send "\r"
+expect "enter install"
+after 800
+send " "
+after 800
+send "\r"
+expect eof
+EXPECT
+echo
+sleep 2
 
-run "skillsctl install mattpocock/skills --skill teach" \
-  "$SKILLSCTL" install mattpocock/skills --skill teach
+run "skillsctl install mattpocock/skills --skill teach --agent claude,codex" \
+  "$SKILLSCTL" install mattpocock/skills --skill teach --agent claude,codex
 
 run "skillsctl list" \
   "$SKILLSCTL" list
