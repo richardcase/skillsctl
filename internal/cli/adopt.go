@@ -40,7 +40,7 @@ func newAdoptCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&agents, "agent", "a", nil, "agents to scan (default: every agent found)")
+	cmd.Flags().StringSliceVarP(&agents, "agent", "a", nil, "agents to scan (default: prompt if a terminal is attached, else every agent found)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be adopted without recording it")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	return cmd
@@ -53,7 +53,7 @@ func runAdopt(cmd *cobra.Command, agents []string, dryRun, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	targets, err := e.targets(agents)
+	targets, err := e.resolveTargets(agents)
 	if err != nil {
 		return err
 	}

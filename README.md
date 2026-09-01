@@ -47,7 +47,9 @@ exact.
 ## Features
 
 - **One store, every agent.** A skill is fetched once and symlinked into Claude
-  Code, Codex and Gemini. One copy to update, not three to keep in sync.
+  Code, Codex, Gemini and more — Cursor, Windsurf, Cline, Continue, Zed, Amp,
+  OpenCode, GitHub Copilot, Antigravity and Kiro are all built in too. One
+  copy to update, not several to keep in sync.
 - **Find a skill without knowing owner/repo.** `skillsctl search <query>`
   matches against a curated registry by name, description and tags, printing
   a source for each match that can be passed straight to `skillsctl install`.
@@ -117,7 +119,8 @@ exact.
 - **Claude Code plugins too.** `skillsctl install superpowers@claude-plugins-official`
   installs through `claude plugin`, records a receipt, and links every skill the
   plugin ships into the agents that cannot install plugins themselves — so a
-  plugin reaches Codex and Gemini like anything else. A plugin Claude already has
+  plugin reaches Codex, Gemini and every other configured agent like anything
+  else. A plugin Claude already has
   is adopted rather than reinstalled, and `update` re-points those links when
   claude moves the plugin to a new version.
 - **Repositories of many skills.** `--skill` takes the ones you name, `--all`
@@ -175,7 +178,7 @@ or build from source with `go install github.com/richardcase/skillsctl/cmd/skill
 
 ```bash
 skillsctl search research                          # find skills by name, description or tag
-skillsctl install conorbronsdon/avoid-ai-writing   # link into every agent found
+skillsctl install conorbronsdon/avoid-ai-writing   # choose agents from a checklist
 skillsctl install owner/repo/path/to/skill         # a skill inside a monorepo
 skillsctl install owner/repo//path/to/skill        # the same, boundary spelled out
 skillsctl install owner/repo                       # pick from a list of its skills
@@ -492,7 +495,7 @@ directory right now, and a plugin is at whichever version Claude installed.
 ## How it works
 
 Skills are fetched once into `~/.local/share/skillsctl` and symlinked into each
-agent's skills directory, so one copy serves Claude Code, Codex and Gemini.
+agent's skills directory, so one copy serves every configured agent.
 
 ```
 ~/.local/share/skillsctl/
@@ -808,8 +811,8 @@ echo 'source <(skillsctl completion bash)' >> ~/.bashrc
 ## Configuration
 
 Agents are configured in `~/.config/skillsctl/config.toml`. Without one,
-skillsctl uses built-in defaults for Claude Code, Codex and Gemini, and installs
-into whichever of them exist.
+skillsctl uses the built-in defaults below, and installs into whichever of
+them exist.
 
 ```toml
 [[target]]
@@ -830,6 +833,36 @@ a marketplace for itself. It gates installing a plugin, never seeing one: a
 naming only agents without it through `-a` is an error rather than a silent
 no-op — but it is precisely the agents *without* it that a plugin's skills are
 linked into.
+
+The built-in table, with no config file needed:
+
+| `name` | `dir` (global) | `project_dir` |
+| --- | --- | --- |
+| `claude` | `~/.claude/skills` | `.claude/skills` |
+| `codex` | `~/.codex/skills` | `.codex/skills` |
+| `gemini` | `~/.gemini/skills` | `.gemini/skills` |
+| `cursor` | `~/.cursor/skills` | `.agents/skills` |
+| `windsurf` | `~/.codeium/windsurf/skills` | `.windsurf/skills` |
+| `cline` | `~/.agents/skills` | `.agents/skills` |
+| `continue` | `~/.continue/skills` | `.continue/skills` |
+| `zed` | `~/.agents/skills` | `.agents/skills` |
+| `amp` | `$XDG_CONFIG_HOME/agents/skills` | `.agents/skills` |
+| `opencode` | `$XDG_CONFIG_HOME/opencode/skills` | `.agents/skills` |
+| `copilot` | `~/.copilot/skills` | `.agents/skills` |
+| `antigravity` | `~/.gemini/antigravity/skills` | `.agents/skills` |
+| `kiro` | `~/.kiro/skills` | `.kiro/skills` |
+
+Only `claude` is plugin-capable today. An agent that isn't in this table yet
+still works — add a `[[target]]` block for it by hand, as above.
+
+### Choosing agents on install, link and adopt
+
+Omitting `-a/--agent` on `install`, `link` or `adopt` in a terminal shows a
+checklist of every configured agent, with `claude` and `codex` pre-ticked
+when they're already present, rather than silently acting on every present
+agent. `-a` still bypasses it outright. Piped or scripted use (no terminal
+attached) is unchanged: it falls back to every present agent, exactly as
+before.
 
 `skillsctl search` fetches its registry from GitHub, configurable via a
 `[registry]` table:

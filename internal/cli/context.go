@@ -87,9 +87,27 @@ func newEnv() (*env, error) {
 	return &env{store: store.New(root), cfg: cfg}, nil
 }
 
-// targets resolves the -a flag, defaulting to every present agent.
+// targets resolves the -a flag, defaulting to every present agent. It never
+// prompts, which is what makes it safe for new.go's dry-run validation: that
+// command doesn't act on the result, so asking would interrupt scaffolding
+// for no operational effect.
 func (e *env) targets(names []string) ([]target.Target, error) {
 	return e.cfg.Resolve(names)
+}
+
+// resolveTargets is targets, plus a prompt: install, link and adopt use it
+// because they actually act on the result, so a bare invocation deserves a
+// visible choice rather than a silent "every present agent". -a still bypasses
+// it outright, and a non-interactive caller (no terminal — scripts, CI) falls
+// back to targets' old behaviour so nothing there breaks.
+func (e *env) resolveTargets(names []string) ([]target.Target, error) {
+	if len(names) > 0 {
+		return e.cfg.Select(names)
+	}
+	if p := newPicker(); p.Interactive() {
+		return selectAgents(p, e.cfg)
+	}
+	return e.targets(names)
 }
 
 // openState acquires the receipts database.
