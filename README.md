@@ -4,6 +4,9 @@ Homebrew for agent skills: install, update and remove agent skills from git
 repositories, Claude plugins, OCI images with a receipt for every install so update and removal are
 deterministic. One store, symlinked into every agent you use.
 
+See [how skillsctl compares to `npx skills`](https://github.com/richardcase/skillsctl/wiki/skillsctl-vs-npx-skills)
+in the wiki.
+
 [![CI](https://github.com/richardcase/skillsctl/actions/workflows/ci.yml/badge.svg)](https://github.com/richardcase/skillsctl/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/richardcase/skillsctl?sort=semver)](https://github.com/richardcase/skillsctl/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/richardcase/skillsctl/total)](https://github.com/richardcase/skillsctl/releases)
@@ -1004,4 +1007,6 @@ covers getting set up and the pull request process.
 ## Acknowledgements
 
 Some of skillsctl's functionality is inspired by the great
-[`npx skills`](https://github.com/vercel-labs/skills) from Vercel.
+[`npx skills`](https://github.com/vercel-labs/skills) from Vercel, and by
+[Homebrew](https://brew.sh), whose install/update/remove model with a
+receipt for every package is the one skillsctl brings to agent skills.
