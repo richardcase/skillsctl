@@ -68,6 +68,57 @@ func TestPackageInstallOutdatedUpdateRemoveRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPackageInstallPreservesSubdirectoryResources packages a skill whose
+// SKILL.md references a resource living in a subdirectory (as skills that
+// ship helper scripts do), installs it via the OCI channel, and confirms the
+// resource survives the tar → push → pull → untar → symlink round trip with
+// its content and executable bit intact. Every other OCI e2e fixture is a
+// flat single-file skill, so this is the only test that would catch a
+// regression in pack.Tar's or gitx.Untar's handling of nested entries.
+func TestPackageInstallPreservesSubdirectoryResources(t *testing.T) {
+	h := newHarness(t)
+	h.oci = ocix.New()
+
+	host := testregistry.New(t)
+	ref := host + "/skills:v1"
+
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "alpha", "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "alpha", "SKILL.md"), []byte("---\nname: alpha\ndescription: a\n---\nRun scripts/run.sh.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "alpha", "scripts", "run.sh"), []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := h.run(t, "package", src, ref); err != nil {
+		t.Fatalf("package: %v\n%s", err, out)
+	}
+	if out, err := h.run(t, "install", "oci://"+ref); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+
+	dir := h.revDir(t, "alpha")
+	scriptPath := filepath.Join(dir, "scripts", "run.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("installed alpha missing scripts/run.sh: %v", err)
+	}
+	if string(data) != "#!/bin/sh\necho hi\n" {
+		t.Errorf("scripts/run.sh content = %q, want the original script", data)
+	}
+
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatalf("stat scripts/run.sh: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("scripts/run.sh mode = %v, want executable bit preserved", info.Mode())
+	}
+}
+
 // packageSkill writes a one-skill tree and packages it at ref, so a test can
 // make two tags that differ.
 func packageSkill(t *testing.T, h *harness, ref, body string) {
