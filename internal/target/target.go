@@ -36,16 +36,49 @@ type Config struct {
 }
 
 // Default is the built-in agent table, used when no config file exists.
+//
+// Directory conventions for the non-claude/codex/gemini agents are taken from
+// vercel-labs/skills' src/agents.ts (the "npx skills" implementation this
+// project's README acknowledges as an inspiration), the closest thing to an
+// authoritative source for where each agent actually looks for skills.
 func Default() (Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Config{}, fmt.Errorf("locate home directory: %w", err)
 	}
+	cfgHome, err := configHome()
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{Targets: []Target{
 		{Name: "claude", Dir: filepath.Join(home, ".claude", "skills"), ProjectDir: ".claude/skills", Plugins: true},
 		{Name: "codex", Dir: filepath.Join(home, ".codex", "skills"), ProjectDir: ".codex/skills"},
 		{Name: "gemini", Dir: filepath.Join(home, ".gemini", "skills"), ProjectDir: ".gemini/skills"},
+		{Name: "cursor", Dir: filepath.Join(home, ".cursor", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "windsurf", Dir: filepath.Join(home, ".codeium", "windsurf", "skills"), ProjectDir: ".windsurf/skills"},
+		{Name: "cline", Dir: filepath.Join(home, ".agents", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "continue", Dir: filepath.Join(home, ".continue", "skills"), ProjectDir: ".continue/skills"},
+		{Name: "zed", Dir: filepath.Join(home, ".agents", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "amp", Dir: filepath.Join(cfgHome, "agents", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "opencode", Dir: filepath.Join(cfgHome, "opencode", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "copilot", Dir: filepath.Join(home, ".copilot", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "antigravity", Dir: filepath.Join(home, ".gemini", "antigravity", "skills"), ProjectDir: ".agents/skills"},
+		{Name: "kiro", Dir: filepath.Join(home, ".kiro", "skills"), ProjectDir: ".kiro/skills"},
 	}}, nil
+}
+
+// configHome is XDG_CONFIG_HOME, falling back to ~/.config — the same rule
+// ConfigPath applies to skillsctl's own config file, reused here for the
+// agents (amp, opencode) that keep their own config under it too.
+func configHome() (string, error) {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		return x, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locate home directory: %w", err)
+	}
+	return filepath.Join(home, ".config"), nil
 }
 
 // ConfigPath is where the agent table lives, honouring SKILLSCTL_CONFIG and
@@ -54,14 +87,11 @@ func ConfigPath() (string, error) {
 	if p := os.Getenv("SKILLSCTL_CONFIG"); p != "" {
 		return p, nil
 	}
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "skillsctl", "config.toml"), nil
-	}
-	home, err := os.UserHomeDir()
+	cfgHome, err := configHome()
 	if err != nil {
-		return "", fmt.Errorf("locate home directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(home, ".config", "skillsctl", "config.toml"), nil
+	return filepath.Join(cfgHome, "skillsctl", "config.toml"), nil
 }
 
 // Load reads the agent table, returning Default when the file does not exist.
