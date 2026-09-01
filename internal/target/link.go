@@ -16,8 +16,10 @@ func ValidateSkillName(name string) error {
 	switch {
 	case name == "":
 		return fmt.Errorf("skill name is empty")
-	case name == "." || name == "..":
+	case name == ".":
 		return fmt.Errorf("skill name %q is a directory reference, not a name", name)
+	case strings.Contains(name, ".."):
+		return fmt.Errorf("skill name %q contains %q", name, "..")
 	case strings.ContainsAny(name, `/\`):
 		return fmt.Errorf("skill name %q contains a path separator", name)
 	case strings.ContainsRune(name, 0):

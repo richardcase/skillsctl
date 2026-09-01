@@ -243,6 +243,8 @@ func TestValidateSkillName(t *testing.T) {
 		{"../x", true},
 		{"a/b", true},
 		{`a\b`, true},
+		{"foo..bar", true},
+		{"..hidden", true},
 	}
 	for _, tc := range tests {
 		err := ValidateSkillName(tc.name)
