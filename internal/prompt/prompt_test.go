@@ -38,6 +38,34 @@ func TestSelectReturnsTheTickedRows(t *testing.T) {
 	}
 }
 
+func TestPreSelectedItemsStartTicked(t *testing.T) {
+	opts := Options{
+		Items: []Item{{Label: "alpha", Selected: true}, {Label: "beta"}, {Label: "gamma", Selected: true}},
+		Help:  "enter confirm",
+	}
+	got, err := script(t, opts, keyEnter)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	want := []int{0, 2}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("selection = %v, want %v (confirming without touching anything)", got, want)
+	}
+}
+
+func TestPreSelectedItemShowsTickedBox(t *testing.T) {
+	opts := Options{Items: []Item{{Label: "claude", Selected: true}, {Label: "cursor"}}}
+	m := newModel(opts).fit(80, 24)
+
+	got := strings.Join(m.render(), "\n")
+	if !strings.Contains(got, tickedBox+"claude") {
+		t.Errorf("a pre-selected item should render ticked:\n%s", got)
+	}
+	if !strings.Contains(got, emptyBox+"cursor") {
+		t.Errorf("an item without Selected should render unticked:\n%s", got)
+	}
+}
+
 func TestSelectReturnsIndicesInListOrderNotClickOrder(t *testing.T) {
 	// The order the user ticks rows in is not an order to install in: the
 	// receipts and the listing both follow the repository's own order.

@@ -46,7 +46,7 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&o.agents, "agent", "a", nil, "agents to link into (default: every agent found)")
+	cmd.Flags().StringSliceVarP(&o.agents, "agent", "a", nil, "agents to link into (default: prompt if a terminal is attached, else every agent found)")
 	// StringArray, not StringSlice: a skill name is taken whole, never split on commas.
 	cmd.Flags().StringArrayVar(&o.skills, "skill", nil, "skill to install, by name or path; repeat for several")
 	cmd.Flags().BoolVar(&o.all, "all", false, "install every skill found in the repository")
@@ -88,7 +88,7 @@ func runInstall(cmd *cobra.Command, raw string, o installOpts) error {
 	if err != nil {
 		return err
 	}
-	targets, err := e.targets(o.agents)
+	targets, err := e.resolveTargets(o.agents)
 	if err != nil {
 		return err
 	}

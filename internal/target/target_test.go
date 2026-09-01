@@ -26,6 +26,64 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultAgentDirectories(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	cfgHome := os.Getenv("XDG_CONFIG_HOME")
+	if cfgHome == "" {
+		cfgHome = filepath.Join(home, ".config")
+	}
+
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	byName := make(map[string]Target, len(cfg.Targets))
+	for _, tg := range cfg.Targets {
+		byName[tg.Name] = tg
+	}
+
+	tests := []struct {
+		name       string
+		dir        string
+		projectDir string
+		plugins    bool
+	}{
+		{"claude", filepath.Join(home, ".claude", "skills"), ".claude/skills", true},
+		{"codex", filepath.Join(home, ".codex", "skills"), ".codex/skills", false},
+		{"gemini", filepath.Join(home, ".gemini", "skills"), ".gemini/skills", false},
+		{"cursor", filepath.Join(home, ".cursor", "skills"), ".agents/skills", false},
+		{"windsurf", filepath.Join(home, ".codeium", "windsurf", "skills"), ".windsurf/skills", false},
+		{"cline", filepath.Join(home, ".agents", "skills"), ".agents/skills", false},
+		{"continue", filepath.Join(home, ".continue", "skills"), ".continue/skills", false},
+		{"zed", filepath.Join(home, ".agents", "skills"), ".agents/skills", false},
+		{"amp", filepath.Join(cfgHome, "agents", "skills"), ".agents/skills", false},
+		{"opencode", filepath.Join(cfgHome, "opencode", "skills"), ".agents/skills", false},
+		{"copilot", filepath.Join(home, ".copilot", "skills"), ".agents/skills", false},
+		{"antigravity", filepath.Join(home, ".gemini", "antigravity", "skills"), ".agents/skills", false},
+		{"kiro", filepath.Join(home, ".kiro", "skills"), ".kiro/skills", false},
+	}
+	if len(cfg.Targets) != len(tests) {
+		t.Errorf("Default() has %d targets, want %d (table below is out of date)", len(cfg.Targets), len(tests))
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tg, ok := byName[tt.name]
+			if !ok {
+				t.Fatalf("no default target named %q", tt.name)
+			}
+			if tg.Dir != tt.dir {
+				t.Errorf("Dir = %q, want %q", tg.Dir, tt.dir)
+			}
+			if tg.ProjectDir != tt.projectDir {
+				t.Errorf("ProjectDir = %q, want %q", tg.ProjectDir, tt.projectDir)
+			}
+			if tg.Plugins != tt.plugins {
+				t.Errorf("Plugins = %v, want %v", tg.Plugins, tt.plugins)
+			}
+		})
+	}
+}
+
 func TestLoadExpandsTilde(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")

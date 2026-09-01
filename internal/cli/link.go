@@ -62,7 +62,7 @@ func newLinkCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&o.agents, "agent", "a", nil, "agents to link into (default: every agent found)")
+	cmd.Flags().StringSliceVarP(&o.agents, "agent", "a", nil, "agents to link into (default: prompt if a terminal is attached, else every agent found)")
 	cmd.Flags().StringArrayVar(&o.skills, "skill", nil, "skill to link, by name or path; repeat for several")
 	cmd.Flags().BoolVar(&o.all, "all", false, "link every skill found in the directory")
 	cmd.Flags().StringVar(&o.as, "as", "", "link under this name instead of the one in SKILL.md")
@@ -122,7 +122,7 @@ func runLinkName(cmd *cobra.Command, name string, o installOpts) error {
 	if err != nil {
 		return err
 	}
-	targets, err := e.targets(o.agents)
+	targets, err := e.resolveTargets(o.agents)
 	if err != nil {
 		return err
 	}

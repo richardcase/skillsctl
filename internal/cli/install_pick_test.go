@@ -17,7 +17,7 @@ func TestInstallMultiSkillRepoInstallsWhatWasPicked(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(1)
 
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -34,7 +34,7 @@ func TestInstallPickerIsOfferedEverySkillWithItsDescription(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(0)
 
-	if out, err := h.run(t, "install", url); err != nil {
+	if out, err := h.run(t, "install", url, "--agent", "claude"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
@@ -61,7 +61,7 @@ func TestInstallPicksSeveralSkills(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(0, 1)
 
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -80,7 +80,7 @@ func TestInstallPickedSkillTracksTheRefNotTheSha(t *testing.T) {
 	url, sha := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(0)
 
-	if out, err := h.run(t, "install", url); err != nil {
+	if out, err := h.run(t, "install", url, "--agent", "claude"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 
@@ -137,7 +137,7 @@ func TestInstallUnknownSkillNameNeverPrompts(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(0)
 
-	out, err := h.run(t, "install", url, "--skill", "gamma")
+	out, err := h.run(t, "install", url, "--skill", "gamma", "--agent", "claude")
 	if err == nil {
 		t.Fatalf("install accepted an unknown skill name\n%s", out)
 	}
@@ -154,7 +154,7 @@ func TestInstallAllNeverPrompts(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(0)
 
-	if out, err := h.run(t, "install", url, "--all"); err != nil {
+	if out, err := h.run(t, "install", url, "--all", "--agent", "claude"); err != nil {
 		t.Fatalf("install --all: %v\n%s", err, out)
 	}
 	if len(h.picker.asked.Items) != 0 {
@@ -172,7 +172,7 @@ func TestInstallSingleSkillRepoNeverPrompts(t *testing.T) {
 	url, _ := testrepo.New(t, map[string]string{"skills/only/SKILL.md": alphaMD})
 	h.picker.on, h.picker.choose = true, picks(0)
 
-	if out, err := h.run(t, "install", url); err != nil {
+	if out, err := h.run(t, "install", url, "--agent", "claude"); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 	if len(h.picker.asked.Items) != 0 {
@@ -187,7 +187,7 @@ func TestInstallAsPicksASingleSkill(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(1)
 
-	out, err := h.run(t, "install", url, "--as", "renamed")
+	out, err := h.run(t, "install", url, "--as", "renamed", "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install --as: %v\n%s", err, out)
 	}
@@ -207,7 +207,7 @@ func TestInstallPickedSkillIsListedAfterTheChoice(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(1)
 
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -231,7 +231,7 @@ func TestInstallOffersHeaderRowsForAMultiCategoryRepo(t *testing.T) {
 	// would have resolved a header toggle to: cat-a's two members.
 	h.picker.on, h.picker.choose = true, picks(1, 2)
 
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -274,7 +274,7 @@ func TestInstallOffersHeaderRowsForAPluginStyleWrappedRepo(t *testing.T) {
 	url, _ := pluginStyleCategorizedRepo(t)
 	h.picker.on, h.picker.choose = true, picks(1)
 
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -304,7 +304,7 @@ func TestInstallPickedSkillDryRunChangesNothing(t *testing.T) {
 	url, _ := multiRepo(t)
 	h.picker.on, h.picker.choose = true, picks(0)
 
-	out, err := h.run(t, "install", url, "--dry-run")
+	out, err := h.run(t, "install", url, "--dry-run", "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install --dry-run: %v\n%s", err, out)
 	}
@@ -334,7 +334,7 @@ func TestLinkPathInstallsWhatWasPicked(t *testing.T) {
 	}
 	h.picker.on, h.picker.choose = true, picks(1)
 
-	out, err := h.run(t, "link", dir)
+	out, err := h.run(t, "link", dir, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("link: %v\n%s", err, out)
 	}
@@ -370,7 +370,7 @@ func TestInstallPickerHidesAlreadyInstalledSkills(t *testing.T) {
 	}
 
 	h.picker.on, h.picker.choose = true, picks(0)
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -406,7 +406,7 @@ func TestInstallPickerHidesSkillsOccupiedByAForeignSymlink(t *testing.T) {
 	}
 
 	h.picker.on, h.picker.choose = true, picks(0)
-	out, err := h.run(t, "install", url)
+	out, err := h.run(t, "install", url, "--agent", "claude")
 	if err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
@@ -416,7 +416,7 @@ func TestInstallPickerHidesSkillsOccupiedByAForeignSymlink(t *testing.T) {
 		t.Fatalf("picker should only offer beta; alpha is occupied by a foreign symlink: %+v", asked.Items)
 	}
 
-	out, err = h.run(t, "install", url, "--skill", "alpha")
+	out, err = h.run(t, "install", url, "--skill", "alpha", "--agent", "claude")
 	if err == nil {
 		t.Fatalf("install --skill alpha succeeded despite the foreign symlink\n%s", out)
 	}

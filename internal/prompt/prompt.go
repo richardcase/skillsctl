@@ -27,6 +27,9 @@ type Item struct {
 	// list) as a block, it is drawn with an aggregate mark instead of its
 	// own, and it cannot be confirmed in single-select mode.
 	Header bool
+	// Selected starts this row already ticked, in multi-select mode. Ignored
+	// on a header row, which is never itself a choice.
+	Selected bool
 }
 
 // Options describes one selection.
@@ -103,12 +106,16 @@ type model struct {
 }
 
 func newModel(opts Options) model {
+	selected := make([]bool, len(opts.Items))
+	for i, it := range opts.Items {
+		selected[i] = it.Selected
+	}
 	return model{
 		header:   opts.Header,
 		help:     opts.Help,
 		items:    opts.Items,
 		single:   opts.Single,
-		selected: make([]bool, len(opts.Items)),
+		selected: selected,
 	}
 }
 
