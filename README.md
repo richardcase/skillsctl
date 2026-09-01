@@ -32,6 +32,7 @@ deterministic. One store, symlinked into every agent you use.
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
+- [Acknowledgements](#acknowledgements)
 
 ## Why
 
@@ -966,3 +967,8 @@ covers getting set up and the pull request process.
 ## License
 
 [Apache-2.0](LICENSE).
+
+## Acknowledgements
+
+Some of skillsctl's functionality is inspired by the great
+[`npx skills`](https://github.com/vercel-labs/skills) from Vercel.
