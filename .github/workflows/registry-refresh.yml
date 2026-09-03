@@ -28,7 +28,7 @@ jobs:
 
       - name: Create or update pull request
         if: steps.check.outputs.empty == 'false'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(registry): refresh skills.json"
           title: "Registry refresh"
